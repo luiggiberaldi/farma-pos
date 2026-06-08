@@ -121,7 +121,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                 </div>
 
                 {/* Botones de acción — diseño premium */}
-                <div className="p-4 sm:p-5 bg-white flex gap-2.5 relative z-20 shrink-0 border-t border-slate-100">
+                <div className="p-3 sm:p-5 bg-white flex gap-2 relative z-20 shrink-0 border-t border-slate-100">
                     {/* Imprimir */}
                     <button onClick={async () => {
                         const isCarta = (localStorage.getItem('printer_mode') || 'thermal') === 'inkjet_carta';
@@ -131,19 +131,19 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                             printThermalTicket(receipt, currentRate || receipt.rate);
                         }
                     }}
-                        className="flex-1 py-3.5 bg-gradient-to-b from-slate-700 to-slate-800 text-white font-bold rounded-2xl hover:from-slate-600 hover:to-slate-700 transition-all shadow-lg shadow-slate-800/20 hover:shadow-xl hover:shadow-slate-800/30 text-sm flex items-center justify-center gap-2 focus:outline-none active:scale-[0.97] hover:-translate-y-0.5">
-                        <Printer size={17} strokeWidth={2.5} /> Imprimir
+                        className="flex-1 py-3 bg-gradient-to-b from-slate-700 to-slate-800 text-white font-bold rounded-2xl hover:from-slate-600 hover:to-slate-700 transition-all shadow-lg shadow-slate-800/20 hover:shadow-xl hover:shadow-slate-800/30 text-xs sm:text-sm px-1.5 sm:px-3 whitespace-nowrap flex items-center justify-center gap-1.5 focus:outline-none active:scale-[0.97] hover:-translate-y-0.5">
+                        <Printer className="w-3.5 h-3.5 sm:w-[17px] sm:h-[17px] shrink-0" strokeWidth={2.5} /> Imprimir
                     </button>
 
                     {/* WhatsApp */}
                     <button onClick={() => onShareWhatsApp(receipt)}
-                        className="flex-1 py-3.5 bg-gradient-to-b from-emerald-500 to-emerald-600 text-white font-bold rounded-2xl hover:from-emerald-400 hover:to-emerald-500 transition-all shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/35 text-sm flex items-center justify-center gap-2 focus:outline-none active:scale-[0.97] hover:-translate-y-0.5">
-                        <Send size={17} strokeWidth={2.5} /> WhatsApp
+                        className="flex-1 py-3 bg-gradient-to-b from-emerald-500 to-emerald-600 text-white font-bold rounded-2xl hover:from-emerald-400 hover:to-emerald-500 transition-all shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/35 text-xs sm:text-sm px-1.5 sm:px-3 whitespace-nowrap flex items-center justify-center gap-1.5 focus:outline-none active:scale-[0.97] hover:-translate-y-0.5">
+                        <Send className="w-3.5 h-3.5 sm:w-[17px] sm:h-[17px] shrink-0" strokeWidth={2.5} /> WhatsApp
                     </button>
 
                     {/* Nueva Venta — Primary CTA */}
                     <button onClick={onClose}
-                        className="flex-[1.3] py-3.5 bg-gradient-to-b from-blue-500 to-blue-600 text-white font-extrabold rounded-2xl hover:from-blue-400 hover:to-blue-500 transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 text-sm flex items-center justify-center gap-2 focus:outline-none active:scale-[0.97] hover:-translate-y-0.5 ring-2 ring-blue-400/30 ring-offset-2 ring-offset-white">
+                        className="flex-[1.2] py-3 bg-gradient-to-b from-blue-500 to-blue-600 text-white font-extrabold rounded-2xl hover:from-blue-400 hover:to-blue-500 transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 text-xs sm:text-sm px-1.5 sm:px-3 whitespace-nowrap flex items-center justify-center gap-1.5 focus:outline-none active:scale-[0.97] hover:-translate-y-0.5 ring-2 ring-blue-400/30 ring-offset-2 ring-offset-white">
                         Nueva Venta
                     </button>
                 </div>

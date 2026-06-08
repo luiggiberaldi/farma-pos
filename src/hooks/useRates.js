@@ -10,7 +10,7 @@ const EXCHANGERATE_KEY = 'F1a3af26247a97a33ee5ad90';
 const DEFAULT_EUR_USD_RATIO = 1.18;
 const UPDATE_INTERVAL = 15 * 60 * 1000; // 15 minutos
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxT9sKz_XWRWuQx_XP-BJ33T0hoAgJsLwhZA00v6nPt4Ij4jRjq-90mDGLVCsS6FXwW9Q/exec?token=Lvbp1994';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0N47Hg6XebPBhgSLnfkaFyR4ez9_UWFTCS0mcb978i5r-iraxcM5svMJao2HMtrtiAA/exec?token=Lvbp1994';
 
 export function useRates() {
     const [rates, setRates] = useState(() => {

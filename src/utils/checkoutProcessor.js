@@ -23,7 +23,8 @@ export async function processSaleTransaction({
     tasaCop,
     copEnabled,
     discountData,
-    useAutoRate
+    useAutoRate,
+    rateMode
 }) {
     if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
 
@@ -125,7 +126,9 @@ export async function processSaleTransaction({
         rate: effectiveRate,
         tasaCop: copEnabled ? tasaCop : 0,
         copEnabled: copEnabled,
-        rateSource: useAutoRate ? 'BCV Auto' : 'Manual',
+        rateSource: rateMode 
+            ? (rateMode === 'bcv' ? 'BCV Auto' : (rateMode === 'euro' ? 'Euro Auto' : 'Manual')) 
+            : (useAutoRate ? 'BCV Auto' : 'Manual'),
         timestamp: new Date().toISOString(),
         changeUsd: tipoVenta !== 'VENTA' ? 0 : (changeBreakdown?.changeUsdGiven || 0),
         changeBs: tipoVenta !== 'VENTA' ? 0 : (changeBreakdown?.changeBsGiven || 0),

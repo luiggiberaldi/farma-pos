@@ -58,7 +58,10 @@ export default function SalesHistory({
                     let methodLabel = 'Efectivo';
                     let PayMethodIcon = PAYMENT_ICONS['efectivo_bs'];
 
-                    if (s.tipo === 'VENTA_FIADA') {
+                    if (s.tipo === 'ANULACION_VENTA') {
+                        methodLabel = 'Reverso';
+                        PayMethodIcon = Ban;
+                    } else if (s.tipo === 'VENTA_FIADA') {
                         methodLabel = 'Por Cobrar';
                         PayMethodIcon = Clock;
                     } else if (s.tipo === 'VENTA_CASHEA') {
@@ -85,7 +88,7 @@ export default function SalesHistory({
                         }
                     }
 
-                    const isCanceled = s.status === 'ANULADA';
+                    const isCanceled = s.status === 'ANULADA' || !!s.relatedVoidId;
                     const isExpanded = expandedSaleId === s.id;
 
                     return (
@@ -99,23 +102,32 @@ export default function SalesHistory({
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className={`text-sm font-bold flex items-center gap-1.5 truncate ${isCanceled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                                        {s.customerName || 'Consumidor Final'} {s.tipo === 'VENTA_FIADA' && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded uppercase">Fiado</span>}
+                                        {s.tipo === 'ANULACION_VENTA'
+                                            ? `Reverso: ${s.customerName || 'Consumidor Final'}`
+                                            : (s.customerName || 'Consumidor Final')}
+                                        {s.tipo === 'VENTA_FIADA' && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded uppercase">Fiado</span>}
                                         {s.tipo === 'VENTA_CASHEA' && <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded flex items-center gap-0.5 uppercase font-black"><CasheaIcon size={8} />Cashea</span>}
+                                        {isCanceled && s.tipo !== 'ANULACION_VENTA' && <span className="text-[9px] bg-red-100 text-red-500 px-1 rounded uppercase">Anulada</span>}
+                                        {s.tipo === 'ANULACION_VENTA' && <span className="text-[9px] bg-red-100 text-red-600 px-1 rounded uppercase">Reverso</span>}
                                     </p>
                                     <p className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
                                         {s.saleNumber && <span className="font-bold text-indigo-400">#{String(s.saleNumber).padStart(7, '0')}</span>}
                                         {s.saleNumber && <span>·</span>}
+                                        <span>{d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}</span> ·
                                         <span>{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</span> ·
                                         <span>{methodLabel}</span>
                                     </p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                    <p className={`text-sm font-black ${isCanceled ? 'text-slate-400' : 'text-slate-800 dark:text-white'}`}>${(s.totalUsd || 0).toFixed(2)}</p>
+                                    <p className={`text-sm font-black ${isCanceled ? 'text-slate-400' : 'text-slate-800 dark:text-white'}`}>
+                                        {s.totalUsd < 0 ? `-$${Math.abs(s.totalUsd).toFixed(2)}` : `$${(s.totalUsd || 0).toFixed(2)}`}
+                                    </p>
                                     <p className="text-[10px] text-slate-400 font-medium">{(() => {
                                         const bs = s.totalBs;
                                         const safeRate = s.rate || bcvRate || 0;
-                                        const safeBs = (typeof bs === 'number' && !isNaN(bs) && bs >= 0) ? bs : (s.totalUsd || 0) * safeRate;
-                                        return formatBs(safeBs);
+                                        const isNegative = bs < 0 || (s.totalUsd < 0);
+                                        const absBs = Math.abs(typeof bs === 'number' && !isNaN(bs) ? bs : (s.totalUsd || 0) * safeRate);
+                                        return `${isNegative ? '-' : ''}${formatBs(absBs)}`;
                                     })()} Bs</p>
                                     <div className="flex justify-end mt-0.5">
                                         {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
@@ -256,23 +268,25 @@ export default function SalesHistory({
                                                 <Printer size={14} />
                                             </button>
                                         )}
-                                        {isAdmin && !isCanceled && (!s.cajaCerrada || localStorage.getItem('allow_void_after_cierre') === 'true') && (
+                                        {isAdmin && !isCanceled && (!s.cajaCerrada || localStorage.getItem('allow_void_after_cierre') === 'true') && s.tipo !== 'ANULACION_VENTA' && (
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); onVoidSale(s); }}
                                                 className="py-2 px-3 bg-slate-100 dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 hover:dark:bg-red-900/30 font-bold rounded-lg transition-colors flex justify-center items-center gap-1.5 text-xs border border-slate-200 dark:border-slate-800 shadow-sm active:scale-95">
                                                 <Ban size={14} /> Anular
                                             </button>
                                         )}
-                                        {!isCanceled && s.cajaCerrada && localStorage.getItem('allow_void_after_cierre') !== 'true' && (
+                                        {!isCanceled && s.cajaCerrada && localStorage.getItem('allow_void_after_cierre') !== 'true' && s.tipo !== 'ANULACION_VENTA' && (
                                             <div title="Venta protegida por Cierre de Caja" className="py-2 px-3 bg-slate-50 dark:bg-slate-900 text-slate-400 font-bold rounded-lg flex justify-center items-center gap-1.5 text-[10px] uppercase border border-slate-100 dark:border-slate-800 tracking-wider cursor-not-allowed">
                                                 <LockIcon size={12} /> Cerrada
                                             </div>
                                         )}
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onRecycleSale(s); }}
-                                            className="py-2 px-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 hover:dark:bg-indigo-900/50 font-bold rounded-lg transition-colors flex justify-center items-center gap-1.5 text-xs shadow-sm active:scale-95">
-                                            <Recycle size={14} />
-                                        </button>
+                                        {s.items && s.items.length > 0 && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onRecycleSale(s); }}
+                                                className="py-2 px-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 hover:dark:bg-indigo-900/50 font-bold rounded-lg transition-colors flex justify-center items-center gap-1.5 text-xs shadow-sm active:scale-95">
+                                                <Recycle size={14} />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}

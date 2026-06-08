@@ -388,16 +388,18 @@ export function useCloudSync() {
                 // ── Pull Inicial: descarga todos los documentos ──────────────
                 // Saltarse si acaba de hacerse una importación local (el flag evita que
                 // Supabase sobreescriba los datos recién importados).
+                let docs = null;
                 const skipPull = sessionStorage.getItem('skip_cloud_pull');
                 if (skipPull) {
                     sessionStorage.removeItem('skip_cloud_pull');
                     console.log('[CloudSync] Pull inicial omitido (importación reciente).');
                 } else {
-                    const { data: docs } = await supabaseCloud
+                    const { data } = await supabaseCloud
                         .from('sync_documents')
                         .select('collection, doc_id, data, updated_at')
                         .eq('user_id', userId)
                         .in('collection', ['store', 'local']);
+                    docs = data;
 
                     if (docs?.length > 0) {
                         for (const doc of docs) {

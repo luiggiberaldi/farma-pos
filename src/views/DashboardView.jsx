@@ -13,6 +13,7 @@ import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF } from '../utils/dailyCloseGenerator';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { shareSaleWhatsApp } from '../utils/dashboardActions';
 import { useNotifications } from '../hooks/useNotifications';
 import { createNotification, NOTIF_TYPES } from '../services/notificationService';
 import { useAdminAlerts } from '../hooks/useAdminAlerts';
@@ -208,7 +209,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const todaySales = useMemo(() =>
         sales.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA') return false;
+            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'ANULACION_VENTA') return false;
             // Ocultar ventas que ya fueron cerradas previamente
             if (s.cajaCerrada === true) return false;
 
@@ -222,7 +223,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const todayCashFlow = useMemo(() =>
         sales.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'APERTURA_CAJA') return false;
+            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'APERTURA_CAJA' && s.tipo !== 'ANULACION_VENTA') return false;
             if (s.cajaCerrada === true) return false;
 
             const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
@@ -267,7 +268,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     // Últimas ventas (por defecto las últimas 7, o las del día seleccionado en la gráfica)
     const recentSales = useMemo(() => {
         // Excluir apertura de caja, pagos a proveedores y otros registros internos del historial visible
-        const VISIBLE_TIPOS = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA'];
+        const VISIBLE_TIPOS = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA', 'ANULACION_VENTA'];
         if (selectedChartDate) {
             return sales.filter(s => {
                 if (!VISIBLE_TIPOS.includes(s.tipo)) return false;

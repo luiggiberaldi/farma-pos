@@ -312,52 +312,46 @@ export default function CheckoutModal({
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
 
             {/* --- HEADER --- */}
-            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950">
                 <button onClick={onClose} className="p-2 -ml-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                     <X size={22} />
                 </button>
-                <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide">COBRAR</h2>
+                <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide font-sans">COBRAR</h2>
                 <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
                     {formatBs(effectiveRate)} Bs/$
                 </span>
             </div>
 
+            {/* --- TOTAL BIMONEDA (FIJO) --- */}
+            <div className="shrink-0 px-4 py-2.5 bg-gradient-to-b from-slate-50 to-slate-100/50 dark:from-slate-900 dark:to-slate-950/80 border-b border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center">
+                {discountData?.active && (
+                    <div className="flex items-center gap-2 mb-1 text-xs">
+                        <span className="font-bold text-slate-400 dark:text-slate-500">Subtotal: ${cartSubtotalUsd.toFixed(2)} / Bs {formatBs(cartSubtotalBs)}</span>
+                        <span className="font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded">
+                            Desc: -${discountData.amountUsd.toFixed(2)}
+                        </span>
+                    </div>
+                )}
+                <div className="flex items-baseline justify-center gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 self-center">
+                        {discountData?.active ? 'Total Final:' : 'Total a Pagar:'}
+                    </span>
+                    <span className={`text-3xl font-black ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                        ${cartTotalUsd.toFixed(2)}
+                    </span>
+                    <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/40">
+                        Bs {formatBs(cartTotalBs)}
+                    </span>
+                    {copEnabled && (
+                        <span className="text-xs font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-0.5 rounded-lg border border-amber-100 dark:border-amber-900/40">
+                            COP {mulR(cartTotalUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </span>
+                    )}
+                </div>
+            </div>
+
             {/* --- SCROLLABLE BODY --- */}
             <div className="flex-1 overflow-y-auto overscroll-contain pb-28">
-
-                {/* -- TOTAL BIMONEDA -- */}
-                <div className="px-4 py-4 bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
-                    {discountData?.active && (
-                        <div className="flex flex-col items-center justify-center space-y-1 mb-3 pb-3 border-b border-slate-200/50 dark:border-slate-800/50">
-                            <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400">
-                                <span>Subtotal:</span>
-                                <span>${cartSubtotalUsd.toFixed(2)}</span>
-                                <span className="text-[10px]">&bull;</span>
-                                <span className="text-xs">Bs {formatBs(cartSubtotalBs)}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm font-black text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-1 rounded-lg">
-                                <span>Descuento ({discountData.type === 'percentage' ? `${discountData.value}%` : 'Fijo'}):</span>
-                                <span>-${discountData.amountUsd.toFixed(2)}</span>
-                            </div>
-                        </div>
-                    )}
-                    <p className={`text-[11px] font-bold uppercase tracking-widest text-center mb-1 ${discountData?.active ? 'text-emerald-500' : 'text-slate-400'}`}>
-                        {discountData?.active ? 'Total Final' : 'Total a Pagar'}
-                    </p>
-                    <div className="text-center">
-                        <span className={`text-4xl sm:text-5xl font-black ${discountData?.active ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                            ${cartTotalUsd.toFixed(2)}
-                        </span>
-                        <span className="block text-sm sm:text-base font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                            Bs {formatBs(cartTotalBs)}
-                        </span>
-                        {copEnabled && (
-                            <span className="block text-sm sm:text-base font-bold text-amber-600 dark:text-amber-400 mt-0.5">
-                                COP {mulR(cartTotalUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                        )}
-                    </div>
-                </div>
 
                 {/* -- SECCION DOLARES ($) -- */}
                 {methodsUsd.length > 0 && (
@@ -503,122 +497,7 @@ export default function CheckoutModal({
                     )
                 )}
 
-                {/* -- BANNER VUELTO / RESTANTE -- */}
-                <div className="px-3 py-2">
-                    <div className={`p-3.5 rounded-xl border-2 transition-all ${isPaid
-                        ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800'
-                        : 'bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800'
-                        }`}>
-                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isPaid ? 'text-emerald-500' : 'text-orange-500'
-                            }`}>
-                            {isPaid ? 'Vuelto' : 'Resta por Cobrar'}
-                        </p>
-                        <div className="flex items-end justify-between">
-                            <div className="flex flex-col">
-                                <span className={`text-2xl font-black ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
-                                    }`}>
-                                    ${isPaid ? changeUsd.toFixed(2) : remainingUsd.toFixed(2)}
-                                </span>
-                            </div>
-                            <div className="flex flex-col text-right">
-                                <span className={`text-sm font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'
-                                    }`}>
-                                    Bs {formatBs(isPaid ? changeBs : remainingBs)}
-                                </span>
-                                {copEnabled && (
-                                    <span className={`text-sm font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'
-                                        }`}>
-                                        COP {isPaid ? mulR(changeUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : mulR(remainingUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
 
-                        {/* DESGLOSE DE VUELTO — solo visible cuando hay vuelto */}
-                        {isPaid && changeUsd > 0.009 && (
-                            <div className="mt-3 pt-3 border-t border-emerald-200 dark:border-emerald-800 space-y-2">
-                                <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-1">
-                                    <ArrowLeftRight size={10} />
-                                    Desglosar vuelto
-                                </p>
-
-                                {/* Fila: input USD + input Bs */}
-                                <div className="flex items-center gap-2">
-                                    {/* Input USD */}
-                                    <div className="relative flex-1">
-                                        <input
-                                            type="number"
-                                            inputMode="decimal"
-                                            placeholder="0.00"
-                                            value={changeUsdGiven}
-                                            onChange={e => {
-                                                const v = e.target.value;
-                                                const usd = Math.min(Math.max(0, parseFloat(v) || 0), changeUsd);
-                                                setChangeUsdGiven(v);
-                                                setChangeBsGiven(Math.max(0, mulR(subR(changeUsd, usd), effectiveRate)).toFixed(0));
-                                            }}
-                                            className="w-full py-2 px-3 pr-10 rounded-lg border-2 border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
-                                        />
-                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 py-0.5 rounded">USD</span>
-                                    </div>
-
-                                    <span className="text-slate-400 font-black text-xs shrink-0">+</span>
-
-                                    {/* Input Bs */}
-                                    <div className="relative flex-1">
-                                        <input
-                                            type="number"
-                                            inputMode="decimal"
-                                            placeholder="0"
-                                            value={changeBsGiven}
-                                            onChange={e => {
-                                                const v = e.target.value;
-                                                const bsTotal = changeUsd * effectiveRate;
-                                                const bs = Math.min(Math.max(0, parseFloat(v) || 0), bsTotal);
-                                                setChangeBsGiven(v);
-                                                setChangeUsdGiven(Math.max(0, changeUsd - bs / effectiveRate).toFixed(2));
-                                            }}
-                                            className="w-full py-2 px-3 pr-8 rounded-lg border-2 border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
-                                        />
-                                        <span className="absolute right-2 top-1/2 -translate-y-1/2"><BsIcon size={22} /></span>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => { setChangeUsdGiven(changeUsd.toFixed(2)); setChangeBsGiven('0'); }}
-                                        className="flex-1 py-1.5 rounded-lg text-[9px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 active:scale-95 transition-all border border-emerald-200 dark:border-emerald-800"
-                                    >
-                                        Todo $
-                                    </button>
-                                    <button
-                                        onClick={() => { setChangeUsdGiven('0'); setChangeBsGiven((changeUsd * effectiveRate).toFixed(0)); }}
-                                        className="flex-1 py-1.5 rounded-lg text-[9px] font-black bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 active:scale-95 transition-all border border-blue-200 dark:border-blue-800"
-                                    >
-                                        Todo Bs
-                                    </button>
-                                </div>
-
-                                {/* FLOAT WARNINGS */}
-                                {(parseFloat(changeUsdGiven) > currentFloatUsd + 0.05 || parseFloat(changeBsGiven) > currentFloatBs + 1) && (
-                                    <div className="mt-2 p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 flex items-start gap-1.5">
-                                        <AlertTriangle size={12} className="text-orange-500 shrink-0 mt-0.5" />
-                                        <div className="flex-1">
-                                            <p className="text-[10px] font-bold text-orange-600 dark:text-orange-400 leading-tight">
-                                                Precaución: El vuelto excede el fondo de caja registrado.
-                                            </p>
-                                            <p className="text-[9px] font-medium text-orange-500 leading-tight mt-0.5">
-                                                Fondo actual: 
-                                                <span className="font-bold ml-1">${currentFloatUsd.toFixed(2)}</span> y 
-                                                <span className="font-bold ml-1">Bs {formatBs(currentFloatBs)}</span>
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
 
                 {/* -- CLIENTE -- */}
                 <div className="px-3 py-2">
@@ -683,7 +562,113 @@ export default function CheckoutModal({
             </div>
 
             {/* --- BOTON CTA FIJO --- */}
-            <div className="shrink-0 px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <div className="shrink-0 px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-3">
+                {/* -- BANNER VUELTO / RESTANTE -- */}
+                <div className={`p-3 rounded-xl border-2 transition-all ${isPaid
+                    ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800'
+                    : 'bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800'
+                    }`}>
+                    <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                        {isPaid ? 'Vuelto' : 'Resta por Cobrar'}
+                    </p>
+                    <div className="flex items-end justify-between">
+                        <div className="flex flex-col">
+                            <span className={`text-2xl font-black ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                                ${isPaid ? changeUsd.toFixed(2) : remainingUsd.toFixed(2)}
+                            </span>
+                        </div>
+                        <div className="flex flex-col text-right">
+                            <span className={`text-sm font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                                Bs {formatBs(isPaid ? changeBs : remainingBs)}
+                            </span>
+                            {copEnabled && (
+                                <span className={`text-sm font-bold ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                                    COP {isPaid ? mulR(changeUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : mulR(remainingUsd, tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* DESGLOSE DE VUELTO — solo visible cuando hay vuelto */}
+                    {isPaid && changeUsd > 0.009 && (
+                        <div className="mt-2.5 pt-2.5 border-t border-emerald-200 dark:border-emerald-800 space-y-2">
+                            <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                                <ArrowLeftRight size={10} />
+                                Desglosar vuelto
+                            </p>
+
+                            {/* Fila: input USD + input Bs */}
+                            <div className="flex items-center gap-2">
+                                {/* Input USD */}
+                                <div className="relative flex-1">
+                                    <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        placeholder="0.00"
+                                        value={changeUsdGiven}
+                                        onChange={e => {
+                                            const v = e.target.value;
+                                            const usd = Math.min(Math.max(0, parseFloat(v) || 0), changeUsd);
+                                            setChangeUsdGiven(v);
+                                            setChangeBsGiven(Math.max(0, mulR(subR(changeUsd, usd), effectiveRate)).toFixed(0));
+                                        }}
+                                        className="w-full py-1.5 px-2.5 pr-10 rounded-lg border-2 border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 py-0.5 rounded">USD</span>
+                                </div>
+
+                                <span className="text-slate-400 font-black text-xs shrink-0">+</span>
+
+                                {/* Input Bs */}
+                                <div className="relative flex-1">
+                                    <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        placeholder="0"
+                                        value={changeBsGiven}
+                                        onChange={e => {
+                                            const v = e.target.value;
+                                            const bsTotal = changeUsd * effectiveRate;
+                                            const bs = Math.min(Math.max(0, parseFloat(v) || 0), bsTotal);
+                                            setChangeBsGiven(v);
+                                            setChangeUsdGiven(Math.max(0, changeUsd - bs / effectiveRate).toFixed(2));
+                                        }}
+                                        className="w-full py-1.5 px-2.5 pr-8 rounded-lg border-2 border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2"><BsIcon size={20} /></span>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => { setChangeUsdGiven(changeUsd.toFixed(2)); setChangeBsGiven('0'); }}
+                                    className="flex-1 py-1 rounded-lg text-[8px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 active:scale-95 transition-all border border-emerald-200 dark:border-emerald-800"
+                                >
+                                    Todo $
+                                </button>
+                                <button
+                                    onClick={() => { setChangeUsdGiven('0'); setChangeBsGiven((changeUsd * effectiveRate).toFixed(0)); }}
+                                    className="flex-1 py-1 rounded-lg text-[8px] font-black bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 active:scale-95 transition-all border border-blue-200 dark:border-blue-800"
+                                >
+                                    Todo Bs
+                                </button>
+                            </div>
+
+                            {/* FLOAT WARNINGS */}
+                            {(parseFloat(changeUsdGiven) > currentFloatUsd + 0.05 || parseFloat(changeBsGiven) > currentFloatBs + 1) && (
+                                <div className="mt-1.5 p-1.5 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 flex items-start gap-1">
+                                    <AlertTriangle size={10} className="text-orange-500 shrink-0 mt-0.5" />
+                                    <div className="flex-1">
+                                        <p className="text-[9px] font-bold text-orange-600 dark:text-orange-400 leading-tight">
+                                            Vuelto excede el fondo de caja.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
                 <button
                     onClick={() => {
                         if (!isPaid && selectedCustomerId && remainingUsd > 0.01 && casheaConfirmReady) {
@@ -694,7 +679,7 @@ export default function CheckoutModal({
                         }
                     }}
                     disabled={isProcessingSale || (!selectedCustomerId && remainingUsd > 0.01) || (casheaActive && !isPaid && !casheaConfirmReady)}
-                    className={`w-full py-4 font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${isProcessingSale
+                    className={`w-full py-3.5 font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${isProcessingSale
                         ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed opacity-70'
                         : isPaid
                         ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25 active:scale-[0.98] text-white'

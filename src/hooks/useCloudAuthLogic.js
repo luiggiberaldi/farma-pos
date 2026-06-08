@@ -136,20 +136,14 @@ export function useCloudAuthLogic() {
         const alias = localStorage.getItem('pda_device_alias') || `Dispositivo ${navigator.platform || 'Web'}`;
         const did = deviceId || 'UNKNOWN';
         const emailLower = email.toLowerCase();
-        // Intentar INSERT (nuevo dispositivo con alias)
-        const { error } = await supabaseCloud.from('account_devices').insert({
+        
+        // Usar upsert para evitar lanzar errores 409 en la consola de red
+        await supabaseCloud.from('account_devices').upsert({
             email: emailLower,
             device_id: did,
             device_alias: alias,
             last_seen: new Date().toISOString()
-        });
-        if (error?.code === '23505') {
-            // Ya existe — solo actualizar last_seen, preservando device_alias personalizado
-            await supabaseCloud.from('account_devices')
-                .update({ last_seen: new Date().toISOString() })
-                .eq('email', emailLower)
-                .eq('device_id', did);
-        }
+        }, { onConflict: 'email,device_id' });
     };
 
     // ─── ACTION HANDLERS ────────────────────────────────

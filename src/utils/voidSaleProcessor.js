@@ -14,11 +14,48 @@ export async function processVoidSale(sale, currentSales, currentProducts, optio
     if (!sale) throw new Error("Sale object is required to void.");
     const { skipRestock = false, skipRevertMoney = false } = options;
 
-    // 1. Marcar venta como ANULADA
+    // 1. Crear transacción de anulación en negativo y agregar metadatos a la original
+    const voidId = `void_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const user = useAuthStore.getState().usuarioActivo;
+    const voidTimestamp = new Date().toISOString();
+
+    const voidTransaction = {
+        id: voidId,
+        tipo: 'ANULACION_VENTA',
+        status: 'COMPLETADA',
+        originSaleId: sale.id,
+        originSaleNumber: sale.saleNumber,
+        timestamp: voidTimestamp,
+        cierreId: null,
+        cajaCerrada: false,
+        totalUsd: -(sale.totalUsd || 0),
+        totalBs: -(sale.totalBs || 0),
+        rate: sale.rate,
+        items: sale.items ? sale.items.map(i => ({ ...i, qty: -Math.abs(i.qty) })) : [],
+        payments: sale.payments ? sale.payments.map(p => ({
+            ...p,
+            amount: -(p.amount || 0),
+            amountUsd: p.amountUsd != null ? -p.amountUsd : undefined,
+            amountBs: p.amountBs != null ? -p.amountBs : undefined,
+        })) : [],
+        customerId: sale.customerId,
+        customerName: sale.customerName,
+        saleNumber: sale.saleNumber,
+    };
+
     const updatedSales = currentSales.map(s => {
-        if (s.id === sale.id) return { ...s, status: 'ANULADA' };
+        if (s.id === sale.id) {
+            return {
+                ...s,
+                voidedAt: voidTimestamp,
+                voidedBy: user?.id,
+                relatedVoidId: voidId
+            };
+        }
         return s;
     });
+    // Añadimos la transacción de anulación al historial
+    updatedSales.unshift(voidTransaction);
 
     // 2. Revertir Stock (saltar si skipRestock)
     let updatedProducts = [...currentProducts];
@@ -62,7 +99,6 @@ export async function processVoidSale(sale, currentSales, currentProducts, optio
     await storageService.setItem(SALES_KEY, updatedSales);
     await storageService.setItem(CUSTOMERS_KEY, updatedCustomers);
 
-    const user = useAuthStore.getState().usuarioActivo;
     logEvent('VENTA', 'VENTA_ANULADA', `Venta #${sale.saleNumber || '?'} anulada - $${sale.totalUsd?.toFixed(2)}`, user, { saleId: sale.id });
     createNotification(
         NOTIF_TYPES.VENTA_ANULADA,

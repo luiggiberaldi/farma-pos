@@ -25,6 +25,7 @@ import KeyboardHelpModal from '../components/Sales/KeyboardHelpModal';
 import DiscountModal from '../components/Sales/DiscountModal';
 import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { buildReceiptWhatsAppUrl } from '../components/Sales/ReceiptShareHelper';
 import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
 
 import ConfirmModal from '../components/ConfirmModal';
@@ -39,7 +40,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const { notifySaleComplete, notifyLowStock } = useNotifications();
 
     // ── Global Context ──────────────────────────────────────
-    const { products, setProducts, isLoadingProducts, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, copEnabled, tasaCop } = useProductContext();
+    const { products, setProducts, isLoadingProducts, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, copEnabled, tasaCop, rateMode, setRateMode } = useProductContext();
     const { usuarioActivo } = useAuthStore();
 
     // ── State ──────────────────────────────────────
@@ -600,7 +601,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         const opts = {
             cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, payments, changeBreakdown,
             selectedCustomerId, customers, products, effectiveRate, tasaCop, copEnabled,
-            discountData, useAutoRate
+            discountData, useAutoRate, rateMode
         };
 
         const result = await processSaleTransaction(opts);
@@ -729,7 +730,6 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     return (
         <div className="flex-1 min-h-0 flex flex-col dark:bg-slate-950 p-2 sm:p-4 lg:p-3 sm:pb-4 lg:pb-2 overflow-hidden relative">
 
-            {/* Header + Rate Config */}
             <SalesHeader
                 effectiveRate={effectiveRate}
                 useAutoRate={useAutoRate} setUseAutoRate={setUseAutoRate}
@@ -737,6 +737,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 showRateConfig={showRateConfig} setShowRateConfig={setShowRateConfig}
                 setShowKeyboardHelp={setShowKeyboardHelp}
                 triggerHaptic={triggerHaptic}
+                rates={rates}
+                rateMode={rateMode}
+                setRateMode={setRateMode}
             />
 
             {!todayAperturaData ? (

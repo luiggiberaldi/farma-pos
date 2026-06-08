@@ -21,9 +21,16 @@ export function ProductProvider({ children, rates }) {
     });
 
     // GLOBAL RATE LOGIC (Sync with SalesView)
-    const [useAutoRate, setUseAutoRate] = useState(() => {
-        const saved = localStorage.getItem('bodega_use_auto_rate');
-        return saved !== null ? JSON.parse(saved) : true;
+    const [rateMode, setRateMode] = useState(() => {
+        const savedMode = localStorage.getItem('bodega_rate_mode');
+        if (savedMode) return savedMode;
+        
+        // Retrocompatibilidad
+        const savedAuto = localStorage.getItem('bodega_use_auto_rate');
+        if (savedAuto !== null) {
+            return JSON.parse(savedAuto) ? 'bcv' : 'manual';
+        }
+        return 'bcv';
     });
     const [customRate, setCustomRate] = useState(() => {
         const saved = localStorage.getItem('bodega_custom_rate');
@@ -41,8 +48,23 @@ export function ProductProvider({ children, rates }) {
         return localStorage.getItem('tasa_cop') || '';
     });
 
+    const useAutoRate = rateMode === 'bcv' || rateMode === 'euro';
+    const setUseAutoRate = (val) => {
+        const nextMode = val ? 'bcv' : 'manual';
+        setRateMode(nextMode);
+    };
+
     const bcvPrice = rates?.bcv?.price || 0;
-    const effectiveRate = useAutoRate ? bcvPrice : (parseFloat(customRate) > 0 ? parseFloat(customRate) : bcvPrice);
+    const euroPrice = rates?.euro?.price || 0;
+    
+    let effectiveRate = bcvPrice;
+    if (rateMode === 'bcv') {
+        effectiveRate = bcvPrice;
+    } else if (rateMode === 'euro') {
+        effectiveRate = euroPrice;
+    } else if (rateMode === 'manual') {
+        effectiveRate = parseFloat(customRate) > 0 ? parseFloat(customRate) : bcvPrice;
+    }
     
     // Calcula el COP efectivo. rates.autoCopRate es calculado en useRates basado en TRM y la Brecha USDT/BCV.
     const tasaCop = autoCopEnabled && rates.autoCopRate?.price 
@@ -109,9 +131,10 @@ export function ProductProvider({ children, rates }) {
     }, [streetRate]);
 
     useEffect(() => {
-        localStorage.setItem('bodega_use_auto_rate', JSON.stringify(useAutoRate));
+        localStorage.setItem('bodega_rate_mode', rateMode);
+        localStorage.setItem('bodega_use_auto_rate', JSON.stringify(rateMode === 'bcv' || rateMode === 'euro'));
         if (customRate) localStorage.setItem('bodega_custom_rate', customRate.toString());
-    }, [useAutoRate, customRate]);
+    }, [rateMode, customRate]);
 
     // Listener para actualizar si cambia en otra pestaña/componente
     useEffect(() => {
@@ -119,8 +142,12 @@ export function ProductProvider({ children, rates }) {
             if (e.key === 'bodega_custom_rate') {
                 setCustomRate(e.newValue);
             }
+            if (e.key === 'bodega_rate_mode') {
+                setRateMode(e.newValue);
+            }
             if (e.key === 'bodega_use_auto_rate') {
-                setUseAutoRate(!!JSON.parse(e.newValue));
+                const isAuto = !!JSON.parse(e.newValue);
+                setRateMode(isAuto ? 'bcv' : 'manual');
             }
             if (e.key === 'cop_enabled') {
                 setCopEnabled(e.newValue === 'true');
@@ -200,7 +227,9 @@ export function ProductProvider({ children, rates }) {
             tasaCopManual,
             setTasaCopManual,
             tasaCop,
-            adjustStock
+            adjustStock,
+            rateMode,
+            setRateMode
         }}>
             {children}
         </ProductContext.Provider>

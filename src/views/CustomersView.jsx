@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Check, ArrowRightLeft } from 'lucide-react';
+import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Check, ArrowRightLeft, Ban } from 'lucide-react';
 import CasheaIcon from '../components/CasheaIcon';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
@@ -857,27 +857,29 @@ function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, on
                                     const timeStr = date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false });
                                     const isCobro = sale.tipo === 'COBRO_DEUDA';
                                     const isFiada = sale.tipo === 'VENTA_FIADA';
-                                    const isAnulada = sale.status === 'ANULADA';
+                                    const isAnulacion = sale.tipo === 'ANULACION_VENTA';
+                                    const isAnulada = sale.status === 'ANULADA' || !!sale.relatedVoidId;
                                     return (
                                         <div key={sale.id} className={`flex items-start gap-2.5 py-2 px-2 bg-slate-50 dark:bg-slate-950 rounded-xl ${isAnulada ? 'opacity-50 grayscale' : ''}`}>
-                                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isAnulada ? 'bg-slate-200 dark:bg-slate-800' : isCobro ? 'bg-emerald-100 dark:bg-emerald-900/30' : isFiada ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
-                                                {isCobro ? <ArrowUpRight size={14} className={isAnulada ? "text-slate-500" : "text-emerald-500"} /> : isFiada ? <CreditCard size={14} className={isAnulada ? "text-slate-500" : "text-amber-500"} /> : <ShoppingBag size={14} className={isAnulada ? "text-slate-500" : "text-blue-500"} />}
+                                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isAnulada ? 'bg-slate-200 dark:bg-slate-800' : isCobro ? 'bg-emerald-100 dark:bg-emerald-900/30' : isFiada ? 'bg-amber-100 dark:bg-amber-900/30' : isAnulacion ? 'bg-red-100 dark:bg-red-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
+                                                {isCobro ? <ArrowUpRight size={14} className={isAnulada ? "text-slate-500" : "text-emerald-500"} /> : isFiada ? <CreditCard size={14} className={isAnulada ? "text-slate-500" : "text-amber-500"} /> : isAnulacion ? <Ban size={14} className="text-red-500" /> : <ShoppingBag size={14} className={isAnulada ? "text-slate-500" : "text-blue-500"} />}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start">
                                                     <div className="flex flex-col">
                                                         <p className={`text-xs font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
-                                                            {isCobro ? 'Abono de deuda' : isFiada ? 'Venta fiada' : 'Venta'}
+                                                            {isCobro ? 'Abono de deuda' : isFiada ? 'Venta fiada' : isAnulacion ? 'Reverso de venta' : 'Venta'}
                                                         </p>
                                                         {isAnulada && <span className="text-[10px] font-black text-red-500 tracking-wider">ANULADA</span>}
+                                                        {isAnulacion && <span className="text-[10px] font-black text-red-500 tracking-wider">REVERSO</span>}
                                                     </div>
                                                     <div className="text-right">
-                                                        <p className={`text-xs font-black ${isAnulada ? 'text-slate-400 line-through' : isCobro ? 'text-emerald-500' : isFiada ? 'text-amber-500' : 'text-slate-700 dark:text-white'}`}>
-                                                            {isCobro ? '+' : ''}${formatUsd(sale.totalUsd || 0)}
+                                                        <p className={`text-xs font-black ${isAnulada ? 'text-slate-400 line-through' : isCobro ? 'text-emerald-500' : isAnulacion ? 'text-red-500' : 'text-slate-700 dark:text-white'}`}>
+                                                            {isCobro ? '+' : ''}{sale.totalUsd < 0 ? `-$${Math.abs(sale.totalUsd).toFixed(2)}` : `$${(sale.totalUsd || 0).toFixed(2)}`}
                                                         </p>
                                                         {bcvRate > 0 && !isAnulada && (
                                                             <p className={`text-[9px] font-bold ${isCobro ? 'text-emerald-400/70' : isFiada ? 'text-amber-400/70' : 'text-slate-400'}`}>
-                                                                {isCobro ? '+' : ''}{formatBs((sale.totalUsd || 0) * bcvRate)} Bs
+                                                                {isCobro ? '+' : ''}{sale.totalBs < 0 ? `-${formatBs(Math.abs(sale.totalBs))} Bs` : `${formatBs(sale.totalBs || (sale.totalUsd || 0) * bcvRate)} Bs`}
                                                             </p>
                                                         )}
                                                     </div>
