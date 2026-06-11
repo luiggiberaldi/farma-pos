@@ -391,7 +391,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
         // 2. Marcar cajaCerrada en vez de borrar las ventas localmente
         const currentCierreId = new Date().getTime();
-        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA', 'PAGO_PROVEEDOR', 'APERTURA_CAJA'];
+        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA', 'PAGO_PROVEEDOR', 'APERTURA_CAJA', 'ANULACION_VENTA'];
         const updatedSales = sales.map(s => {
             // Sweep all unclosed transactions of cash flow types, resolving any "zombie" entries from previous days
             if (!s.cajaCerrada && validTiposParaCerrar.includes(s.tipo || 'VENTA')) {

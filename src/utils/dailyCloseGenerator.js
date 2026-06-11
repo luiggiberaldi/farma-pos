@@ -113,15 +113,25 @@ export async function generateDailyClosePDF({
     // ════════════════════════════════════
     y = sectionTitle('RESUMEN GENERAL', y);
 
+    const activeSalesCount = sales.filter(s => !s.relatedVoidId && s.tipo !== 'ANULACION_VENTA').length;
+    const voidCount = allSales.filter(s => s.tipo === 'ANULACION_VENTA').length;
+
     const statsRows = [
-        ['Ventas realizadas', `${sales.length}`],
+        ['Ventas realizadas', `${activeSalesCount}`],
+    ];
+
+    if (voidCount > 0) {
+        statsRows.push(['Ventas anuladas', `${voidCount}`]);
+    }
+
+    statsRows.push(
         ['Artículos vendidos', `${todayItemsSold}`],
         ['Ingresos brutos ($)', `$${todayTotalUsd.toFixed(2)}`],
         ['Ingresos brutos (Bs)', `Bs ${formatBs(todayTotalBs)}`],
         ['Ganancia estimada ($)', `$${divR(todayProfit, bcvRate).toFixed(2)}`],
         ['Ganancia estimada (Bs)', `Bs ${formatBs(todayProfit)}`],
         ['Tasa BCV', `Bs ${formatBs(bcvRate)} / $1`],
-    ];
+    );
 
     statsRows.forEach(([label, value]) => {
         doc.setFont('helvetica', 'normal');
@@ -266,7 +276,9 @@ export async function generateDailyClosePDF({
     allSales.forEach((s) => {
         const d = new Date(s.timestamp);
         const hora = d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
-        const isCanceled = s.status === 'ANULADA';
+        const isVoidedSale = s.status === 'ANULADA' || !!s.relatedVoidId;
+        const isVoidTransaction = s.tipo === 'ANULACION_VENTA';
+        const isCanceled = isVoidedSale || isVoidTransaction;
         const cliente = s.customerName || 'Consumidor Final';
 
         // Hora + Cliente + Total
@@ -276,12 +288,18 @@ export async function generateDailyClosePDF({
         doc.text(`${hora}`, M, y);
         doc.setFont('helvetica', 'normal');
         if (isCanceled) { doc.setTextColor(...RED); } else { doc.setTextColor(...BODY); }
-        const clienteStr = cliente.length > 18 ? cliente.substring(0, 18) + '…' : cliente;
+        const clienteStr = isVoidTransaction
+            ? (s.customerName ? `↩ REEMB. ${s.customerName}`.substring(0, 18) : '↩ REEMBOLSO')
+            : (cliente.length > 18 ? cliente.substring(0, 18) + '…' : cliente);
         doc.text(clienteStr, M + 12, y);
 
         doc.setFont('helvetica', 'bold');
         if (isCanceled) { doc.setTextColor(...RED); } else { doc.setTextColor(...GREEN); }
-        const totalStr = isCanceled ? 'ANULADA' : `$${(s.totalUsd || 0).toFixed(2)}`;
+        const totalStr = isVoidedSale
+            ? 'ANULADA'
+            : isVoidTransaction
+            ? `-$${Math.abs(s.totalUsd || 0).toFixed(2)}`
+            : `$${(s.totalUsd || 0).toFixed(2)}`;
         doc.text(totalStr, RIGHT, y, { align: 'right' });
         y += 4;
 

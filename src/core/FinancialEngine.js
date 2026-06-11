@@ -236,14 +236,14 @@ export class FinancialEngine {
                 safeChangeBs = 0;
             }
 
-            if (safeChangeUsd > 0) {
-                // Separate the USD change given back into its own positive entry so the
+            if (safeChangeUsd !== 0) {
+                // Separate the USD change given back into its own positive/negative entry so the
                 // "Efectivo $" row never goes negative and the change is visible in the UI.
                 if (!breakdown['vuelto_usd']) breakdown['vuelto_usd'] = { total: 0, currency: 'USD', label: 'Vuelto en $ entregado', isChange: true };
                 breakdown['vuelto_usd'].total = round2(breakdown['vuelto_usd'].total + safeChangeUsd);
             }
-            if (safeChangeBs > 0) {
-                // Separate the Bs change given back into its own positive entry so the
+            if (safeChangeBs !== 0) {
+                // Separate the Bs change given back into its own positive/negative entry so the
                 // "Efectivo Bs" row never goes negative (even when change came from a USD sale).
                 if (!breakdown['vuelto_bs']) breakdown['vuelto_bs'] = { total: 0, currency: 'BS', label: 'Vuelto en Bs entregado', isChange: true };
                 breakdown['vuelto_bs'].total = round2(breakdown['vuelto_bs'].total + safeChangeBs);

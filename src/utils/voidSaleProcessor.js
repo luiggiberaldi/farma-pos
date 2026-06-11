@@ -41,6 +41,8 @@ export async function processVoidSale(sale, currentSales, currentProducts, optio
         customerId: sale.customerId,
         customerName: sale.customerName,
         saleNumber: sale.saleNumber,
+        changeUsd: sale.changeUsd ? -(sale.changeUsd) : 0,
+        changeBs: sale.changeBs ? -(sale.changeBs) : 0,
     };
 
     const updatedSales = currentSales.map(s => {

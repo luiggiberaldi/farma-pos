@@ -27,6 +27,9 @@ export default function CierreCajaWizard({
     const [actualBs, setActualBs] = useState('');
     const [actualCop, setActualCop] = useState('');
 
+    const activeSalesCount = todaySales.filter(s => !s.relatedVoidId && s.tipo !== 'ANULACION_VENTA').length;
+    const voidSalesCount = todaySales.filter(s => s.tipo === 'ANULACION_VENTA').length;
+
     if (!isOpen) return null;
 
     const expectedUsd = (paymentBreakdown['efectivo_usd']?.total || 0) - (paymentBreakdown['vuelto_usd']?.total || 0);
@@ -155,11 +158,17 @@ export default function CierreCajaWizard({
                                 {hasCopTransactions && todayTotalCop > 0 && (
                                     <p className="text-sm font-bold text-amber-300 mt-0.5">{fmtCop(todayTotalCop)} COP</p>
                                 )}
-                                <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/20">
+                                <div className="flex items-center flex-wrap gap-4 mt-3 pt-3 border-t border-white/20">
                                     <div className="flex items-center gap-1.5">
                                         <ShoppingBag size={14} className="text-indigo-200" />
-                                        <span className="text-sm font-bold">{todaySales.length} {todaySales.length === 1 ? 'venta' : 'ventas'}</span>
+                                        <span className="text-sm font-bold">{activeSalesCount} {activeSalesCount === 1 ? 'venta' : 'ventas'}</span>
                                     </div>
+                                    {voidSalesCount > 0 && (
+                                        <div className="flex items-center gap-1.5 bg-red-500/20 px-2 py-0.5 rounded-lg border border-red-500/30">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                                            <span className="text-[11px] font-bold text-red-200">{voidSalesCount} {voidSalesCount === 1 ? 'anulación' : 'anulaciones'}</span>
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-1.5">
                                         <Package size={14} className="text-indigo-200" />
                                         <span className="text-sm font-bold">{todayItemsSold} items</span>
