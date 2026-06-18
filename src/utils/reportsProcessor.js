@@ -120,6 +120,8 @@ export function groupSalesByCierreId(allSales, from, to) {
                 totalBs,
                 totalItems,
                 paymentBreakdown,
+                // Total de operaciones del cierre (excluye APERTURA_CAJA, ya separada)
+                salesCount: c.sales.length,
             };
         })
         .sort((a, b) => b.cierreId - a.cierreId);

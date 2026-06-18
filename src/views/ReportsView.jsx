@@ -473,10 +473,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
 
             {/* Transaction List Toggle */}
             {historySales.length > 0 && (() => {
+                // Helper: una venta es "anulada" si tiene relatedVoidId (venta original)
+                // o si es una transacción de reverso (ANULACION_VENTA).
+                // En producción, status nunca llega a ser 'ANULADA'.
+                const isVoidedOrReverso = (s) => !!s.relatedVoidId || s.tipo === 'ANULACION_VENTA';
+
                 const searchedSales = historySales.filter(s => {
                     const matchesFilter = historyFilter === 'all'
-                        || (historyFilter === 'completed' && s.status !== 'ANULADA')
-                        || (historyFilter === 'voided' && s.status === 'ANULADA');
+                        || (historyFilter === 'completed' && !isVoidedOrReverso(s))
+                        || (historyFilter === 'voided' && isVoidedOrReverso(s));
                     if (!matchesFilter) return false;
                     if (!historySearch.trim()) return true;
                     const q = historySearch.toLowerCase().replace(/^#/, '');
@@ -486,8 +491,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     if (s.saleNumber && String(s.saleNumber).includes(q)) return true;
                     return false;
                 });
-                const completedInList = searchedSales.filter(s => s.status !== 'ANULADA');
-                const voidedInList = searchedSales.filter(s => s.status === 'ANULADA');
+                const completedInList = searchedSales.filter(s => !isVoidedOrReverso(s));
+                const voidedInList = searchedSales.filter(s => isVoidedOrReverso(s));
                 const sumUsd = completedInList.reduce((a, s) => a + (s.totalUsd || 0), 0);
 
                 return (

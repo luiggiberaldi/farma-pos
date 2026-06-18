@@ -88,7 +88,7 @@ export default function SalesHistory({
                         }
                     }
 
-                    const isCanceled = s.status === 'ANULADA' || !!s.relatedVoidId;
+                    const isCanceled = s.status === 'ANULADA' || !!s.relatedVoidId || s.tipo === 'ANULACION_VENTA';
                     const isExpanded = expandedSaleId === s.id;
 
                     return (

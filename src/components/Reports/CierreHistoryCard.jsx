@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, LockIcon, Printer, DollarSign, Clock, CheckCirc
 import { formatBs } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentIcon, toTitleCase, PAYMENT_ICONS } from '../../config/paymentMethods';
 import { generateDailyClosePDF } from '../../utils/dailyCloseGenerator';
+import { FinancialEngine } from '../../core/FinancialEngine';
 
 export default function CierreHistoryCard({ cierre, bcvRate, products }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -15,8 +16,12 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
     const handlePrintPDF = (e) => {
         e.stopPropagation();
         
+        // Filtrar ANULACION_VENTA para top-productos y profit:
+        // tienen items con qty negativa que distorsionarían el ranking y el margen.
+        const netSalesForStats = cierre.salesForStats.filter(s => s.tipo !== 'ANULACION_VENTA');
+
         const todayProductMap = {};
-        cierre.salesForStats.forEach(s => {
+        netSalesForStats.forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
                     if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
@@ -26,6 +31,7 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
             }
         });
         const todayTopProducts = Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
+        const todayProfit = FinancialEngine.calculateAggregateProfit(netSalesForStats, bcvRate, products);
 
         generateDailyClosePDF({
             sales: cierre.salesForCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA'),
@@ -35,7 +41,7 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
             topProducts: todayTopProducts,
             todayTotalUsd: cierre.totalUsd,
             todayTotalBs: cierre.totalBs,
-            todayProfit: 0,
+            todayProfit,
             todayItemsSold: cierre.totalItems,
             reconData: null,
             apertura: cierre.apertura,
