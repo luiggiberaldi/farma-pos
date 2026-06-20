@@ -79,7 +79,7 @@ export default function CartPanel({
                             const isSelected = cartSelectedIndex === idx;
 
                             return (
-                                <div key={item.id} className={`group bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl lg:rounded-xl p-2 pr-6 sm:p-3 sm:pr-10 lg:p-1.5 lg:pr-6 border flex items-center justify-between gap-2 lg:gap-1.5 transition-colors relative ${
+                                <div key={item.id} className={`group bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl lg:rounded-xl p-2 pr-6 sm:p-3 sm:pr-10 lg:p-1.5 lg:pr-9 border flex items-center justify-between gap-2 lg:gap-1.5 transition-colors relative ${
                                     isSelected
                                         ? 'border-emerald-500 ring-2 ring-emerald-500/20 dark:border-emerald-400 dark:ring-emerald-400/20'
                                         : 'border-slate-100 dark:border-slate-800/80 hover:border-emerald-200 dark:hover:border-emerald-800'
@@ -132,7 +132,7 @@ export default function CartPanel({
                                             <button onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} className="w-7 sm:w-8 lg:w-6 h-7 sm:h-8 lg:h-6 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors rounded-r-md active:bg-slate-200 dark:active:bg-slate-700"><Plus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
                                         </div>
                                     </div>
-                                    <button onClick={() => removeFromCart(item.id)} className="absolute -top-1 -right-1 sm:top-2 sm:right-2 p-1.5 bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity rounded-full sm:rounded-lg">
+                                    <button onClick={() => removeFromCart(item.id)} className="absolute -top-1 -right-1 sm:top-2 sm:right-2 lg:top-1.5 lg:right-1.5 p-1.5 bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity rounded-full sm:rounded-lg">
                                         <X size={12} className="sm:w-[14px] sm:h-[14px]" />
                                     </button>
                                 </div>
