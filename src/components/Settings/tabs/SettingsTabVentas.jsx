@@ -67,7 +67,7 @@ export default function SettingsTabVentas({
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Activar Cashea</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Habilita el botón Cashea en el cobro. El cliente paga su porción; Cashea financia el resto (cuenta por cobrar).</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Habilita el botón Cashea en el cobro. El cliente paga el % seleccionado; Cashea financia el resto (cuenta por cobrar).</p>
                     </div>
                     <Toggle
                         enabled={casheaEnabled}
@@ -84,7 +84,7 @@ export default function SettingsTabVentas({
                     <div className="mt-3 space-y-3">
                         <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40 rounded-xl">
                             <p className="text-[10px] font-bold text-purple-700 dark:text-purple-400 leading-relaxed">
-                                Cuando el módulo está activo, en el cobro aparece la sección <strong>Cashea</strong>. El cajero selecciona el % que financia Cashea, el cliente paga su parte con cualquier método y la venta se registra como completada. El monto de Cashea queda como cuenta por cobrar.
+                                Cuando el módulo está activo, en el cobro aparece la sección <strong>Cashea</strong>. El cajero selecciona el % que paga el cliente como cuota inicial, el cliente paga esa parte con cualquier método y la venta se registra como completada. El monto restante financiado por Cashea queda como cuenta por cobrar.
                             </p>
                         </div>
 

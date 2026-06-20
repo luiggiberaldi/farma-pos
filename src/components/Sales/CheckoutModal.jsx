@@ -41,9 +41,9 @@ export default function CheckoutModal({
     const casheaMinAmount = parseFloat(localStorage.getItem('cashea_min_amount') || '0') || 0;
     const casheaMeetsMinimum = casheaMinAmount <= 0 || cartTotalUsd >= casheaMinAmount;
     const [casheaActive, setCasheaActive] = useState(false);
-    const [casheaPercent, setCasheaPercent] = useState(40);
+    const [casheaPercent, setCasheaPercent] = useState(60);
     const CASHEA_PERCENTS = [10, 20, 30, 40, 50, 60, 70, 80];
-    const CASHEA_LEVEL_MAP = { 1: 40, 2: 50, 3: 60, 4: 70, 5: 80, 6: 90 };
+    const CASHEA_LEVEL_MAP = { 1: 60, 2: 50, 3: 40, 4: 30, 5: 20, 6: 10 };
 
     const [showCustomerPicker, setShowCustomerPicker] = useState(false);
     const [showCustomerSheet, setShowCustomerSheet] = useState(false);
@@ -88,7 +88,7 @@ export default function CheckoutModal({
     // Monto que Cashea cubre (virtual, se agrega como pago al confirmar)
     const casheaAmountUsd = useMemo(() => {
         if (!casheaActive) return 0;
-        return round2(mulR(cartTotalUsd, casheaPercent / 100));
+        return round2(mulR(cartTotalUsd, (100 - casheaPercent) / 100));
     }, [casheaActive, casheaPercent, cartTotalUsd]);
 
     // Total efectivo pagado + porción Cashea
@@ -172,7 +172,7 @@ export default function CheckoutModal({
                 amountUsd: casheaAmountUsd,
                 amountBs: mulR(casheaAmountUsd, effectiveRate),
                 isCashea: true,
-                casheaPercent,
+                casheaPercent: 100 - casheaPercent,
             });
         }
 
@@ -446,7 +446,7 @@ export default function CheckoutModal({
                             <div className="px-3 pb-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
                                 {/* % selector */}
                                 <div>
-                                    <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1.5">% que financia Cashea</p>
+                                    <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1.5">% Pago Inicial (Cliente paga hoy)</p>
                                     <div className="flex flex-wrap gap-1.5">
                                         {CASHEA_PERCENTS.map(p => (
                                             <button
@@ -476,7 +476,7 @@ export default function CheckoutModal({
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-between px-3 py-2 bg-purple-50/50 dark:bg-purple-900/10">
-                                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Cashea financia ({casheaPercent}%):</span>
+                                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Cashea financia ({100 - casheaPercent}%):</span>
                                         <div className="text-right">
                                             <span className="text-sm font-black text-purple-700 dark:text-purple-300 block">
                                                 ${casheaAmountUsd.toFixed(2)}
