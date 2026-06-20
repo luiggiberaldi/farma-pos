@@ -128,18 +128,20 @@ export default function CheckoutModal({
 
     const fillBar = useCallback((methodId, currency) => {
         triggerHaptic && triggerHaptic();
-        let val;
+        if (remainingUsd <= 0) return;
+
+        const currentVal = parseFloat(barValues[methodId]) || 0;
+        let newVal;
         if (currency === 'USD') {
-            val = remainingUsd > 0 ? round2(remainingUsd).toString() : null;
+            newVal = round2(currentVal + remainingUsd);
         } else if (currency === 'COP') {
-            val = remainingUsd > 0 ? mulR(remainingUsd, tasaCop).toString() : null;
+            newVal = round2(currentVal + mulR(remainingUsd, tasaCop));
         } else {
-            val = remainingBs > 0 ? round2(remainingBs).toString() : null;
+            newVal = round2(currentVal + remainingBs);
         }
-        if (val) {
-            setBarValues(prev => ({ ...prev, [methodId]: val }));
-        }
-    }, [remainingUsd, remainingBs, triggerHaptic, tasaCop]);
+
+        setBarValues(prev => ({ ...prev, [methodId]: newVal.toString() }));
+    }, [barValues, remainingUsd, remainingBs, triggerHaptic, tasaCop]);
 
     // Construir payments[] desde barValues al confirmar
     const handleConfirm = useCallback(() => {
