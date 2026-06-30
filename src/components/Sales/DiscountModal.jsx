@@ -30,7 +30,7 @@ export default function DiscountModal({
 
     const numValue = parseFloat(value) || 0;
 
-    const needsOverride = isCajero && !overrideGranted && type === 'percentage' && numValue > maxCajeroDiscount && maxCajeroDiscount < 100;
+    const needsOverride = isCajero && !overrideGranted && numValue > 0;
 
     let discountAmountUsd = 0;
     if (type === 'percentage') {
@@ -47,7 +47,10 @@ export default function DiscountModal({
 
     const handleSubmit = (e) => {
         e?.preventDefault();
-        if (needsOverride) return;
+        if (needsOverride) {
+            pinRef.current?.focus();
+            return;
+        }
         onApply({ type, value: numValue });
     };
 
@@ -149,9 +152,9 @@ export default function DiscountModal({
                                 autoFocus
                             />
                         </div>
-                        {isCajero && maxCajeroDiscount < 100 && (
+                        {isCajero && (
                             <p className="text-[10px] text-slate-400 text-center mt-1.5">
-                                Límite cajero: <strong>{maxCajeroDiscount}%</strong> · Para más, ingresa PIN de admin
+                                Todo descuento requiere autorización con PIN de Administrador
                             </p>
                         )}
                     </div>
@@ -162,7 +165,7 @@ export default function DiscountModal({
                             <div className="flex items-center gap-2">
                                 <ShieldAlert size={14} className="text-amber-500 shrink-0" />
                                 <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
-                                    Descuento supera el límite ({maxCajeroDiscount}%). Ingresa PIN de Administrador para autorizar.
+                                    Se requiere PIN de Administrador para autorizar este descuento.
                                 </p>
                             </div>
                             <div className="relative">
@@ -179,7 +182,6 @@ export default function DiscountModal({
                                         ? 'border-red-400 text-red-600 animate-shake'
                                         : 'border-amber-200 dark:border-amber-800 focus:border-amber-400 text-slate-700 dark:text-slate-200'
                                     }`}
-                                    autoFocus
                                     disabled={pinChecking}
                                 />
                             </div>
@@ -229,11 +231,7 @@ export default function DiscountModal({
                         </button>
                         <button
                             type="submit"
-                            disabled={needsOverride}
-                            className={`py-3.5 font-bold rounded-xl active:scale-95 transition-all outline-none shadow-lg ${needsOverride
-                                ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
-                                : 'bg-blue-500 hover:bg-blue-600 text-white shadow-blue-500/30'
-                            }`}
+                            className="py-3.5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition-all outline-none shadow-lg shadow-blue-500/30"
                         >
                             Aplicar
                         </button>
