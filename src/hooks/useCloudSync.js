@@ -163,83 +163,92 @@ let realtimeChannel = null;     // Canal Realtime para tasas/config (payloads pe
 // Intentional module-level singletons: shared across all hook instances to
 // coordinate cloud-sync echo prevention and debounce timers.
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
-let pendingPush = {};           // Debounce: { [key]: timeoutId }
 let lastSyncTime = null;        // Timestamp del último pull exitoso
 
 // Keep a reference to the native setItem for _applyFromCloud to bypass any interceptor
 const _nativeSetItem = localStorage.setItem.bind(localStorage);
 
-// Cache de hashes para evitar resubir datos idénticos (reduce egreso ~60%)
+// Cache de hashes y temporizadores para evitar saturación y envíos redundantes
 const _lastPushHash = {};
-
-function _debouncePush(key, value) {
-    if (pendingPush[key]) clearTimeout(pendingPush[key]);
-    pendingPush[key] = setTimeout(() => {
-        delete pendingPush[key];
-        pushCloudSync(key, value).catch(() => {});
-    }, 2000); // 2s debounce — agrupa cambios rápidos antes de enviar a la nube
-}
+const _pushDebounceTimers = {};
 
 /**
  * Empuja una llave al sincronizador de Supabase.
  * Llamado desde storageService (colección 'store') y el interceptor localStorage (colección 'local').
+ * Soporta un parámetro bypassDebounce para subidas iniciales o forzadas inmediatas.
  */
-export const pushCloudSync = async (key, value) => {
+export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
     if (!SYNC_KEYS.includes(key)) return;
 
-    try {
-        // Seguridad: eliminar adminPassword antes de sincronizar auth-storage a la nube
-        let sanitizedValue = value;
-        if (key === 'abasto-auth-storage') {
-            try {
-                const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-                if (parsed?.state?.adminPassword) {
-                    sanitizedValue = JSON.parse(JSON.stringify(parsed));
-                    delete sanitizedValue.state.adminPassword;
-                }
-            } catch { }
+    const performUpsert = async () => {
+        try {
+            // Seguridad: eliminar adminPassword antes de sincronizar auth-storage a la nube
+            let sanitizedValue = value;
+            if (key === 'abasto-auth-storage') {
+                try {
+                    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+                    if (parsed?.state?.adminPassword) {
+                        sanitizedValue = JSON.parse(JSON.stringify(parsed));
+                        delete sanitizedValue.state.adminPassword;
+                    }
+                } catch { }
+            }
+
+            // Egress: eliminar imágenes base64 de productos antes de subir a la nube.
+            // Las imágenes (204 KB de 218 KB por usuario) son el mayor driver de egreso.
+            // Se conservan solo en local (IndexedDB); el otro dispositivo verá el producto sin imagen.
+            if (key === 'bodega_products_v1') {
+                try {
+                    const arr = Array.isArray(sanitizedValue) ? sanitizedValue
+                        : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : sanitizedValue);
+                    if (Array.isArray(arr)) {
+                        sanitizedValue = arr.map(({ image, ...rest }) => rest);
+                    }
+                } catch { }
+            }
+
+            // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
+            const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
+            // Hash includes length + start + middle + end to catch changes anywhere in payload
+            const mid = Math.floor(serialized.length / 2);
+            const hash = serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
+            if (_lastPushHash[key] === hash) return; // Sin cambios reales → skip
+            // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
+
+            const { data: { session } } = await supabaseCloud.auth.getSession();
+            if (!session?.user?.id) return;
+
+            const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
+
+            await supabaseCloud.from('sync_documents').upsert({
+                user_id: session.user.id,
+                collection: collectionType,
+                doc_id: key,
+                data: { payload: sanitizedValue },
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,collection,doc_id' });
+
+            // Solo marcar como enviado si el push fue exitoso
+            _lastPushHash[key] = hash;
+
+        } catch (e) {
+            console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
         }
+    };
 
-        // Egress: eliminar imágenes base64 de productos antes de subir a la nube.
-        // Las imágenes (204 KB de 218 KB por usuario) son el mayor driver de egreso.
-        // Se conservan solo en local (IndexedDB); el otro dispositivo verá el producto sin imagen.
-        if (key === 'bodega_products_v1') {
-            try {
-                const arr = Array.isArray(sanitizedValue) ? sanitizedValue
-                    : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : sanitizedValue);
-                if (Array.isArray(arr)) {
-                    sanitizedValue = arr.map(({ image, ...rest }) => rest);
-                }
-            } catch { }
+    if (bypassDebounce) {
+        if (_pushDebounceTimers[key]) {
+            clearTimeout(_pushDebounceTimers[key]);
+            delete _pushDebounceTimers[key];
         }
-
-        // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
-        const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
-        // Hash includes length + start + middle + end to catch changes anywhere in payload
-        const mid = Math.floor(serialized.length / 2);
-        const hash = serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
-        if (_lastPushHash[key] === hash) return; // Sin cambios reales → skip
-        // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
-
-        const { data: { session } } = await supabaseCloud.auth.getSession();
-        if (!session?.user?.id) return;
-
-        const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
-
-        await supabaseCloud.from('sync_documents').upsert({
-            user_id: session.user.id,
-            collection: collectionType,
-            doc_id: key,
-            data: { payload: sanitizedValue },
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,collection,doc_id' });
-
-        // Solo marcar como enviado si el push fue exitoso
-        _lastPushHash[key] = hash;
-
-    } catch (e) {
-        console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
+        await performUpsert();
+    } else {
+        if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
+        _pushDebounceTimers[key] = setTimeout(() => {
+            delete _pushDebounceTimers[key];
+            performUpsert().catch(() => {});
+        }, 3000); // 3 segundos de debounce para agrupar cambios rápidos
     }
 };
 
@@ -356,7 +365,7 @@ export function useCloudSync() {
         localStorage.setItem = function (key, value) {
             originalSetItem(key, value);
             if (!isSyncingFromCloud && LOCAL_KEYS.includes(key)) {
-                _debouncePush(key, value);
+                pushCloudSync(key, value).catch(() => {});
             }
         };
 
@@ -425,7 +434,7 @@ export function useCloudSync() {
                     for (const key of SYNC_KEYS) {
                         if (LOCAL_KEYS.includes(key)) {
                             const val = localStorage.getItem(key);
-                            if (val != null) pushCloudSync(key, val).catch(() => {});
+                            if (val != null) pushCloudSync(key, val, true).catch(() => {});
                         } else {
                             const val = await lf.getItem(key);
                             // No subir arrays vacíos si la nube ya tiene datos para esta llave.
@@ -435,7 +444,7 @@ export function useCloudSync() {
                                     console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
                                     continue;
                                 }
-                                pushCloudSync(key, val).catch(() => {});
+                                pushCloudSync(key, val, true).catch(() => {});
                             }
                         }
                         // Pausa entre keys para no saturar Supabase con burst
@@ -592,9 +601,9 @@ export function useCloudSync() {
         return () => {
             localStorage.setItem = originalSetItem;
             // Clear all pending debounce timers to prevent pushes after unmount
-            for (const key of Object.keys(pendingPush)) {
-                clearTimeout(pendingPush[key]);
-                delete pendingPush[key];
+            for (const key of Object.keys(_pushDebounceTimers)) {
+                clearTimeout(_pushDebounceTimers[key]);
+                delete _pushDebounceTimers[key];
             }
             if (pollIntervalId) {
                 clearInterval(pollIntervalId);
