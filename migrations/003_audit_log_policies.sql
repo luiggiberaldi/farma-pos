@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
     ts BIGINT NOT NULL,
     cat TEXT NOT NULL,
     action TEXT NOT NULL,
-    desc TEXT,
+    "desc" TEXT,
     user_id TEXT, -- Usamos TEXT para soportar UUID locales o IDs numéricos
     user_name TEXT,
     user_role TEXT,
