@@ -245,6 +245,22 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             // Solo marcar como enviado si el push fue exitoso
             _lastPushHash[key] = hash;
 
+            // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
+            // Usa canal Broadcast en vez de postgres_changes para NO activar
+            // la decodificación lógica de WAL en la base de datos.
+            if (REALTIME_KEYS.includes(key) && realtimeChannel) {
+                try {
+                    await realtimeChannel.send({
+                        type: 'broadcast',
+                        event: 'sync_update',
+                        payload: { doc_id: key, collection: collectionType, data: sanitizedValue }
+                    });
+                } catch (bcastErr) {
+                    // No crítico: el otro dispositivo lo verá en el próximo pull
+                    console.warn('[CloudSync] Broadcast falló (no crítico):', bcastErr?.message);
+                }
+            }
+
         } catch (e) {
             console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
         }
@@ -501,27 +517,28 @@ export function useCloudSync() {
                 // Esto permite que 2 dispositivos con la misma cuenta vean
                 // cambios de tasa instantáneamente sin egreso significativo.
                 if (!realtimeChannel) {
+                    // Canal Broadcast privado por usuario.
+                    // NO usa postgres_changes → no activa decodificación lógica de WAL.
+                    // Los mensajes viajan cliente→cliente a través de los servidores de
+                    // Supabase Realtime sin pasar por la base de datos.
                     realtimeChannel = supabaseCloud
-                        .channel('sync-rates')
+                        .channel(`sync-rates-${userId}`, {
+                            config: { broadcast: { self: false } }
+                        })
                         .on(
-                            'postgres_changes',
-                            {
-                                event: 'UPDATE',
-                                schema: 'public',
-                                table: 'sync_documents',
-                                filter: `user_id=eq.${userId}`
-                            },
-                            async (payload) => {
+                            'broadcast',
+                            { event: 'sync_update' },
+                            async ({ payload }) => {
                                 if (isSyncingFromCloud) return;
-                                const { doc_id, collection, data } = payload.new;
-                                // Solo procesar llaves de Realtime (tasas/config)
+                                const { doc_id, collection, data } = payload;
+                                // Solo procesar llaves ligeras (tasas/config)
                                 if (!REALTIME_KEYS.includes(doc_id)) return;
-                                console.log(`[CloudSync] Realtime: ${doc_id} actualizado`);
-                                await _applyFromCloud(doc_id, collection, data.payload);
+                                console.log(`[CloudSync] Realtime Broadcast: ${doc_id} actualizado`);
+                                await _applyFromCloud(doc_id, collection, data);
                             }
                         )
                         .subscribe((status) => {
-                            console.log(`[CloudSync] Realtime canal: ${status}`);
+                            console.log(`[CloudSync] Realtime Broadcast canal: ${status}`);
                         });
                 }
 

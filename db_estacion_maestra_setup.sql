@@ -251,5 +251,13 @@ ALTER TABLE public.cloud_licenses ALTER COLUMN valid_until DROP DEFAULT;
 COMMENT ON COLUMN public.cloud_licenses.device_id IS
     'LEGACY: dispositivo que creó la licencia. La relación real N:N está en account_devices.';
 
--- 10. Habilitar Realtime para sync_documents (necesario para canal selectivo de tasas)
-ALTER PUBLICATION supabase_realtime ADD TABLE public.sync_documents;
+-- 10. Realtime para sync_documents — DESHABILITADO intencionalmente
+-- La tabla sync_documents fue retirada de la publicación supabase_realtime
+-- para eliminar la sobrecarga de decodificación lógica de WAL que causaba
+-- timeouts de 10-13s y errores 504/522 en el Edge con payloads JSONB pesados.
+--
+-- La sincronización en tiempo real de tasas/config se realiza ahora mediante
+-- Realtime Broadcast (cliente→cliente), que no involucra replicación lógica.
+-- Ver: migrations/002_remove_realtime_logical_decoding.sql
+-- ALTER PUBLICATION supabase_realtime ADD TABLE public.sync_documents; -- REMOVIDO
+
