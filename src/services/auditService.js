@@ -178,6 +178,11 @@ export async function syncAuditToCloud(adminEmail, deviceId) {
 
     try {
         const { supabaseCloud } = await import('../config/supabaseCloud');
+
+        // Evitar llamadas no autorizadas si no hay sesión activa
+        const { data: { session } } = await supabaseCloud.auth.getSession();
+        if (!session?.user?.id) return;
+
         const log = await storageService.getItem(AUDIT_KEY, []);
         if (!log.length) return;
 
