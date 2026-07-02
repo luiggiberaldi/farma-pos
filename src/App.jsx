@@ -371,11 +371,28 @@ export default function App() {
 
   // Global Hard Gate: Must have Cloud Session
   if (!cloudSession) {
-    return <CloudAuthModal forceLogin={true} />;
+    return (
+      <CloudAuthModal 
+        forceLogin={true} 
+        installPrompt={installPrompt} 
+        onInstall={handleInstall} 
+        showIOSButton={showIOSButton} 
+        onShowIOSInstall={() => setShowIOSInstall(true)} 
+      />
+    );
   }
 
   // Local Guard: si el PIN local aplica y no ha desbloqueado
-  if (!usuarioActivo && pinLoginEnabled) return <LockScreen />;
+  if (!usuarioActivo && pinLoginEnabled) {
+    return (
+      <LockScreen 
+        installPrompt={installPrompt} 
+        onInstall={handleInstall} 
+        showIOSButton={showIOSButton} 
+        onShowIOSInstall={() => setShowIOSInstall(true)} 
+      />
+    );
+  }
   if (!usuarioActivo) return (
     <div className="h-[100dvh] w-full bg-[#F8FAFC] flex items-center justify-center">
       <div className="w-8 h-8 rounded-full border-4 border-[#0EA5E9] border-t-transparent animate-spin" />
@@ -529,7 +546,7 @@ export default function App() {
 
       {/* iOS Install Instructions Modal */}
       {showIOSInstall && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center p-0 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-end justify-center p-0 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200">
             <div className="flex justify-between items-start mb-5">
               <div>

@@ -18,7 +18,15 @@ const C = {
     textSub:      '#64748B',
 };
 
-export default function CloudAuthModal({ isOpen, onClose, forceLogin = false }) {
+export default function CloudAuthModal({ 
+    isOpen, 
+    onClose, 
+    forceLogin = false,
+    installPrompt,
+    onInstall,
+    showIOSButton,
+    onShowIOSInstall
+}) {
     const authLogic = useCloudAuthLogic();
     const {
         inputEmail, setInputEmail,
@@ -337,6 +345,28 @@ export default function CloudAuthModal({ isOpen, onClose, forceLogin = false }) 
                                         </>
                                     )}
                                 </button>
+
+                                {/* Botón de Instalar PWA */}
+                                {installPrompt && (
+                                    <button
+                                        onClick={onInstall}
+                                        type="button"
+                                        className="w-full py-2.5 mt-2 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-slate-200"
+                                    >
+                                        <Download size={14} />
+                                        Instalar App en este equipo
+                                    </button>
+                                )}
+                                {showIOSButton && (
+                                    <button
+                                        onClick={onShowIOSInstall}
+                                        type="button"
+                                        className="w-full py-2.5 mt-2 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-slate-200"
+                                    >
+                                        <Download size={14} />
+                                        Instalar App (iOS)
+                                    </button>
+                                )}
 
                                 {!isCloudLogin && (
                                     <p className="text-[10px] text-center text-slate-400 mt-1 flex items-center justify-center gap-1">

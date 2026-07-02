@@ -4,7 +4,7 @@ import { useConfirm } from '../../hooks/useConfirm.jsx';
 import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 
-export default function LockScreen() {
+export default function LockScreen({ installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
   const { usuarios, login } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   const confirm = useConfirm();
@@ -65,6 +65,26 @@ export default function LockScreen() {
 
       {/* Footer sutil */}
       <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-3">
+        {/* Botón de Instalar PWA */}
+        {installPrompt && (
+          <button
+            onClick={onInstall}
+            className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Instalar App en este equipo
+          </button>
+        )}
+        {showIOSButton && (
+          <button
+            onClick={onShowIOSInstall}
+            className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Instalar App (iOS)
+          </button>
+        )}
+
         <p className="text-[10px] text-slate-600 font-medium tracking-wider">
           PIN de 4 digitos requerido
         </p>
