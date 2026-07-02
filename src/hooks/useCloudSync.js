@@ -18,6 +18,19 @@ export const broadcastFactoryReset = async (userId) => {
     }
 };
 
+// Exportado para forzar la recarga remota de todos los dispositivos
+export const broadcastForceReload = async (userId) => {
+    try {
+        const ch = supabaseCloud.channel(`factory-reset-${userId}`);
+        await ch.subscribe();
+        await ch.send({ type: 'broadcast', event: 'force_reload', payload: {} });
+        await new Promise(r => setTimeout(r, 800));
+        supabaseCloud.removeChannel(ch);
+    } catch (e) {
+        console.warn('[CloudSync] No se pudo broadcast force_reload:', e.message);
+    }
+};
+
 const SYNC_KEYS = [
     // ── IndexedDB (store) ──────────────────────────────────────────────────
     'bodega_products_v1',
@@ -476,6 +489,10 @@ export function useCloudSync() {
                         } catch (e) {
                             console.warn('[CloudSync] Error parcial en factory reset:', e);
                         }
+                        window.location.reload();
+                    })
+                    .on('broadcast', { event: 'force_reload' }, () => {
+                        console.log('[CloudSync] Recarga remota recibida — actualizando...');
                         window.location.reload();
                     })
                     .subscribe();

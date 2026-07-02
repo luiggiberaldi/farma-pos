@@ -15,6 +15,8 @@ export default function SettingsTabSistema({
     setIsShareOpen,
     setShowFactoryReset,
     triggerHaptic,
+    isCloudConfigured,
+    handleForceRemoteReload,
 }) {
     const [screenScale, setScreenScale] = useState(() => {
         return parseInt(localStorage.getItem('app_screen_scale') || '100');
@@ -170,6 +172,27 @@ export default function SettingsTabSistema({
             {isAdmin && (
                 <SectionCard icon={FileText} title="Bitacora de Actividad" subtitle="Registro de todas las acciones" iconColor="text-slate-500">
                     <AuditLogViewer triggerHaptic={triggerHaptic} />
+                </SectionCard>
+            )}
+
+            {/* Control de Dispositivos (Solo si la nube está activa) */}
+            {isCloudConfigured && (
+                <SectionCard icon={Monitor} title="Control de Dispositivos" subtitle="Comandos remotos" iconColor="text-sky-500">
+                    <div className="p-2.5 bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800/30 rounded-xl mb-3">
+                        <p className="text-[10px] text-sky-800 dark:text-sky-400 leading-relaxed font-bold">
+                            Envía una señal para forzar la recarga inmediata de la aplicación en todos los dispositivos de la cuenta. Útil tras realizar actualizaciones.
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleForceRemoteReload}
+                        className="w-full flex items-center gap-3 p-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/30 rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors group active:scale-[0.98]"
+                    >
+                        <div className="p-2 bg-sky-100 dark:bg-sky-900/40 rounded-lg"><RotateCcw size={18} className="text-sky-600 dark:text-sky-400" /></div>
+                        <div className="text-left flex-1">
+                            <p className="text-sm font-bold text-sky-700 dark:text-sky-400">Forzar Recarga Remota</p>
+                            <p className="text-[10px] text-sky-500/80 dark:text-sky-400/80">Recarga todos los terminales en uso</p>
+                        </div>
+                    </button>
                 </SectionCard>
             )}
 

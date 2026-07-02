@@ -7,7 +7,7 @@ import {
     ChevronRight, ShieldCheck, Package, Printer, BadgeCheck, CloudUpload
 } from 'lucide-react';
 import { storageService } from '../utils/storageService';
-import { broadcastFactoryReset } from '../hooks/useCloudSync';
+import { broadcastFactoryReset, broadcastForceReload } from '../hooks/useCloudSync';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from '../components/Settings/PaymentMethodsManager';
 import UsersManager from '../components/Settings/UsersManager';
@@ -95,6 +95,22 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         localStorage.setItem('allow_negative_stock', allowNegativeStock.toString());
         showToast('Datos guardados correctamente', 'success');
         triggerHaptic?.('light');
+    };
+
+    const handleForceRemoteReload = async () => {
+        try {
+            const { data: { session } } = await supabaseCloud.auth.getSession();
+            if (!session?.user?.id) {
+                showToast('No hay sesión activa en la nube', 'error');
+                return;
+            }
+            showToast('Enviando señal de actualización...', 'info');
+            await broadcastForceReload(session.user.id);
+            showToast('Señal de recarga enviada a los dispositivos', 'success');
+            triggerHaptic?.('success');
+        } catch (e) {
+            showToast('Error al enviar señal: ' + e.message, 'error');
+        }
     };
 
     const handleExport = async () => {
@@ -320,6 +336,8 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                             setIsShareOpen={() => setIsShareOpen(true)}
                             setShowFactoryReset={setShowFactoryReset}
                             triggerHaptic={triggerHaptic}
+                            isCloudConfigured={isCloudConfigured}
+                            handleForceRemoteReload={handleForceRemoteReload}
                         />
                     )}
 
