@@ -35,7 +35,7 @@ import { useConfirm } from './hooks/useConfirm.jsx';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
-  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installPrompt, setInstallPrompt] = useState(() => window.deferredInstallPrompt);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
 
   // Inicializar Sincronización Realtime con Supabase
@@ -207,16 +207,34 @@ export default function App() {
   useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);
 
   useEffect(() => {
-    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    const handlePromptReady = (e) => {
+      setInstallPrompt(e.detail);
+    };
+    window.addEventListener('pwa_install_prompt_ready', handlePromptReady);
+
+    // Mantener también el listener nativo por si se dispara más tarde
+    const nativeHandler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      window.deferredInstallPrompt = e;
+    };
+    window.addEventListener('beforeinstallprompt', nativeHandler);
+
+    return () => {
+      window.removeEventListener('pwa_install_prompt_ready', handlePromptReady);
+      window.removeEventListener('beforeinstallprompt', nativeHandler);
+    };
   }, []);
 
   const handleInstall = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') setInstallPrompt(null);
+    const promptEvent = installPrompt || window.deferredInstallPrompt;
+    if (!promptEvent) return;
+    promptEvent.prompt();
+    const { outcome } = await promptEvent.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+      window.deferredInstallPrompt = null;
+    }
   };
 
   const [tourDone, setTourDone] = useState(true); // TODO: re-habilitar cuando el tour esté listo
