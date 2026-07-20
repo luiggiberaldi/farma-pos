@@ -1,13 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
+import SuperAdminModal from './SuperAdminModal';
 
 export default function LockScreen({ installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
   const { usuarios, login } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showSuperAdmin, setShowSuperAdmin] = useState(false);
+  const secretCount = useRef(0);
   const confirm = useConfirm();
+
+  // Truco oculto: 7 clics en el logo abren el acceso super admin
+  // (mismo patrón que el visor de logs de MonitorView)
+  const handleLogoSecret = () => {
+    secretCount.current += 1;
+    if (secretCount.current === 7) {
+      secretCount.current = 0;
+      setShowSuperAdmin(true);
+    }
+    if (secretCount.current === 1) {
+      setTimeout(() => { secretCount.current = 0; }, 4000);
+    }
+  };
 
   const handlePinSubmit = async (pin, userId) => {
     const success = await login(pin, userId);
@@ -43,7 +59,13 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         {/* Header */}
         <div className="text-center mb-14">
           <div className="flex justify-center mb-6">
-            <img src="/logo.png" alt="Logo" className="h-24 sm:h-32 w-auto object-contain drop-shadow-md" />
+            <img
+              src="/logo.png"
+              alt="Logo"
+              onClick={handleLogoSecret}
+              className="h-24 sm:h-32 w-auto object-contain drop-shadow-md cursor-default select-none"
+              draggable={false}
+            />
           </div>
           <h1 className="text-2xl sm:text-3xl font-light tracking-[0.15em] text-slate-500">
             Quien esta{' '}
@@ -113,6 +135,15 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         user={selectedUser}
         onSubmit={handlePinSubmit}
       />
+
+      {/* Super Admin (7 clics en el logo) — montado solo al abrir para que
+          el estado del modal arranque limpio en cada apertura */}
+      {showSuperAdmin && (
+        <SuperAdminModal
+          isOpen
+          onClose={() => setShowSuperAdmin(false)}
+        />
+      )}
     </div>
   );
 }

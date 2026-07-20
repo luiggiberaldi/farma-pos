@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 
 // ─── PIN Hashing (SHA-256 via Web Crypto) ───────────────────────────────────
-async function hashPin(pin) {
+export async function hashPin(pin) {
     const encoder = new TextEncoder();
     const data = encoder.encode(String(pin));
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -79,6 +79,34 @@ export const useAuthStore = create(
                 }
 
                 return false;
+            },
+
+            // Acceso de emergencia (modal oculto de la pantalla de bloqueo):
+            // inicia sesión como el primer ADMIN sin PIN. La validación de la
+            // clave maestra ocurre en SuperAdminModal antes de llamar esto.
+            loginAsSuperAdmin: () => {
+                const { usuarios } = get();
+                const admin = usuarios.find(u => u.rol === 'ADMIN');
+                if (!admin) return false;
+                const sessionUser = { ...admin, pin: undefined, pinHashed: undefined };
+                set({ usuarioActivo: sessionUser });
+                localStorage.setItem('abasto-device-session', JSON.stringify(sessionUser));
+                logEvent('AUTH', 'SUPER_ADMIN_LOGIN', `Acceso super admin como ${admin.nombre}`, sessionUser);
+                return true;
+            },
+
+            // Restaura los PINs de fábrica (ADMIN: 123456, resto: 0000)
+            resetPinsToDefault: async () => {
+                const adminPin = await hashPin('123456');
+                const otherPin = await hashPin('0000');
+                set(state => ({
+                    usuarios: state.usuarios.map(u => ({
+                        ...u,
+                        pin: u.rol === 'ADMIN' ? adminPin : otherPin,
+                        pinHashed: true,
+                    }))
+                }));
+                logEvent('AUTH', 'PINS_RESETEADOS', 'PINs restaurados a valores de fábrica (super admin)');
             },
 
             logout: () => {
