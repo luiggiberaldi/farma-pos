@@ -330,11 +330,11 @@ export default function App() {
   // El PIN solo bloquea si requireLogin está activado Y hay cuenta cloud registrada
   const pinLoginEnabled = requireLogin && isCloudConfigured;
 
-  // Sync audit log to cloud periodically (every 5 min) when cloud is configured
+  // Sync audit log to cloud periodically (every 15 min) when cloud is configured
   useEffect(() => {
     if (!adminEmail || !deviceId) return;
     syncAuditToCloud(adminEmail, deviceId);
-    const interval = setInterval(() => syncAuditToCloud(adminEmail, deviceId), 5 * 60 * 1000);
+    const interval = setInterval(() => syncAuditToCloud(adminEmail, deviceId), 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [adminEmail, deviceId]);
 

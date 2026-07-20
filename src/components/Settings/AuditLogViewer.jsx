@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getAuditLog, getAuditCount, clearAuditLog, exportAuditLog } from '../../services/auditService';
+import { getAuditLog, getAuditCount, clearAuditLog, exportAuditLog, getCloudAuditLog } from '../../services/auditService';
+import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
 import { jsPDF } from 'jspdf';
 import {
     FileText, Download, Trash2, Filter, Shield, ShoppingCart,
     Package, Users, Settings, Database, Clock, ChevronDown, AlertTriangle,
-    Calendar, FileDown, Hash
+    Calendar, FileDown, Hash, Cloud, Smartphone
 } from 'lucide-react';
 
 const CAT_CONFIG = {
@@ -190,8 +191,31 @@ export default function AuditLogViewer({ triggerHaptic }) {
     const [pdfFrom, setPdfFrom] = useState(getLocalISODate());
     const [pdfTo, setPdfTo] = useState(getLocalISODate());
     const [isGenerating, setIsGenerating] = useState(false);
+    // Modo nube: consulta la tabla audit_log (todos los dispositivos) bajo demanda
+    const adminEmail = useAuthStore(s => s.adminEmail);
+    const isCloudConfigured = Boolean(adminEmail);
+    const [cloudMode, setCloudMode] = useState(false);
+    const [isLoadingCloud, setIsLoadingCloud] = useState(false);
 
     const loadLog = useCallback(async () => {
+        if (cloudMode) {
+            setIsLoadingCloud(true);
+            try {
+                const filters = { limit: visibleCount };
+                if (catFilter) filters.cat = catFilter;
+                const { entries: cloudEntries, total } = await getCloudAuditLog(filters);
+                setEntries(cloudEntries);
+                setTotalCount(total);
+                return;
+            } catch (err) {
+                console.warn('[AuditLogViewer] Error consultando nube:', err);
+                showToast('Sin conexión — mostrando registros locales', 'warning');
+                setCloudMode(false);
+                // continúa al modo local
+            } finally {
+                setIsLoadingCloud(false);
+            }
+        }
         const filters = {};
         if (catFilter) filters.cat = catFilter;
         filters.limit = visibleCount;
@@ -199,7 +223,7 @@ export default function AuditLogViewer({ triggerHaptic }) {
         setEntries(log);
         const count = await getAuditCount();
         setTotalCount(count);
-    }, [catFilter, visibleCount]);
+    }, [catFilter, visibleCount, cloudMode]);
 
     useEffect(() => { loadLog(); }, [loadLog]);
 
@@ -224,7 +248,13 @@ export default function AuditLogViewer({ triggerHaptic }) {
             const fromTs = new Date(pdfFrom + 'T00:00:00').getTime();
             const toTs = new Date(pdfTo + 'T23:59:59').getTime();
 
-            const filtered = await getAuditLog({ fromTs, toTs });
+            let filtered;
+            if (cloudMode) {
+                const { entries: cloudEntries } = await getCloudAuditLog({ fromTs, toTs, limit: 2000 });
+                filtered = cloudEntries;
+            } else {
+                filtered = await getAuditLog({ fromTs, toTs });
+            }
 
             if (filtered.length === 0) {
                 showToast('No hay registros en ese rango de fechas', 'warning');
@@ -251,8 +281,21 @@ export default function AuditLogViewer({ triggerHaptic }) {
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
                         {totalCount} registros
                     </span>
+                    {isLoadingCloud && (
+                        <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+                    )}
                 </div>
                 <div className="flex items-center gap-1">
+                    {isCloudConfigured && (
+                        <button
+                            onClick={() => { setCloudMode(!cloudMode); triggerHaptic?.(); }}
+                            className={`px-2 py-1.5 rounded-lg transition-all flex items-center gap-1 text-[9px] font-black uppercase tracking-wider ${cloudMode ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-500' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                            title={cloudMode ? 'Viendo todos los equipos (nube)' : 'Viendo solo este equipo'}
+                        >
+                            {cloudMode ? <Cloud size={12} /> : <Smartphone size={12} />}
+                            {cloudMode ? 'Todos' : 'Equipo'}
+                        </button>
+                    )}
                     <button
                         onClick={() => { setShowFilters(!showFilters); triggerHaptic?.(); }}
                         className={`p-2 rounded-lg transition-all ${showFilters ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
@@ -270,9 +313,11 @@ export default function AuditLogViewer({ triggerHaptic }) {
                     <button onClick={handleExportJSON} className="p-2 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all" title="Exportar JSON">
                         <Download size={14} />
                     </button>
-                    <button onClick={() => setShowClearConfirm(true)} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" title="Borrar todo">
-                        <Trash2 size={14} />
-                    </button>
+                    {!cloudMode && (
+                        <button onClick={() => setShowClearConfirm(true)} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" title="Borrar todo">
+                            <Trash2 size={14} />
+                        </button>
+                    )}
                 </div>
             </div>
 

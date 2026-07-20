@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
+import { sanitizeForPush } from './useCloudSync';
 import { useAudit } from './useAudit';
 import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
@@ -58,10 +59,13 @@ export function useCloudAuthLogic() {
 
     const collectLocalBackup = async () => {
         // Alineado con SYNC_KEYS de useCloudSync.js
+        // 'abasto_audit_log_v1' excluido: la auditoría vive en la tabla audit_log
+        // (sync incremental) y uploadLocalBackup espeja estas llaves a
+        // sync_documents — incluirla re-crearía el documento gigante en cada login.
         const idbKeys = [
             'bodega_products_v1', 'bodega_customers_v1',
             'bodega_sales_v1', 'bodega_payment_methods_v1',
-            'bodega_accounts_v2', 'abasto_audit_log_v1'
+            'bodega_accounts_v2'
         ];
         const idbData = {};
         for (const key of idbKeys) {
@@ -102,13 +106,16 @@ export function useCloudAuthLogic() {
         try {
             const { data: { session } } = await supabaseCloud.auth.getSession();
             if (session?.user?.id) {
+                // sanitizeForPush aplica las mismas reglas que el sync normal:
+                // quita adminPassword, imágenes base64 y recorta las ventas a la
+                // ventana de sync — sin esto, cada login re-inflaba los documentos.
                 const syncPayloads = [];
                 for (const [key, value] of Object.entries(backupData.data.idb || {})) {
                     syncPayloads.push({
                         user_id: session.user.id,
                         collection: 'store',
                         doc_id: key,
-                        data: { payload: value },
+                        data: { payload: sanitizeForPush(key, value) },
                         updated_at: new Date().toISOString()
                     });
                 }
@@ -119,7 +126,7 @@ export function useCloudAuthLogic() {
                         user_id: session.user.id,
                         collection: 'local',
                         doc_id: key,
-                        data: { payload: finalVal },
+                        data: { payload: sanitizeForPush(key, finalVal) },
                         updated_at: new Date().toISOString()
                     });
                 }

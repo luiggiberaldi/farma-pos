@@ -38,7 +38,9 @@ const SYNC_KEYS = [
     'bodega_sales_v1',
     'bodega_payment_methods_v1',
     'bodega_accounts_v2',
-    'abasto_audit_log_v1',
+    // 'abasto_audit_log_v1' eliminado: el audit va incremental a la tabla
+    // audit_log (auditService.syncAuditToCloud). Subir el array completo
+    // (~2-4 MB) en cada logEvent agotaba el Disk IO Budget de Supabase.
     'my_categories_v1',           // Categorías de productos
     'bodega_suppliers_v1',        // Proveedores
     'bodega_supplier_invoices_v1',// Facturas de proveedores
@@ -122,11 +124,14 @@ const MERGEABLE_KEYS = [
     'bodega_sales_v1',
     'bodega_payment_methods_v1',
     'bodega_accounts_v2',
-    'abasto_audit_log_v1',
     'my_categories_v1',
     'bodega_suppliers_v1',
     'bodega_supplier_invoices_v1',
 ];
+
+// Llaves legadas que dispositivos con versiones viejas aún pueden subir a
+// sync_documents; se ignoran al recibir para no pisar el estado local.
+const PULL_IGNORE_KEYS = ['abasto_audit_log_v1'];
 
 /**
  * Merge inteligente de arrays por ID.
@@ -170,6 +175,71 @@ function _mergeArraysById(localArr, cloudArr) {
     return Array.from(map.values());
 }
 
+// ─── Sanitización previa al push ───────────────────────────────────────────
+// Ventana de sync para ventas. El historial completo se conserva en el
+// dispositivo, en el backup de login/logout (cloud_backups) y fila por fila
+// en la tabla sales; solo la réplica en sync_documents se recorta.
+const SALES_SYNC_WINDOW_DAYS = 30;
+
+function _trimSalesForSync(arr) {
+    if (!Array.isArray(arr)) return arr;
+    const cutoff = Date.now() - SALES_SYNC_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    return arr.filter(s => {
+        const t = Date.parse(s?.timestamp || s?.updatedAt || s?.createdAt || '');
+        return isNaN(t) ? true : t >= cutoff; // sin fecha parseable → conservar
+    });
+}
+
+/**
+ * Única fuente de verdad de las transformaciones previas al upsert.
+ * La usa performUpsert y también uploadLocalBackup (useCloudAuthLogic), que
+ * espeja el backup de login a sync_documents.
+ */
+export function sanitizeForPush(key, value) {
+    let sanitizedValue = value;
+
+    // Seguridad: eliminar adminPassword antes de sincronizar auth-storage a la nube
+    if (key === 'abasto-auth-storage') {
+        try {
+            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+            if (parsed?.state?.adminPassword) {
+                sanitizedValue = JSON.parse(JSON.stringify(parsed));
+                delete sanitizedValue.state.adminPassword;
+            }
+        } catch { }
+    }
+
+    // Egress: eliminar imágenes base64 de productos antes de subir a la nube.
+    // Las imágenes (204 KB de 218 KB por usuario) son el mayor driver de egreso.
+    // Se conservan solo en local (IndexedDB); el otro dispositivo verá el producto sin imagen.
+    if (key === 'bodega_products_v1') {
+        try {
+            const arr = Array.isArray(sanitizedValue) ? sanitizedValue
+                : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : sanitizedValue);
+            if (Array.isArray(arr)) {
+                sanitizedValue = arr.map(({ image, ...rest }) => rest);
+            }
+        } catch { }
+    }
+
+    // Disk I/O: subir solo las ventas recientes; el documento completo crecía
+    // sin límite y cada venta reescribía megabytes de JSONB (TOAST + WAL).
+    if (key === 'bodega_sales_v1') {
+        try {
+            const arr = typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : sanitizedValue;
+            sanitizedValue = _trimSalesForSync(arr);
+        } catch { /* payload ilegible → subir tal cual */ }
+    }
+
+    return sanitizedValue;
+}
+
+function _computePushHash(serialized) {
+    // Hash includes length + start + middle + end to catch changes anywhere in payload
+    const mid = Math.floor(serialized.length / 2);
+    return serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
+}
+
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
 let realtimeChannel = null;     // Canal Realtime para tasas/config (payloads pequeños)
@@ -184,6 +254,19 @@ const _nativeSetItem = localStorage.setItem.bind(localStorage);
 // Cache de hashes y temporizadores para evitar saturación y envíos redundantes
 const _lastPushHash = {};
 const _pushDebounceTimers = {};
+const _pendingPushValues = {}; // último valor pendiente por llave, para flush al ocultar
+
+// Llaves con payloads grandes: debounce largo para agrupar ráfagas (ej. hora
+// pico de ventas) en un solo upsert y reducir el Disk I/O de Supabase.
+const HEAVY_KEYS = [
+    'bodega_sales_v1',
+    'bodega_products_v1',
+    'bodega_accounts_v2',
+    'bodega_customers_v1',
+    'bodega_supplier_invoices_v1',
+];
+const DEBOUNCE_MS = 3000;
+const DEBOUNCE_MS_HEAVY = 30000;
 
 /**
  * Empuja una llave al sincronizador de Supabase.
@@ -196,36 +279,11 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
 
     const performUpsert = async () => {
         try {
-            // Seguridad: eliminar adminPassword antes de sincronizar auth-storage a la nube
-            let sanitizedValue = value;
-            if (key === 'abasto-auth-storage') {
-                try {
-                    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-                    if (parsed?.state?.adminPassword) {
-                        sanitizedValue = JSON.parse(JSON.stringify(parsed));
-                        delete sanitizedValue.state.adminPassword;
-                    }
-                } catch { }
-            }
-
-            // Egress: eliminar imágenes base64 de productos antes de subir a la nube.
-            // Las imágenes (204 KB de 218 KB por usuario) son el mayor driver de egreso.
-            // Se conservan solo en local (IndexedDB); el otro dispositivo verá el producto sin imagen.
-            if (key === 'bodega_products_v1') {
-                try {
-                    const arr = Array.isArray(sanitizedValue) ? sanitizedValue
-                        : (typeof sanitizedValue === 'string' ? JSON.parse(sanitizedValue) : sanitizedValue);
-                    if (Array.isArray(arr)) {
-                        sanitizedValue = arr.map(({ image, ...rest }) => rest);
-                    }
-                } catch { }
-            }
+            const sanitizedValue = sanitizeForPush(key, value);
 
             // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
             const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
-            // Hash includes length + start + middle + end to catch changes anywhere in payload
-            const mid = Math.floor(serialized.length / 2);
-            const hash = serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
+            const hash = _computePushHash(serialized);
             if (_lastPushHash[key] === hash) return; // Sin cambios reales → skip
             // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
 
@@ -271,13 +329,32 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             clearTimeout(_pushDebounceTimers[key]);
             delete _pushDebounceTimers[key];
         }
+        delete _pendingPushValues[key];
         await performUpsert();
     } else {
+        _pendingPushValues[key] = value;
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
+        const delay = HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
         _pushDebounceTimers[key] = setTimeout(() => {
             delete _pushDebounceTimers[key];
+            delete _pendingPushValues[key];
             performUpsert().catch(() => {});
-        }, 3000); // 3 segundos de debounce para agrupar cambios rápidos
+        }, delay);
+    }
+};
+
+/**
+ * Dispara inmediatamente todos los pushes pendientes de debounce.
+ * Best-effort: se llama al ocultar/cerrar la pestaña; si el fetch se cancela,
+ * el catch-up push del próximo arranque y la cola offline de ventas cubren el hueco.
+ */
+export const flushPendingPushes = () => {
+    for (const key of Object.keys(_pushDebounceTimers)) {
+        clearTimeout(_pushDebounceTimers[key]);
+        delete _pushDebounceTimers[key];
+        const pending = _pendingPushValues[key];
+        delete _pendingPushValues[key];
+        if (pending !== undefined) pushCloudSync(key, pending, true).catch(() => {});
     }
 };
 
@@ -288,6 +365,10 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
  * para evitar sobreescribir cambios locales con datos desactualizados de la nube.
  */
 async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
+    // Llaves legadas subidas por versiones viejas de la app: ignorar para no
+    // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
+    if (PULL_IGNORE_KEYS.includes(docId)) return;
+
     // Para llaves mergeables (arrays con id), NUNCA saltamos — siempre hacemos merge
     const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
 
@@ -358,8 +439,12 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                         finalData = _mergeArraysById(localData, payload);
                         console.log(`[CloudSync] Merge ${docId}: local=${localData.length}, nube=${payload.length}, resultado=${finalData.length}`);
 
-                        // Si el merge produjo más items que la nube, re-subir el resultado
-                        if (finalData.length > payload.length) {
+                        // Si el merge produjo más items que la nube, re-subir el resultado.
+                        // Para ventas se compara la versión recortada: el local siempre
+                        // tiene más historial que la nube (ventana de N días) y comparar
+                        // el array completo causaría re-push infinito en cada poll.
+                        const pushable = docId === 'bodega_sales_v1' ? _trimSalesForSync(finalData) : finalData;
+                        if (pushable.length > payload.length) {
                             setTimeout(() => {
                                 delete _lastPushHash[docId];
                                 pushCloudSync(docId, finalData).catch(() => {});
@@ -398,6 +483,20 @@ export function useCloudSync() {
             }
         };
 
+        // Flush best-effort de pushes pendientes al ocultar/cerrar la pestaña.
+        // Con el debounce largo de HEAVY_KEYS, sin esto un cierre rápido dejaría
+        // el último cambio sin subir hasta el próximo arranque.
+        const onHiddenFlush = () => {
+            if (document.visibilityState === 'hidden') flushPendingPushes();
+        };
+        const onPageHideFlush = () => flushPendingPushes();
+        document.addEventListener('visibilitychange', onHiddenFlush);
+        window.addEventListener('pagehide', onPageHideFlush);
+        const removeFlushListeners = () => {
+            document.removeEventListener('visibilitychange', onHiddenFlush);
+            window.removeEventListener('pagehide', onPageHideFlush);
+        };
+
         if (!isCloudConfigured) {
             if (pollIntervalId) {
                 clearInterval(pollIntervalId);
@@ -409,10 +508,10 @@ export function useCloudSync() {
                 supabaseCloud.removeChannel(realtimeChannel);
                 realtimeChannel = null;
             }
-            return () => { localStorage.setItem = originalSetItem; };
+            return () => { localStorage.setItem = originalSetItem; removeFlushListeners(); };
         }
 
-        if (isInitialized.current) return () => { localStorage.setItem = originalSetItem; };
+        if (isInitialized.current) return () => { localStorage.setItem = originalSetItem; removeFlushListeners(); };
 
         const initSync = async () => {
             try {
@@ -442,6 +541,14 @@ export function useCloudSync() {
                     if (docs?.length > 0) {
                         for (const doc of docs) {
                             await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
+                            // Seed del hash-cache con lo que la nube ya tiene: el catch-up
+                            // push de abajo salta las llaves idénticas en vez de re-subir
+                            // los ~26 documentos completos en cada arranque.
+                            try {
+                                const p = doc.data.payload;
+                                const serialized = typeof p === 'string' ? p : JSON.stringify(p);
+                                _lastPushHash[doc.doc_id] = _computePushHash(serialized);
+                            } catch { /* sin seed → push normal, como antes */ }
                         }
                         console.log(`[CloudSync] Pull inicial: ${docs.length} documentos procesados.`);
                     }
@@ -634,11 +741,9 @@ export function useCloudSync() {
 
         return () => {
             localStorage.setItem = originalSetItem;
-            // Clear all pending debounce timers to prevent pushes after unmount
-            for (const key of Object.keys(_pushDebounceTimers)) {
-                clearTimeout(_pushDebounceTimers[key]);
-                delete _pushDebounceTimers[key];
-            }
+            removeFlushListeners();
+            // Empujar (no descartar) los cambios pendientes antes de desmontar
+            flushPendingPushes();
             if (pollIntervalId) {
                 clearInterval(pollIntervalId);
                 pollIntervalId = null;

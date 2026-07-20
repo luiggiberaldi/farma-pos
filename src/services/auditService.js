@@ -27,7 +27,7 @@ const AUDIT_KEY = 'abasto_audit_log_v1';
 const AUDIT_SYNC_CURSOR = 'abasto_audit_sync_cursor';
 const MAX_ENTRIES = 15000;
 const MAX_AGE_DAYS = 90;
-const SYNC_BATCH = 50; // entries per cloud push
+const SYNC_BATCH = 200; // entries per cloud push
 
 // ─── Core ──────────────────────────────────────────────
 
@@ -219,4 +219,48 @@ export async function syncAuditToCloud(adminEmail, deviceId) {
         // Silencioso — sync cloud nunca debe romper la app
         console.warn('[AuditService] Cloud sync error:', err);
     }
+}
+
+/**
+ * Lee el audit log consolidado (todos los dispositivos) desde la tabla
+ * audit_log de Supabase. RLS (migración 003) restringe al email de la cuenta.
+ *
+ * @param {object} [filters] - { cat, fromTs, toTs, limit=200, offset=0 }
+ * @returns {Promise<{entries: Array, total: number}>}
+ */
+export async function getCloudAuditLog(filters = {}) {
+    const { cat, fromTs, toTs, limit = 200, offset = 0 } = filters;
+    const { supabaseCloud } = await import('../config/supabaseCloud');
+
+    const { data: { session } } = await supabaseCloud.auth.getSession();
+    if (!session?.user) throw new Error('Sin sesión en la nube');
+
+    let q = supabaseCloud
+        .from('audit_log')
+        .select('id, ts, cat, action, desc, user_id, user_name, user_role, device_id, meta', { count: 'exact' })
+        .order('ts', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+    if (cat) q = q.eq('cat', cat);
+    if (fromTs) q = q.gte('ts', fromTs);
+    if (toTs) q = q.lte('ts', toTs);
+
+    const { data, error, count } = await q;
+    if (error) throw error;
+
+    return {
+        entries: (data || []).map(r => ({
+            id: r.id,
+            ts: Number(r.ts), // BIGINT llega como string en algunos drivers
+            cat: r.cat,
+            action: r.action,
+            desc: r.desc,
+            userId: r.user_id,
+            userName: r.user_name,
+            userRole: r.user_role,
+            deviceId: r.device_id,
+            meta: r.meta,
+        })),
+        total: count ?? 0,
+    };
 }
