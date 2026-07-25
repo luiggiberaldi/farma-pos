@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, LockIcon, Printer, DollarSign, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, LockIcon, Printer, DollarSign, Clock, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentIcon, toTitleCase, PAYMENT_ICONS } from '../../config/paymentMethods';
-import { generateDailyClosePDF } from '../../utils/dailyCloseGenerator';
+import { generateDailyClosePDF, generateDailyCloseLetterPDF } from '../../utils/dailyCloseGenerator';
 import { FinancialEngine } from '../../core/FinancialEngine';
 
 export default function CierreHistoryCard({ cierre, bcvRate, products }) {
@@ -46,6 +46,40 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
             reconData: null,
             apertura: cierre.apertura,
             isReprint: true
+        });
+    };
+
+    const handleDownloadLetterPDF = (e) => {
+        e.stopPropagation();
+        
+        const netSalesForStats = cierre.salesForStats.filter(s => s.tipo !== 'ANULACION_VENTA');
+
+        const todayProductMap = {};
+        netSalesForStats.forEach(s => {
+            if (s.items) {
+                s.items.forEach(item => {
+                    if (!todayProductMap[item.name]) todayProductMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
+                    todayProductMap[item.name].qty += item.qty;
+                    todayProductMap[item.name].revenue += item.priceUsd * item.qty;
+                });
+            }
+        });
+        const todayTopProducts = Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
+        const todayProfit = FinancialEngine.calculateAggregateProfit(netSalesForStats, bcvRate, products);
+
+        generateDailyCloseLetterPDF({
+            sales: cierre.salesForCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA'),
+            allSales: cierre.salesForStats,
+            bcvRate,
+            paymentBreakdown: cierre.paymentBreakdown,
+            topProducts: todayTopProducts,
+            todayTotalUsd: cierre.totalUsd,
+            todayTotalBs: cierre.totalBs,
+            todayProfit,
+            todayItemsSold: cierre.totalItems,
+            reconData: null,
+            apertura: cierre.apertura,
+            products
         });
     };
 
@@ -112,12 +146,18 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
                         })}
                     </div>
 
-                    <div className="pt-3 mt-1 flex gap-2">
+                    <div className="pt-3 mt-1 flex flex-col sm:flex-row gap-2">
                         <button 
                             onClick={handlePrintPDF}
-                            className="flex-1 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors active:scale-95"
+                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors active:scale-95"
                         >
-                            <Printer size={16} /> Re-imprimir PDF
+                            <Printer size={15} /> Re-imprimir Ticket PDF
+                        </button>
+                        <button 
+                            onClick={handleDownloadLetterPDF}
+                            className="flex-1 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors active:scale-95 shadow-sm"
+                        >
+                            <FileText size={15} /> Descargar PDF Carta
                         </button>
                     </div>
                 </div>

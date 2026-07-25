@@ -11,7 +11,7 @@ import SalesChart from '../components/Dashboard/SalesChart';
 import ConfirmModal from '../components/ConfirmModal';
 import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
-import { generateDailyClosePDF } from '../utils/dailyCloseGenerator';
+import { generateDailyClosePDF, generateDailyCloseLetterPDF } from '../utils/dailyCloseGenerator';
 import { processVoidSale } from '../utils/voidSaleProcessor';
 import { shareSaleWhatsApp } from '../utils/dashboardActions';
 import { useNotifications } from '../hooks/useNotifications';
@@ -386,6 +386,23 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 todayItemsSold,
                 reconData, // Pasamos los datos del cuadre al PDF
                 apertura: todayApertura, // Fondo inicial de caja
+            });
+
+            await generateDailyCloseLetterPDF({
+                sales: salesForPDF,
+                allSales: allTodayForReport,
+                bcvRate,
+                paymentBreakdown,
+                topProducts: todayTopProducts,
+                todayTotalUsd,
+                todayTotalBs,
+                todayProfit,
+                todayItemsSold,
+                reconData,
+                apertura: todayApertura,
+                copEnabled,
+                tasaCop,
+                products,
             });
         }
 

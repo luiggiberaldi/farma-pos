@@ -114,8 +114,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const handleExportPDF = async () => {
         triggerHaptic && triggerHaptic();
         try {
-            const { generateDailyClosePDF } = await import('../utils/dailyCloseGenerator');
-            await generateDailyClosePDF({
+            const { generateDailyCloseLetterPDF } = await import('../utils/dailyCloseGenerator');
+            await generateDailyCloseLetterPDF({
                 sales: salesForCashFlow,
                 allSales: salesForStats,
                 bcvRate,
@@ -125,6 +125,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 todayTotalBs: totalBs,
                 todayProfit: profit,
                 todayItemsSold: totalItems,
+                products,
             });
         } catch (e) {
             console.error('Error generando PDF:', e);
