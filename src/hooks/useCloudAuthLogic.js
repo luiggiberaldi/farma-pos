@@ -41,6 +41,27 @@ export function useCloudAuthLogic() {
     const [statusMessage, setStatusMessage] = useState('');
 
     // ─── HELPERS ──────────────────────────────────────────
+    // signInWithPassword devuelve la sesión antes de que el evento de auth
+    // termine de actualizar el cliente. Fijarla explícitamente evita que las
+    // primeras consultas REST salgan como anon y fallen con 401/RLS.
+    const ensureAuthenticatedSession = async (session) => {
+        if (!session?.access_token || !session?.refresh_token) {
+            throw new Error('La sesión no quedó activa. Vuelve a iniciar sesión.');
+        }
+        const { error: setSessionError } = await supabaseCloud.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+        });
+        if (setSessionError) throw setSessionError;
+
+        const { data: { session: activeSession }, error: sessionError } =
+            await supabaseCloud.auth.getSession();
+        if (sessionError || !activeSession?.access_token) {
+            throw new Error('La sesión no quedó activa. Vuelve a iniciar sesión.');
+        }
+        return activeSession;
+    };
+
     const applyCloudBackup = async (cloudBackup) => {
         if (!cloudBackup?.data) {
             throw new Error('El backup de la nube está vacío o es inválido.');
@@ -228,6 +249,7 @@ export function useCloudAuthLogic() {
                         email: emailToUse, password: inputPassword,
                     });
                     if (err) throw new Error('Error al iniciar: ' + err.message);
+                    await ensureAuthenticatedSession(signInData?.session);
                     // Fijar el namespace antes de leer backups o datos locales.
                     if (signInData?.user?.id) setActiveAccountId(signInData.user.id);
                 } else {
@@ -247,6 +269,7 @@ export function useCloudAuthLogic() {
                         setImportStatus('awaiting_email_confirmation');
                         return;
                     }
+                    if (data?.session) await ensureAuthenticatedSession(data.session);
                 }
             }
 
@@ -335,15 +358,20 @@ export function useCloudAuthLogic() {
             {
                 let rpcResult;
                 try {
-                    const { data } = await supabaseCloud.rpc('register_and_check_device', {
+                    const { data, error: rpcError } = await supabaseCloud.rpc('register_and_check_device', {
                         p_email: emailToUse,
                         p_device_id: deviceId || 'UNKNOWN',
                         p_device_alias: finalAlias
                     });
+                    if (rpcError) {
+                        const authFailure = rpcError.status === 401 || rpcError.code === '401'
+                            || /JWT|permission|not authenticated/i.test(rpcError.message || '');
+                        if (authFailure) throw new Error('La sesión expiró o no quedó activa. Vuelve a iniciar sesión.');
+                        throw rpcError;
+                    }
                     rpcResult = data;
                 } catch (rpcErr) {
-                    // Silenciar error si RPC aun no existe (fallback)
-                    console.warn("RPC Device Check falló", rpcErr);
+                    throw rpcErr;
                 }
 
                 if (rpcResult === 'license_inactive') {
