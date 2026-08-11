@@ -461,9 +461,23 @@ export function useCloudAuthLogic() {
             }
 
             setStatusMessage('Consultando nube...');
-            const { data: cloudRow } = await supabaseCloud
-                .from('cloud_backups').select('backup_data').eq('email', emailToUse).maybeSingle();
-            const cloudBackup = cloudRow?.backup_data || null;
+            // El backup completo es una copia de recuperación, no la fuente
+            // diaria. Consultar primero un documento operativo pequeño evita
+            // descargar varios MB en cada login cuando la cuenta ya tiene sync.
+            let cloudBackup = null;
+            const { data: syncProbe, error: syncProbeError } = await supabaseCloud
+                .from('sync_documents')
+                .select('updated_at')
+                .eq('user_id', (await supabaseCloud.auth.getUser()).data.user?.id || '')
+                .eq('collection', 'store')
+                .eq('doc_id', 'bodega_products_v1')
+                .limit(1);
+
+            if (syncProbeError || !syncProbe?.length) {
+                const { data: cloudRow } = await supabaseCloud
+                    .from('cloud_backups').select('backup_data').eq('email', emailToUse).maybeSingle();
+                cloudBackup = cloudRow?.backup_data || null;
+            }
             
             const localBackup = await collectLocalBackup();
             const hasLocalData = Object.keys(localBackup.data.idb).length > 0;
