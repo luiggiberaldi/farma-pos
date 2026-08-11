@@ -7,7 +7,7 @@
     "not_found_handling": "single-page-application",
     "binding": "ASSETS"
   },
-  "vars": {
-    "SUPABASE_SERVICE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZnendtd3J1Z2VycHRmcWZyc2pkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDcyMDY4OCwiZXhwIjoyMDkwMjk2Njg4fQ.gLIM3Iqf6BcpkX3TQ8NOTZM_qGsOSPBrGxRWDFWCPAo"
-  }
+  "vars": {}
+  // Configure before using Cloudflare Worker API routes:
+  // wrangler secret put SUPABASE_SERVICE_KEY
 }

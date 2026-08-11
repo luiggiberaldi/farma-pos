@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, ChevronRight, Copy, Check, RotateCcw } from 'lucide-react';
 import { supabaseCloud as supabase } from '../config/supabaseCloud';
-import localforage from 'localforage';
+import { offlineQueueService } from '../services/offlineQueueService';
 
 export default function SyncStatus() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -24,7 +24,7 @@ export default function SyncStatus() {
             const result = await Promise.race([pingPromise, timeoutPromise]);
             if (result.error) throw result.error;
             setIsOnline(true);
-            import('../services/offlineQueueService').then(m => m.offlineQueueService.syncPendingSales());
+            offlineQueueService.syncPendingSales().catch(() => {});
         } catch (err) {
             setIsOnline(false);
         }
@@ -32,7 +32,7 @@ export default function SyncStatus() {
 
     const checkQueue = async () => {
         try {
-            const queue = await localforage.getItem('offline_sales_queue') || [];
+            const queue = await offlineQueueService.getQueue();
             const pending = queue.filter(q => q.sync_status === 'pending');
             const failed = queue.filter(q => q.sync_status === 'failed');
             setPendingCount(pending.length);
@@ -48,7 +48,6 @@ export default function SyncStatus() {
 
     const handleDismissFailed = async (e) => {
         e.stopPropagation();
-        const { offlineQueueService } = await import('../services/offlineQueueService');
         await offlineQueueService.dismissFailed();
         setFailedCount(0);
         setFailedItems([]);
@@ -60,7 +59,6 @@ export default function SyncStatus() {
         e.stopPropagation();
         setIsRetrying(true);
         try {
-            const { offlineQueueService } = await import('../services/offlineQueueService');
             await offlineQueueService.retryFailed();
             await checkQueue();
             setShowErrorModal(false);
@@ -133,7 +131,7 @@ export default function SyncStatus() {
     const handleForceSync = () => {
         checkHealth();
         if (isOnline) {
-            import('../services/offlineQueueService').then(m => m.offlineQueueService.syncPendingSales());
+            offlineQueueService.syncPendingSales().catch(() => {});
         }
     };
 

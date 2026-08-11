@@ -1,7 +1,9 @@
 // Vercel Serverless Function — Checkout proxy
 // Upserts unknown products then calls process_checkout RPC using service_role key.
 
-const SUPABASE_URL = 'https://fgzwmwrugerptfqfrsjd.supabase.co';
+// La URL de producción debe venir de Vercel; el fallback conserva compatibilidad
+// con despliegues antiguos, pero no debe ser la fuente principal.
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://fgzwmwrugerptfqfrsjd.supabase.co';
 
 const CORS_ORIGINS = [
     'http://localhost:5173',
@@ -44,6 +46,23 @@ export default async function handler(req, res) {
     }
 
     const { cart = [] } = payload;
+
+    // Idempotencia persistente para ventas que vuelven desde la cola offline.
+    // Si el servidor ya confirmó este operation_id, devolver el resultado
+    // anterior en lugar de ejecutar nuevamente el checkout.
+    if (payload.queue_id && payload.sync_origin === 'offline_sync') {
+        const safeQueueId = encodeURIComponent(payload.queue_id);
+        const duplicateResponse = await fetch(
+            `${SUPABASE_URL}/rest/v1/sales?queue_id=eq.${safeQueueId}&select=id&limit=1`,
+            { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+        );
+        if (duplicateResponse.ok) {
+            const existing = await duplicateResponse.json();
+            if (existing?.length > 0) {
+                return res.status(200).json({ ok: true, duplicate: true, sale_id: existing[0].id });
+            }
+        }
+    }
 
     // Upsert unknown products (ON CONFLICT DO NOTHING)
     // name may be absent in offline queue entries saved before the fix — use fallback
@@ -100,5 +119,27 @@ export default async function handler(req, res) {
     });
 
     const result = await rpcRes.json();
+
+    // Estampar queue_id antes de confirmar al dispositivo. Si el marcado
+    // falla, no afirmar que la operación quedó protegida contra duplicados.
+    if (rpcRes.ok && payload.queue_id && result?.sale_id) {
+        const markResponse = await fetch(`${SUPABASE_URL}/rest/v1/sales?id=eq.${encodeURIComponent(result.sale_id)}`, {
+            method: 'PATCH',
+            headers: {
+                apikey: SERVICE_KEY,
+                Authorization: `Bearer ${SERVICE_KEY}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({ queue_id: payload.queue_id }),
+        });
+        if (!markResponse.ok) {
+            return res.status(502).json({
+                error: 'La venta fue procesada, pero no se pudo confirmar su idempotencia.',
+                retryable: true,
+            });
+        }
+    }
+
     return res.status(rpcRes.ok ? 200 : rpcRes.status).json(result);
 }

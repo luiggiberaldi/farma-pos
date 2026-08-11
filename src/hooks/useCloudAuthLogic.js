@@ -6,6 +6,7 @@ import { sanitizeForPush } from './useCloudSync';
 import { useAudit } from './useAudit';
 import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
+import { setActiveAccountId } from '../config/storageScope';
 
 export function useCloudAuthLogic() {
     // Tomamos businessName del localStorage directamente
@@ -223,10 +224,12 @@ export function useCloudAuthLogic() {
 
             if (supabaseCloud) {
                 if (isCloudLogin) {
-                    const { error: err } = await supabaseCloud.auth.signInWithPassword({
+                    const { data: signInData, error: err } = await supabaseCloud.auth.signInWithPassword({
                         email: emailToUse, password: inputPassword,
                     });
                     if (err) throw new Error('Error al iniciar: ' + err.message);
+                    // Fijar el namespace antes de leer backups o datos locales.
+                    if (signInData?.user?.id) setActiveAccountId(signInData.user.id);
                 } else {
                     const { data, error: err } = await supabaseCloud.auth.signUp({
                         email: emailToUse, password: inputPassword,
@@ -281,7 +284,7 @@ export function useCloudAuthLogic() {
                         // No existe el registro (ej: usuario confirmó email pero licencia no se creó)
                         const trialExpiry = new Date();
                         trialExpiry.setDate(trialExpiry.getDate() + 7);
-                        await supabaseCloud.from('cloud_licenses').upsert({
+                        const { error: licenseError } = await supabaseCloud.from('cloud_licenses').upsert({
                             email: emailToUse,
                             device_id: deviceId || 'UNKNOWN',
                             license_type: 'trial',
@@ -291,7 +294,8 @@ export function useCloudAuthLogic() {
                             phone: meta.phone || '',
                             active: true,
                             updated_at: new Date().toISOString()
-                        }, { onConflict: 'email' }).catch(e => console.warn('[Login] No se pudo crear licencia inicial:', e.message));
+                        }, { onConflict: 'email' });
+                        if (licenseError) console.warn('[Login] No se pudo crear licencia inicial:', licenseError.message);
                         if (meta.full_name) localStorage.setItem('business_name', meta.full_name);
                         if (meta.phone) localStorage.setItem('business_phone', meta.phone);
                     } else if (!lic.phone || !lic.business_name) {
@@ -301,10 +305,10 @@ export function useCloudAuthLogic() {
                         if (!lic.business_name && meta.full_name) updateFields.business_name = meta.full_name;
                         if (Object.keys(updateFields).length > 0) {
                             updateFields.updated_at = new Date().toISOString();
-                            await supabaseCloud.from('cloud_licenses')
+                            const { error: profileError } = await supabaseCloud.from('cloud_licenses')
                                 .update(updateFields)
-                                .eq('email', emailToUse)
-                                .catch(e => console.warn('[Login] No se pudo completar perfil:', e.message));
+                                .eq('email', emailToUse);
+                            if (profileError) console.warn('[Login] No se pudo completar perfil:', profileError.message);
                             if (updateFields.business_name) localStorage.setItem('business_name', updateFields.business_name);
                             if (updateFields.phone) localStorage.setItem('business_phone', updateFields.phone);
                         }

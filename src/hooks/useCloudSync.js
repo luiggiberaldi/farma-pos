@@ -477,8 +477,6 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
 
 // ─── Hook de React ─────────────────────────────────────────────────────────
 export function useCloudSync() {
-    const adminEmail = useAuthStore(s => s.adminEmail);
-    const adminPassword = useAuthStore(s => s.adminPassword);
     const [authEpoch, setAuthEpoch] = useState(0);
     // El sincronizador debe reaccionar al cambio real de sesión, aunque el
     // auth-storage local todavía no tenga adminEmail.
@@ -799,5 +797,8 @@ export function useCloudSync() {
                 delete window.__cloudSyncVisibilityListener;
             }
         };
-    }, [isCloudConfigured, adminEmail, adminPassword, authEpoch]);
+    // La sesión de Supabase, no las credenciales persistidas localmente, controla
+    // el ciclo de vida del sincronizador. Evita repetir el pull cuando solo cambia
+    // el estado local de autenticación.
+    }, [authEpoch, isCloudConfigured]);
 }

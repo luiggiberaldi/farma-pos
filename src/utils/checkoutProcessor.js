@@ -71,6 +71,7 @@ export async function processSaleTransaction({
 
     let saleMode = 'online';
     let finalSaleId = null;
+    let offlineQueueEntry = null;
 
     if (navigator.onLine) {
        try {
@@ -94,8 +95,9 @@ export async function processSaleTransaction({
     }
 
     if (saleMode === 'offline') {
-       // Delegar a la cola de emergencia
-       await offlineQueueService.addSaleToQueue(rpcPayload);
+       // Persistir primero en una cola aislada por cuenta y con una clave
+       // idempotente para sobrevivir a apagones y reintentos.
+       offlineQueueEntry = await offlineQueueService.addSaleToQueue(rpcPayload);
     }
 
     // ── GESTIÓN DE CACHÉ LOCAL (Para no bloquear al usuario) ──
@@ -109,7 +111,8 @@ export async function processSaleTransaction({
     const tipoVenta = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA');
 
     const sale = {
-        id: finalSaleId || crypto.randomUUID(),
+        id: finalSaleId || offlineQueueEntry?.queue_id || crypto.randomUUID(),
+        syncQueueId: offlineQueueEntry?.queue_id || null,
         tipo: tipoVenta,
         status: saleMode === 'online' ? 'COMPLETADA' : 'PENDIENTE_SYNC',
         items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),

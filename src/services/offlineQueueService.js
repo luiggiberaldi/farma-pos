@@ -1,92 +1,221 @@
 import localforage from 'localforage';
+import {
+  APP_STORAGE_DB_NAME,
+  APP_STORAGE_STORE_NAME,
+  getActiveAccountId,
+  getScopedStorageKey,
+} from '../config/storageScope';
+import {
+  MAX_QUEUE_ATTEMPTS,
+  isQueueItemDue,
+  nextRetryAt,
+  pruneSyncedItems,
+} from './offlineQueuePolicy';
 
 const QUEUE_KEY = 'offline_sales_queue';
-const MAX_ATTEMPTS = 10;
+const SALES_KEY = 'bodega_sales_v1';
+const DEVICE_KEY = 'pda_device_id';
+
+localforage.config({
+  name: APP_STORAGE_DB_NAME,
+  storeName: APP_STORAGE_STORE_NAME,
+});
+
+let syncInFlight = false;
+
+function newOperationId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getQueueStorageKey() {
+  const accountId = getActiveAccountId();
+  return accountId ? getScopedStorageKey(QUEUE_KEY) : null;
+}
+
+function getDeviceId() {
+  if (typeof localStorage === 'undefined') return 'unknown-device';
+  return localStorage.getItem(DEVICE_KEY) || 'unknown-device';
+}
+
+function notifyQueueChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('offline_queue_update'));
+  }
+}
+
+async function readQueue() {
+  const key = getQueueStorageKey();
+  if (!key) return [];
+  const queue = await localforage.getItem(key);
+  return Array.isArray(queue) ? queue : [];
+}
+
+async function writeQueue(queue) {
+  const key = getQueueStorageKey();
+  if (!key) throw new Error('No hay una cuenta activa para guardar la cola offline.');
+  await localforage.setItem(key, queue);
+  notifyQueueChanged();
+}
+
+async function markLocalSaleSynced(item, serverData) {
+  const key = getActiveAccountId() ? getScopedStorageKey(SALES_KEY) : null;
+  if (!key) return;
+
+  const sales = await localforage.getItem(key);
+  if (!Array.isArray(sales)) return;
+
+  const updated = sales.map(sale => {
+    const matches = sale.syncQueueId === item.queue_id || sale.id === item.queue_id;
+    if (!matches) return sale;
+    return {
+      ...sale,
+      status: 'COMPLETADA',
+      syncMode: 'online_after_retry',
+      remoteSaleId: serverData?.sale_id || sale.remoteSaleId || null,
+      syncedAt: new Date().toISOString(),
+    };
+  });
+
+  if (JSON.stringify(updated) !== JSON.stringify(sales)) {
+    await localforage.setItem(key, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('app_storage_update', {
+        detail: { key: SALES_KEY, source: 'offline_queue' },
+      }));
+    }
+  }
+}
 
 export const offlineQueueService = {
   async addSaleToQueue(salePayload) {
-    const queue = await localforage.getItem(QUEUE_KEY) || [];
-    const newEntry = {
-      id: crypto.randomUUID(),
+    const accountId = getActiveAccountId();
+    if (!accountId) {
+      throw new Error('No se puede encolar una venta sin cuenta activa.');
+    }
+
+    const queue = await readQueue();
+    const operationId = salePayload.queue_id || salePayload.operation_id || newOperationId();
+    const existing = queue.find(item => item.queue_id === operationId);
+    if (existing) return existing;
+
+    const entry = {
+      id: operationId,
+      queue_id: operationId,
+      operation_id: operationId,
+      account_id: accountId,
+      device_id: getDeviceId(),
       payload: salePayload,
       created_at: new Date().toISOString(),
       sync_status: 'pending',
-      attempts: 0
+      attempts: 0,
+      next_attempt_at: null,
+      last_error: null,
     };
-    await localforage.setItem(QUEUE_KEY, [...queue, newEntry]);
-    return newEntry;
+
+    await writeQueue([...queue, entry]);
+    return entry;
+  },
+
+  async getQueue() {
+    return readQueue();
+  },
+
+  async getCounts() {
+    const queue = await readQueue();
+    return {
+      pending: queue.filter(item => item.sync_status === 'pending').length,
+      failed: queue.filter(item => item.sync_status === 'failed').length,
+      synced: queue.filter(item => item.sync_status === 'synced').length,
+    };
   },
 
   async syncPendingSales() {
-    const queue = await localforage.getItem(QUEUE_KEY) || [];
-    const pending = queue.filter(q => q.sync_status === 'pending');
+    if (syncInFlight || typeof navigator !== 'undefined' && !navigator.onLine) return;
+    const accountId = getActiveAccountId();
+    if (!accountId) return;
 
-    if (pending.length === 0) return;
+    syncInFlight = true;
+    try {
+      let queue = pruneSyncedItems(await readQueue());
+      const now = Date.now();
+      const pending = queue.filter(item => item.account_id === accountId && isQueueItemDue(item, now));
 
-    let updatedQueue = [...queue];
+      for (const item of pending) {
+        try {
+          const payloadWithOrigin = {
+            ...item.payload,
+            sync_origin: 'offline_sync',
+            original_created_at: item.created_at,
+            queue_id: item.queue_id,
+            account_id: item.account_id,
+            device_id: item.device_id,
+          };
 
-    for (const item of pending) {
-      try {
-        const payloadWithOrigin = {
-          ...item.payload,
-          sync_origin: 'offline_sync',
-          original_created_at: item.created_at,
-          queue_id: item.id,  // Clave de idempotencia: evita duplicar ventas en reintentos
-        };
+          const res = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payloadWithOrigin),
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await res.json().catch(() => ({}));
 
-        const res = await fetch('/api/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadWithOrigin),
-          signal: AbortSignal.timeout(10000),
-        });
+          if (!res.ok || data.error || data.code) {
+            throw new Error(data.message || data.error || `HTTP ${res.status}`);
+          }
 
-        const data = await res.json();
-
-        if (!res.ok || data.error || data.code) {
-          throw new Error(data.message || data.error || `HTTP ${res.status}`);
+          queue = queue.map(q => q.id === item.id ? {
+            ...q,
+            sync_status: 'synced',
+            synced_at: new Date().toISOString(),
+            last_error: null,
+          } : q);
+          await markLocalSaleSynced(item, data);
+        } catch (err) {
+          const attempts = (item.attempts || 0) + 1;
+          queue = queue.map(q => q.id === item.id ? {
+            ...q,
+            attempts,
+            sync_status: attempts >= MAX_QUEUE_ATTEMPTS ? 'failed' : 'pending',
+            next_attempt_at: attempts >= MAX_QUEUE_ATTEMPTS ? null : nextRetryAt(attempts),
+            last_error: err?.message || 'Error desconocido',
+          } : q);
         }
 
-        updatedQueue = updatedQueue.map(q => q.id === item.id ? { ...q, sync_status: 'synced', synced_at: new Date().toISOString() } : q);
-      } catch (err) {
-        console.error('[Offline Sync] Fallo al sincronizar venta offline:', err);
-        const newAttempts = (item.attempts || 0) + 1;
-        const newStatus = newAttempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
-        updatedQueue = updatedQueue.map(q => q.id === item.id ? { ...q, attempts: newAttempts, sync_status: newStatus, last_error: err?.message || 'Error desconocido' } : q);
+        // Persistir después de cada operación: un apagón no pierde el progreso.
+        await writeQueue(queue);
       }
-    }
 
-    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    const remaining = updatedQueue.filter(q => {
-      if (q.sync_status === 'pending' || q.sync_status === 'failed') return true;
-      if (q.sync_status === 'synced' && q.synced_at) {
-        return (now - new Date(q.synced_at).getTime()) < TWENTY_FOUR_HOURS;
-      }
-      return false;
-    });
-    await localforage.setItem(QUEUE_KEY, remaining);
+      await writeQueue(pruneSyncedItems(queue));
+    } finally {
+      syncInFlight = false;
+    }
   },
 
   async retryFailed() {
-    const queue = await localforage.getItem(QUEUE_KEY) || [];
-    const reset = queue.map(q => q.sync_status === 'failed' ? { ...q, sync_status: 'pending', attempts: 0, last_error: null } : q);
-    await localforage.setItem(QUEUE_KEY, reset);
-    await offlineQueueService.syncPendingSales();
+    const queue = await readQueue();
+    const reset = queue.map(item => item.sync_status === 'failed'
+      ? { ...item, sync_status: 'pending', attempts: 0, next_attempt_at: null, last_error: null }
+      : item);
+    await writeQueue(reset);
+    await this.syncPendingSales();
   },
 
   async dismissFailed() {
-    const queue = await localforage.getItem(QUEUE_KEY) || [];
-    await localforage.setItem(QUEUE_KEY, queue.filter(q => q.sync_status !== 'failed'));
+    const queue = await readQueue();
+    await writeQueue(queue.filter(item => item.sync_status !== 'failed'));
   },
 
   async getFailedCount() {
-    const queue = await localforage.getItem(QUEUE_KEY) || [];
-    return queue.filter(q => q.sync_status === 'failed').length;
-  }
+    const { failed } = await this.getCounts();
+    return failed;
+  },
 };
 
-window.addEventListener('online', () => {
-    console.log("[Offline Sync] Internet restaurado. Sincronizando ventas pendientes...");
-    offlineQueueService.syncPendingSales();
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    offlineQueueService.syncPendingSales().catch(error => {
+      console.warn('[Offline Sync] Reintento automático falló:', error?.message || error);
+    });
+  });
+}
