@@ -62,6 +62,14 @@ export function useCloudAuthLogic() {
         return activeSession;
     };
 
+    const notifyCloudLoginCompleted = async () => {
+        localStorage.removeItem('pda_explicit_login');
+        const { data: { session } } = await supabaseCloud.auth.getSession();
+        window.dispatchEvent(new CustomEvent('cloud_login_completed', {
+            detail: { session },
+        }));
+    };
+
     const applyCloudBackup = async (cloudBackup) => {
         if (!cloudBackup?.data) {
             throw new Error('El backup de la nube está vacío o es inválido.');
@@ -185,10 +193,12 @@ export function useCloudAuthLogic() {
         try {
             if (choice === 'cloud') {
                 await applyCloudBackup(cloudBackup);
+                localStorage.removeItem('pda_explicit_login');
                 showToast('Datos de la nube restaurados. Reiniciando...', 'success');
                 setTimeout(() => window.location.reload(), 1500);
             } else {
                 await uploadLocalBackup(email, localBackup);
+                await notifyCloudLoginCompleted();
                 showToast('Datos locales guardados en la nube', 'success');
             }
             setAdminCredentials(email, inputPassword);
@@ -242,6 +252,11 @@ export function useCloudAuthLogic() {
         try {
             setImportStatus('loading');
             setStatusMessage('Autenticando...');
+            // App.jsx escucha SIGNED_IN en paralelo. Marcar el login explícito
+            // antes de llamar a Supabase evita que ese listener confunda esta
+            // estación nueva con un auto-login y cierre la sesión por no verla
+            // todavía en account_devices.
+            localStorage.setItem('pda_explicit_login', 'true');
 
             if (supabaseCloud) {
                 if (isCloudLogin) {
@@ -529,11 +544,13 @@ export function useCloudAuthLogic() {
                     }
                 } catch (e) { /* silencioso */ }
             }
+            await notifyCloudLoginCompleted();
             showToast('Sincronizado', 'success');
             setImportStatus(null);
             setStatusMessage('');
 
         } catch (error) {
+            localStorage.removeItem('pda_explicit_login');
             showToast(error.message, 'error');
             setImportStatus('error');
             setStatusMessage('');

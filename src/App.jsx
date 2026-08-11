@@ -129,9 +129,12 @@ export default function App() {
                 if (mounted) { setCloudSession(null); setCheckingSession(false); }
                 return;
             }
-        } else {
-            localStorage.removeItem('pda_explicit_login');
         }
+
+        // El flujo de login explícito ya verifica el dispositivo en
+        // CloudAuthModal. Evitar una segunda RPC en paralelo elimina la carrera
+        // que podía cerrar la sesión antes de mostrar los dispositivos.
+        if (isExplicitLogin) return;
 
         const { data: result, error } = await supabaseCloud.rpc('register_and_check_device', {
           p_email: email,
@@ -168,8 +171,9 @@ export default function App() {
           }
           // Verificación exitosa — guardar timestamp del cache
           localStorage.setItem(DEVICE_CHECK_CACHE_KEY, String(Date.now()));
+          if (isExplicitLogin) localStorage.removeItem('pda_explicit_login');
         }
-        // Si la RPC no existe aún (error), deja pasar sin bloquear
+        // Si la RPC no existe aún (error), el login explícito lo procesa el modal.
       } catch {
         // Sin conexión o RPC pendiente — dejar pasar
       }
@@ -179,6 +183,15 @@ export default function App() {
         setCheckingSession(false);
       }
     };
+
+    const onCloudLoginCompleted = (event) => {
+      const session = event.detail?.session;
+      if (session?.user?.email && mounted) {
+        setCloudSession(session);
+        setCheckingSession(false);
+      }
+    };
+    window.addEventListener('cloud_login_completed', onCloudLoginCompleted);
 
     supabaseCloud.auth.getSession().then(({ data: { session } }) => {
       applySession(session);
@@ -196,6 +209,7 @@ export default function App() {
 
     return () => {
       mounted = false;
+      window.removeEventListener('cloud_login_completed', onCloudLoginCompleted);
       subscription.unsubscribe();
     };
   }, []);
