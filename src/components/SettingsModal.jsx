@@ -7,6 +7,7 @@ import PaymentMethodsManager from './Settings/PaymentMethodsManager';
 
 import { useSecurity } from '../hooks/useSecurity';
 import { useProductContext } from '../context/ProductContext';
+import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey } from '../config/storageScope';
 
 export default function SettingsModal({ isOpen, onClose, products, onImport, triggerHaptic }) {
     const { 
@@ -116,12 +117,12 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
 
                 // Bypass storageService completely to prevent app_storage_update events from firing.
                 // If events fire, ProductContext updates state and triggers its auto-save, which might overwrite our imported data before reload finishes.
-                const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                const lf = localforage.createInstance({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
 
                 // ── v2.0 format: { data: { idb: {...}, ls: {...} } } ──
                 if (json.version === '2.0' && json.data.idb) {
                     for (const [key, value] of Object.entries(json.data.idb)) {
-                        await lf.setItem(key, value);
+                        await lf.setItem(getScopedStorageKey(key), value);
                     }
                     if (json.data.ls) {
                         for (const [key, value] of Object.entries(json.data.ls)) {
@@ -132,10 +133,10 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                 // ── v1 legacy format: flat keys directly under data ──
 
                 if (json.data.bodega_products_v1) {
-                    await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+                    await lf.setItem(getScopedStorageKey('bodega_products_v1'), typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
                 }
                 if (json.data.bodega_accounts_v2) {
-                    await lf.setItem('bodega_accounts_v2', typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
+                    await lf.setItem(getScopedStorageKey('bodega_accounts_v2'), typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
                 }
 
                 if (json.data.street_rate_bs) localStorage.setItem('street_rate_bs', json.data.street_rate_bs);

@@ -32,6 +32,7 @@ import { purgeOldEntries, syncAuditToCloud } from './services/auditService';
 import { useCloudSync } from './hooks/useCloudSync';
 import { supabaseCloud } from './config/supabaseCloud';
 import { useConfirm } from './hooks/useConfirm.jsx';
+import { setActiveAccountId } from './config/storageScope';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
@@ -84,12 +85,15 @@ export default function App() {
       if (!mounted) return;
 
       if (!session?.user?.email) {
+        setActiveAccountId(null);
         setCloudSession(null);
         setCheckingSession(false);
         return;
       }
 
       const email = session.user.email.toLowerCase();
+      // Se fija antes de montar ProductProvider para que IndexedDB nunca lea otra cuenta.
+      setActiveAccountId(session.user.id);
       const deviceId = localStorage.getItem('pda_device_id') || 'UNKNOWN';
 
       try {
@@ -183,7 +187,11 @@ export default function App() {
     const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (event === 'SIGNED_IN') applySession(session);
-      else if (event === 'SIGNED_OUT') { setCloudSession(null); setCheckingSession(false); }
+      else if (event === 'SIGNED_OUT') {
+        setActiveAccountId(null);
+        setCloudSession(null);
+        setCheckingSession(false);
+      }
     });
 
     return () => {

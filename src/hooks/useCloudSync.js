@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
+import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
 
 // Exportado para que SettingsView pueda enviar el broadcast antes de hacer signOut
 export const broadcastFactoryReset = async (userId) => {
@@ -119,7 +120,7 @@ const POLLING_ONLY_KEYS = SYNC_KEYS.filter(k => !REALTIME_KEYS.includes(k));
 // se hace merge por ID: se combinan items locales + nube, y si ambos tienen
 // el mismo ID, gana el que tenga updatedAt/createdAt más reciente.
 const MERGEABLE_KEYS = [
-    'bodega_products_v1',
+    // El inventario no se mezcla: la cuenta/nube activa es la fuente de verdad.
     'bodega_customers_v1',
     'bodega_sales_v1',
     'bodega_payment_methods_v1',
@@ -247,6 +248,8 @@ let realtimeChannel = null;     // Canal Realtime para tasas/config (payloads pe
 // coordinate cloud-sync echo prevention and debounce timers.
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
 let lastSyncTime = null;        // Timestamp del último pull exitoso
+let initialSyncReady = false;   // Bloquea pushes hasta hidratar la cuenta activa
+let activeSyncUserId = null;    // Evita reutilizar el estado de otra cuenta
 
 // Keep a reference to the native setItem for _applyFromCloud to bypass any interceptor
 const _nativeSetItem = localStorage.setItem.bind(localStorage);
@@ -276,6 +279,9 @@ const DEBOUNCE_MS_HEAVY = 30000;
 export const pushCloudSync = async (key, value, bypassDebounce = false) => {
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
     if (!SYNC_KEYS.includes(key)) return;
+    // Nunca enviar datos locales antes de terminar el pull inicial de la cuenta.
+    // Esto evita que otro sistema o la cuenta anterior contamine la nube activa.
+    if (!initialSyncReady) return;
 
     const performUpsert = async () => {
         try {
@@ -369,18 +375,21 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
     if (PULL_IGNORE_KEYS.includes(docId)) return;
 
-    // Para llaves mergeables (arrays con id), NUNCA saltamos — siempre hacemos merge
+    // El inventario de la cuenta activa es autoritativo: no se mezcla ni se
+    // bloquea por timestamps locales heredados de otro sistema.
+    const isInventory = docId === 'bodega_products_v1' && collection === 'store';
+    // Para llaves mergeables (excepto inventario), se conserva el merge por ID.
     const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
 
-    // Protección contra sobreescritura para llaves NO mergeables
-    if (!isMergeable && cloudUpdatedAt) {
+    // Protección contra sobreescritura para llaves NO mergeables/no inventario.
+    if (!isMergeable && !isInventory && cloudUpdatedAt) {
         try {
-            const localTs = localStorage.getItem('_sync_local_ts_' + docId);
+            const localTs = localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
             if (localTs && localTs > cloudUpdatedAt) {
                 console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
                 const { default: lf } = await import('localforage');
-                lf.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
-                const localData = await lf.getItem(docId);
+                lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
+                const localData = await lf.getItem(getScopedStorageKey(docId));
                 if (localData !== null) {
                     delete _lastPushHash[docId];
                     pushCloudSync(docId, localData).catch(() => {});
@@ -427,14 +436,14 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
         } else {
             // Colección 'store' → IndexedDB
             const { default: localforage } = await import('localforage');
-            localforage.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+            localforage.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
 
             let finalData = payload;
 
             // Merge inteligente para arrays con ID (ventas, productos, clientes, etc.)
             if (isMergeable && Array.isArray(payload)) {
                 try {
-                    const localData = await localforage.getItem(docId);
+                    const localData = await localforage.getItem(getScopedStorageKey(docId));
                     if (Array.isArray(localData)) {
                         finalData = _mergeArraysById(localData, payload);
                         console.log(`[CloudSync] Merge ${docId}: local=${localData.length}, nube=${payload.length}, resultado=${finalData.length}`);
@@ -456,10 +465,10 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                 }
             }
 
-            await localforage.setItem(docId, finalData);
+            await localforage.setItem(getScopedStorageKey(docId), finalData);
 
             // Notificar a los componentes React que lean este store
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'cloud' } }));
         }
     } finally {
         isSyncingFromCloud = false;
@@ -470,7 +479,21 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
 export function useCloudSync() {
     const adminEmail = useAuthStore(s => s.adminEmail);
     const adminPassword = useAuthStore(s => s.adminPassword);
-    const isCloudConfigured = Boolean(adminEmail);
+    const [authEpoch, setAuthEpoch] = useState(0);
+    // El sincronizador debe reaccionar al cambio real de sesión, aunque el
+    // auth-storage local todavía no tenga adminEmail.
+    useEffect(() => {
+        const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event) => {
+            if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+                setAuthEpoch(value => value + 1);
+            }
+        });
+        return () => subscription.unsubscribe();
+    }, []);
+
+    // La sesión de Supabase es la fuente de verdad; no bloquear el pull por
+    // depender de una preferencia local que puede estar vacía o ser antigua.
+    const isCloudConfigured = true;
     const isInitialized = useRef(false);
 
     useEffect(() => {
@@ -498,6 +521,8 @@ export function useCloudSync() {
         };
 
         if (!isCloudConfigured) {
+            initialSyncReady = false;
+            activeSyncUserId = null;
             if (pollIntervalId) {
                 clearInterval(pollIntervalId);
                 pollIntervalId = null;
@@ -517,10 +542,22 @@ export function useCloudSync() {
             try {
                 let session = (await supabaseCloud.auth.getSession()).data.session;
 
-                if (!session?.user?.id) return;
+                if (!session?.user?.id) {
+                    initialSyncReady = false;
+                    activeSyncUserId = null;
+                    setActiveAccountId(null);
+                    return;
+                }
 
-                isInitialized.current = true;
                 const userId = session.user.id;
+                // Asegurar el namespace correcto antes de leer o escribir IndexedDB.
+                setActiveAccountId(userId);
+                if (activeSyncUserId !== userId) {
+                    initialSyncReady = false;
+                    activeSyncUserId = userId;
+                    for (const key of Object.keys(_lastPushHash)) delete _lastPushHash[key];
+                }
+                isInitialized.current = true;
 
                 // ── Pull Inicial: descarga todos los documentos ──────────────
                 // Saltarse si acaba de hacerse una importación local (el flag evita que
@@ -531,11 +568,12 @@ export function useCloudSync() {
                     sessionStorage.removeItem('skip_cloud_pull');
                     console.log('[CloudSync] Pull inicial omitido (importación reciente).');
                 } else {
-                    const { data } = await supabaseCloud
+                    const { data, error } = await supabaseCloud
                         .from('sync_documents')
                         .select('collection, doc_id, data, updated_at')
                         .eq('user_id', userId)
                         .in('collection', ['store', 'local']);
+                    if (error) throw error;
                     docs = data;
 
                     if (docs?.length > 0) {
@@ -555,6 +593,8 @@ export function useCloudSync() {
                 }
 
                 lastSyncTime = new Date().toISOString();
+                // Desde este punto los cambios nuevos de esta cuenta sí pueden subir.
+                initialSyncReady = true;
 
                 // ── Catch-up push: subir datos locales que la nube no tiene ──
                 // Asegura que claves recién agregadas al sync (ej. categorías, proveedores,
@@ -566,16 +606,19 @@ export function useCloudSync() {
 
                 (async () => {
                     const { default: lf } = await import('localforage');
-                    lf.config({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                    lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
                     for (const key of SYNC_KEYS) {
                         if (LOCAL_KEYS.includes(key)) {
                             const val = localStorage.getItem(key);
                             if (val != null) pushCloudSync(key, val, true).catch(() => {});
                         } else {
-                            const val = await lf.getItem(key);
+                            const val = await lf.getItem(getScopedStorageKey(key));
                             // No subir arrays vacíos si la nube ya tiene datos para esta llave.
                             // Esto previene que un dispositivo nuevo borre el inventario de la nube.
                             if (val != null) {
+                                // El inventario ya fue hidratado desde la nube; no volver a
+                                // subir el arreglo local ni mezclarlo con otra fuente.
+                                if (key === 'bodega_products_v1' && cloudDocIds.has(key)) continue;
                                 if (Array.isArray(val) && val.length === 0 && cloudDocIds.has(key)) {
                                     console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
                                     continue;
@@ -596,10 +639,6 @@ export function useCloudSync() {
                         console.log('[CloudSync] Factory reset remoto recibido — limpiando...');
                         try {
                             await localforage.clear();
-                            try {
-                                const oldStore = localforage.createInstance({ name: 'TasasAlDiaApp', storeName: 'app_data' });
-                                await oldStore.clear();
-                            } catch (e) { /* ignorar */ }
                             localStorage.clear();
                             if ('caches' in window) {
                                 const cacheKeys = await caches.keys();
@@ -740,6 +779,9 @@ export function useCloudSync() {
         initSync();
 
         return () => {
+            isInitialized.current = false;
+            initialSyncReady = false;
+            activeSyncUserId = null;
             localStorage.setItem = originalSetItem;
             removeFlushListeners();
             // Empujar (no descartar) los cambios pendientes antes de desmontar
@@ -757,5 +799,5 @@ export function useCloudSync() {
                 delete window.__cloudSyncVisibilityListener;
             }
         };
-    }, [isCloudConfigured, adminEmail, adminPassword]);
+    }, [isCloudConfigured, adminEmail, adminPassword, authEpoch]);
 }

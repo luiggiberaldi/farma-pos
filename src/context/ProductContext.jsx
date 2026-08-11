@@ -170,7 +170,9 @@ export function ProductProvider({ children, rates }) {
         // Mantener app_storage_update por si algún componente viejo sigue usándolo para sincronizar
         // aunque ahora ProductContext centraliza todo.
         const handleAppStorageUpdate = async (e) => {
-            if (savingRef.current) return;
+            // Un pull de nube tiene prioridad sobre el auto-save local que pudo
+            // arrancar mientras se hidrataba la cuenta.
+            if (savingRef.current && e.detail?.source !== 'cloud') return;
 
             if (e.detail?.key === 'bodega_products_v1') {
                 const updatedProducts = await storageService.getItem('bodega_products_v1', []);

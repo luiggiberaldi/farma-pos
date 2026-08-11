@@ -20,6 +20,7 @@ import { useAuthStore } from '../hooks/store/useAuthStore';
 import ShareInventoryModal from '../components/ShareInventoryModal';
 import { useAudit } from '../hooks/useAudit';
 import { useConfirm } from '../hooks/useConfirm.jsx';
+import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey } from '../config/storageScope';
 import SettingsTabNegocio from '../components/Settings/tabs/SettingsTabNegocio';
 import SettingsTabVentas from '../components/Settings/tabs/SettingsTabVentas';
 import SettingsTabUsuarios from '../components/Settings/tabs/SettingsTabUsuarios';
@@ -170,12 +171,12 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 // Bypass storageService to prevent app_storage_update events from firing.
                 // If events fire, ProductContext auto-save overwrites the imported products
                 // with the old in-memory state before the page reloads.
-                const lf = localforage.createInstance({ name: 'BodegaApp', storeName: 'bodega_app_data' });
+                const lf = localforage.createInstance({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
                 if (json.version === '2.0' && json.data.idb) {
-                    for (const [key, value] of Object.entries(json.data.idb)) await lf.setItem(key, value);
+                    for (const [key, value] of Object.entries(json.data.idb)) await lf.setItem(getScopedStorageKey(key), value);
                     if (json.data.ls) for (const [key, value] of Object.entries(json.data.ls)) localStorage.setItem(key, value);
                 } else {
-                    if (json.data.bodega_products_v1) await lf.setItem('bodega_products_v1', typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+                    if (json.data.bodega_products_v1) await lf.setItem(getScopedStorageKey('bodega_products_v1'), typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
                 }
                 setImportStatus('success'); setStatusMessage('Restauracion finalizada.');
                 auditLog('SISTEMA', 'BACKUP_IMPORTADO', 'Backup restaurado'); triggerHaptic?.();
@@ -403,15 +404,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                     // ── FASE 2: Limpiar TODO el almacenamiento local ──
                                     // IndexedDB principal
                                     await localforage.clear();
-                                    // IndexedDB legacy (TasasAlDiaApp — fuente de migración automática)
-                                    try {
-                                        const oldStore = localforage.createInstance({ name: 'TasasAlDiaApp', storeName: 'app_data' });
-                                        await oldStore.clear();
-                                    } catch (e) { /* no existe */ }
                                     // Eliminar bases de datos IndexedDB por completo (más agresivo que .clear())
                                     try {
-                                        indexedDB.deleteDatabase('BodegaApp');
-                                        indexedDB.deleteDatabase('TasasAlDiaApp');
+                                        indexedDB.deleteDatabase(APP_STORAGE_DB_NAME);
                                     } catch (e) { /* ignorar */ }
                                     // localStorage y sessionStorage
                                     localStorage.clear();

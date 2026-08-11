@@ -8,7 +8,7 @@ import { ShieldAlert, KeyRound, LogIn, RotateCcw, Download, X, Check } from 'luc
 //   node -e "console.log(require('crypto').createHash('sha256').update('TU_CLAVE').digest('hex'))"
 // Nota: esto es ocultación, no seguridad fuerte — cualquier clave embebida en
 // una PWA puede extraerse del bundle. No proteger datos sensibles solo con esto.
-const SUPER_ADMIN_KEY_HASH = '61b9237617f079e2241b2ffddec6a3bf5dd1b767ab8beab10d32050f651f0d1d';
+const SUPER_ADMIN_KEY_HASH = '92b1813755111f635cf4f5895247f5591ce86a5c9ca60043d92b6e19482c9c46';
 
 export default function SuperAdminModal({ isOpen, onClose }) {
     const loginAsSuperAdmin = useAuthStore(s => s.loginAsSuperAdmin);
