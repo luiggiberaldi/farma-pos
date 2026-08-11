@@ -144,7 +144,7 @@ export default function CierreCajaWizard({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 pb-4 sm:pb-6 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className="cierre-caja-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pb-4 sm:pb-6" style={{ WebkitOverflowScrolling: 'touch' }}>
 
                     {/* ═══ STEP 1: Resumen del Dia (solo admin) ═══ */}
                     {step === 1 && !blindClose && (

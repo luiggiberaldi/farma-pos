@@ -365,15 +365,52 @@ export function useCloudAuthLogic() {
                     // Dentro de gracia — continuar login, App.jsx mostrará el banner
                 }
                 if (rpcResult === 'limit_reached') {
-                    const { data: licenseData } = await supabaseCloud
-                        .from('cloud_licenses').select('max_devices').eq('email', emailToUse).maybeSingle();
-                    const DEVICE_LIMIT = licenseData?.max_devices || 2;
+                    // Consultar el estado mediante una función que valida el correo
+                    // de la sesión. No depender de un SELECT directo que puede fallar
+                    // por RLS y dejar la interfaz mostrando "0 dispositivos".
+                    const { data: rpcDeviceStatus, error: deviceStatusError } = await supabaseCloud
+                        .rpc('get_my_device_status');
 
-                    const { data: existingDevices } = await supabaseCloud
-                        .from('account_devices').select('*').eq('email', emailToUse).order('created_at', { ascending: true });
+                    // Algunas versiones de PostgREST devuelven el jsonb como texto
+                    // o como una fila; normalizarlo evita mostrar una lista vacía.
+                    let deviceStatus = rpcDeviceStatus;
+                    if (typeof deviceStatus === 'string') {
+                        try { deviceStatus = JSON.parse(deviceStatus); } catch { /* usar fallback */ }
+                    }
+                    if (Array.isArray(deviceStatus)) deviceStatus = deviceStatus[0] || null;
 
+                    let existingDevices = Array.isArray(deviceStatus?.devices)
+                        ? deviceStatus.devices
+                        : [];
+                    let DEVICE_LIMIT = Number(deviceStatus?.limit) || 0;
+
+                    // Fallback compatible con instalaciones donde la RPC fue creada
+                    // pero no puede leer filas por una política/RLS antigua. La consulta
+                    // directa sigue limitada al correo autenticado por RLS.
+                    if (deviceStatusError || existingDevices.length === 0) {
+                        const { data: deviceRows, error: deviceRowsError } = await supabaseCloud
+                            .from('account_devices')
+                            .select('id, email, device_id, device_alias, last_seen, created_at')
+                            .eq('email', emailToUse)
+                            .order('created_at', { ascending: true });
+                        if (deviceRowsError && deviceStatusError) {
+                            throw new Error('No se pudieron consultar los dispositivos de la cuenta.');
+                        }
+                        if (Array.isArray(deviceRows)) existingDevices = deviceRows;
+
+                        if (!DEVICE_LIMIT) {
+                            const { data: licenseRow } = await supabaseCloud
+                                .from('cloud_licenses')
+                                .select('max_devices')
+                                .eq('email', emailToUse)
+                                .maybeSingle();
+                            DEVICE_LIMIT = Number(licenseRow?.max_devices) || 2;
+                        }
+                    }
+
+                    DEVICE_LIMIT = DEVICE_LIMIT || 2;
                     setDeviceLimitError({ devices: existingDevices, limit: DEVICE_LIMIT, currentId: deviceId || 'UNKNOWN' });
-                    setBlockedDevices(existingDevices || []);
+                    setBlockedDevices(existingDevices);
                     setImportStatus('error');
                     setStatusMessage(`Límite de ${DEVICE_LIMIT} equipo(s) excedido.`);
                     return;

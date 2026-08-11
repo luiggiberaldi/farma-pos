@@ -95,6 +95,45 @@ body {
   background: #94A3B8;
 }
 
+/* ── SCROLL DEL CIERRE DE CAJA EN LAPTOP ── */
+.cierre-caja-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #94A3B8 transparent;
+}
+
+.cierre-caja-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+
+.cierre-caja-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 4px;
+}
+
+.cierre-caja-scroll::-webkit-scrollbar-thumb {
+  background: #94A3B8;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+.cierre-caja-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748B;
+  background-clip: content-box;
+}
+
+/* En pantallas táctiles se conserva una barra discreta; en laptops
+   el thumb queda visible y fácil de arrastrar. */
+@media (min-width: 768px) and (pointer: fine) {
+  .cierre-caja-scroll {
+    scrollbar-width: auto;
+  }
+
+  .cierre-caja-scroll::-webkit-scrollbar {
+    width: 11px;
+  }
+}
+
 /* ── SKELETON LOADING ── */
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
