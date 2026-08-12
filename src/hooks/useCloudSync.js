@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { storageService } from '../utils/storageService';
@@ -244,6 +244,11 @@ function _computePushHash(serialized) {
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
 let realtimeChannel = null;     // Canal Realtime para tasas/config (payloads pequeños)
+let factoryResetChannel = null; // Canal broadcast factory-reset / force_reload
+// Cada re-ejecución del efecto invalida el initSync anterior (aún en vuelo
+// tras un await), evitando que dos inits compitan por el estado global y
+// dejen el canal Realtime CLOSED (doble SIGNED_IN al iniciar sesión).
+let syncGeneration = 0;
 // Intentional module-level singletons: shared across all hook instances to
 // coordinate cloud-sync echo prevention and debounce timers.
 let isSyncingFromCloud = false; // true mientras aplicamos cambios de la nube → evita eco
@@ -492,9 +497,13 @@ export function useCloudSync() {
     // La sesión de Supabase es la fuente de verdad; no bloquear el pull por
     // depender de una preferencia local que puede estar vacía o ser antigua.
     const isCloudConfigured = true;
-    const isInitialized = useRef(false);
 
     useEffect(() => {
+        // Esta ejecución del efecto es la autoridad actual: cualquier initSync
+        // de una ejecución anterior (todavía en vuelo tras un await) se aborta.
+        const myGen = ++syncGeneration;
+        const isCurrent = () => syncGeneration === myGen;
+
         // Interceptor de localStorage — solo para llaves 'local'
         const originalSetItem = localStorage.setItem.bind(localStorage);
         localStorage.setItem = function (key, value) {
@@ -524,21 +533,23 @@ export function useCloudSync() {
             if (pollIntervalId) {
                 clearInterval(pollIntervalId);
                 pollIntervalId = null;
-                isInitialized.current = false;
                 lastSyncTime = null;
             }
             if (realtimeChannel) {
                 supabaseCloud.removeChannel(realtimeChannel);
                 realtimeChannel = null;
             }
+            if (factoryResetChannel) {
+                supabaseCloud.removeChannel(factoryResetChannel);
+                factoryResetChannel = null;
+            }
             return () => { localStorage.setItem = originalSetItem; removeFlushListeners(); };
         }
-
-        if (isInitialized.current) return () => { localStorage.setItem = originalSetItem; removeFlushListeners(); };
 
         const initSync = async () => {
             try {
                 let session = (await supabaseCloud.auth.getSession()).data.session;
+                if (!isCurrent()) return;
 
                 if (!session?.user?.id) {
                     initialSyncReady = false;
@@ -550,12 +561,17 @@ export function useCloudSync() {
                 const userId = session.user.id;
                 // Asegurar el namespace correcto antes de leer o escribir IndexedDB.
                 setActiveAccountId(userId);
-                if (activeSyncUserId !== userId) {
+
+                // Misma cuenta ya sincronizada (doble SIGNED_IN del login,
+                // remounts): no repetir el pull ni el catch-up. Solo re-crear
+                // los canales que el cleanup de la ejecución anterior cerró.
+                const alreadySynced = initialSyncReady && activeSyncUserId === userId;
+                if (!alreadySynced) {
+                    if (activeSyncUserId !== userId) {
+                        activeSyncUserId = userId;
+                        for (const key of Object.keys(_lastPushHash)) delete _lastPushHash[key];
+                    }
                     initialSyncReady = false;
-                    activeSyncUserId = userId;
-                    for (const key of Object.keys(_lastPushHash)) delete _lastPushHash[key];
-                }
-                isInitialized.current = true;
 
                 // ── Pull Inicial: descarga todos los documentos ──────────────
                 // Saltarse si acaba de hacerse una importación local (el flag evita que
@@ -589,6 +605,7 @@ export function useCloudSync() {
                         console.log(`[CloudSync] Pull inicial: ${docs.length} documentos procesados.`);
                     }
                 }
+                if (!isCurrent()) return;
 
                 lastSyncTime = new Date().toISOString();
                 // Desde este punto los cambios nuevos de esta cuenta sí pueden subir.
@@ -628,12 +645,16 @@ export function useCloudSync() {
                         await new Promise(r => setTimeout(r, 120));
                     }
                 })().catch(() => {});
+                }
+
+                if (!isCurrent()) return;
 
                 // ── Listener de Factory Reset remoto ─────────────────────────
                 // Si otro dispositivo con la misma cuenta hace factory reset,
                 // este equipo también limpia y recarga.
-                supabaseCloud.channel(`factory-reset-${userId}`)
-                    .on('broadcast', { event: 'factory_reset' }, async () => {
+                if (!factoryResetChannel) {
+                    factoryResetChannel = supabaseCloud.channel(`factory-reset-${userId}`)
+                        .on('broadcast', { event: 'factory_reset' }, async () => {
                         console.log('[CloudSync] Factory reset remoto recibido — limpiando...');
                         try {
                             await localforage.clear();
@@ -655,7 +676,8 @@ export function useCloudSync() {
                         console.log('[CloudSync] Recarga remota recibida — actualizando...');
                         window.location.reload();
                     })
-                    .subscribe();
+                        .subscribe();
+                }
 
                 // ── Realtime: solo tasas y config (payloads <1KB) ─────────────
                 // Esto permite que 2 dispositivos con la misma cuenta vean
@@ -770,16 +792,21 @@ export function useCloudSync() {
 
             } catch (err) {
                 console.error('[CloudSync] Fallo en inicialización P2P:', err);
-                isInitialized.current = false; // Permitir reintento
+                initialSyncReady = false; // Permitir reintento
             }
         };
 
         initSync();
 
         return () => {
-            isInitialized.current = false;
-            initialSyncReady = false;
-            activeSyncUserId = null;
+            // Invalidar cualquier initSync de esta ejecución que siga en vuelo
+            // (ej. un pull no terminado cuando el efecto re-ejecute).
+            syncGeneration++;
+            // NOTA: no se resetean initialSyncReady/activeSyncUserId aquí.
+            // Si el efecto se re-ejecuta con la misma cuenta (doble SIGNED_IN
+            // al login), initSync lo detecta y omite el pull duplicado.
+            // El reset ocurre dentro de initSync cuando cambia de cuenta o
+            // la sesión desaparece.
             localStorage.setItem = originalSetItem;
             removeFlushListeners();
             // Empujar (no descartar) los cambios pendientes antes de desmontar
@@ -791,6 +818,10 @@ export function useCloudSync() {
             if (realtimeChannel) {
                 supabaseCloud.removeChannel(realtimeChannel);
                 realtimeChannel = null;
+            }
+            if (factoryResetChannel) {
+                supabaseCloud.removeChannel(factoryResetChannel);
+                factoryResetChannel = null;
             }
             if (window.__cloudSyncVisibilityListener) {
                 document.removeEventListener('visibilitychange', window.__cloudSyncVisibilityListener);

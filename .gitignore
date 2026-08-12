@@ -37,6 +37,7 @@ dist-ssr
 api/*.js
 !api/share.js
 !api/checkout.js
+!api/update-profile.js
 
 # Backups y datos locales
 backup_*.json

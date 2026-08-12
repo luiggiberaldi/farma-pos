@@ -478,6 +478,11 @@ export function useCloudAuthLogic() {
                     .from('cloud_backups').select('backup_data').eq('email', emailToUse).maybeSingle();
                 cloudBackup = cloudRow?.backup_data || null;
             }
+            // La cuenta ya tiene documentos operativos en sync_documents.
+            // El backup completo (cloud_backups) es solo una copia de recuperación
+            // y solo se consulta si el probe falla; para cuentas sincronizadas no
+            // hace falta re-subirlo en cada login.
+            const cloudHasSyncData = !syncProbeError && syncProbe?.length > 0;
             
             const localBackup = await collectLocalBackup();
             const hasLocalData = Object.keys(localBackup.data.idb).length > 0;
@@ -508,7 +513,13 @@ export function useCloudAuthLogic() {
 
             setStatusMessage('Guardando nueva cuenta...');
             if (supabaseCloud) {
-                await uploadLocalBackup(emailToUse, localBackup);
+                // Cuenta ya sincronizada: sync_documents se mantiene solo
+                // (CloudSync: push en cada cambio + catch-up al arrancar).
+                // Subir aquí el backup completo —con las imágenes base64 de
+                // productos— en cada login era lo que hacía la entrada lenta.
+                if (!cloudHasSyncData) {
+                    await uploadLocalBackup(emailToUse, localBackup);
+                }
                 if (!isCloudLogin) {
                     try {
                         // Licencia de fábrica: 7 días, máximo 1 equipo vinculado
