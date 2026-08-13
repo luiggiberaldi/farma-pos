@@ -47,6 +47,33 @@ test('keeps an open cash session after midnight', () => {
   );
 });
 
+test('does not revive stale open sessions after the current shift is closed', () => {
+  const sales = [
+    {
+      id: 'stale-opening',
+      tipo: 'APERTURA_CAJA',
+      fechaComercial: '2026-08-10',
+      timestamp: '2026-08-10T12:00:00.000Z',
+      cajaCerrada: false,
+    },
+    {
+      id: 'current-opening',
+      tipo: 'APERTURA_CAJA',
+      fechaComercial: '2026-08-12',
+      timestamp: '2026-08-12T12:00:00.000Z',
+      cajaCerrada: false,
+    },
+  ];
+
+  const now = new Date('2026-08-13T12:00:00.000Z');
+  assert.equal(getOpenCashSession(sales, now).apertura.id, 'current-opening');
+
+  const closed = sales.map(sale => sale.id === 'current-opening'
+    ? { ...sale, cajaCerrada: true, cierreId: 123 }
+    : sale);
+  assert.equal(getOpenCashSession(closed, now), null);
+});
+
 test('excludes an accidental reopening and identifies orphaned historical movements', () => {
   const sales = [
     {

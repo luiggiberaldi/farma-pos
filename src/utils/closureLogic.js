@@ -77,9 +77,30 @@ export function isClosureStatsSale(sale) {
  * open until the operator explicitly confirms a closure, so a shift that
  * crosses 00:00 keeps receiving and grouping movements in the same session.
  */
+export const MAX_OPEN_SESSION_AGE_DAYS = 1;
+
+function isRecentBusinessDate(businessDate, now) {
+    const todayMs = new Date(`${getLocalISODate(now)}T12:00:00`).getTime();
+    const openingMs = new Date(`${businessDate}T12:00:00`).getTime();
+    if (!Number.isFinite(todayMs) || !Number.isFinite(openingMs)) return true;
+
+    const ageDays = (todayMs - openingMs) / (24 * 60 * 60 * 1000);
+    // Allow an overnight shift, but never revive an opening left pending from
+    // older days as the next normal cash closure.
+    return ageDays <= MAX_OPEN_SESSION_AGE_DAYS;
+}
+
 export function getOpenCashSession(allSales, now = new Date()) {
     const openOpenings = (Array.isArray(allSales) ? allSales : [])
-        .filter(sale => sale?.tipo === 'APERTURA_CAJA' && !sale.cajaCerrada && !sale.cierreId)
+        .filter(sale => {
+            if (sale?.tipo !== 'APERTURA_CAJA' || sale.cajaCerrada || sale.cierreId) return false;
+            const openingTime = getMovementTimestamp(sale);
+            const businessDate = getSaleBusinessDate(
+                sale,
+                openingTime ? getLocalISODate(openingTime) : getLocalISODate(now)
+            );
+            return isRecentBusinessDate(businessDate, now);
+        })
         .sort((a, b) => {
             const aTime = getMovementTimestamp(a)?.getTime() || 0;
             const bTime = getMovementTimestamp(b)?.getTime() || 0;
