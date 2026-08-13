@@ -25,6 +25,7 @@ import KeyboardHelpModal from '../components/Sales/KeyboardHelpModal';
 import DiscountModal from '../components/Sales/DiscountModal';
 import CajaCerradaOverlay from '../components/Sales/CajaCerradaOverlay';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { getCashSessionMovements, getOpenCashSession, getSaleBusinessDate } from '../utils/closureLogic';
 import { buildReceiptWhatsAppUrl } from '../components/Sales/ReceiptShareHelper';
 import AperturaCajaModal from '../components/Dashboard/AperturaCajaModal';
 
@@ -212,11 +213,14 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const [salesData, setSalesData] = useState([]);
     const currentFloat = useMemo(() => {
         const todayStr = getLocalISODate(new Date());
-        const todayOpen = salesData.filter(s => {
-            if (s.cajaCerrada) return false;
-            const saleDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-            return saleDay === todayStr;
-        });
+        const openSession = getOpenCashSession(salesData);
+        const todayOpen = openSession
+            ? getCashSessionMovements(salesData, openSession)
+            : salesData.filter(s => {
+                if (s.cajaCerrada) return false;
+                const saleDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
+                return saleDay === todayStr;
+            });
         const bd = FinancialEngine.calculatePaymentBreakdown(todayOpen);
         return {
             usd: bd['efectivo_usd']?.total ?? 0,
@@ -261,14 +265,10 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     setCart(savedCart);
                 }
 
-                // Check Apertura (timezone-safe)
-                const todayStr = getLocalISODate(new Date());
-                const apertura = savedSales.find(s => {
-                    if (s.tipo !== 'APERTURA_CAJA' || s.cajaCerrada) return false;
-                    const saleDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-                    return saleDay === todayStr;
-                });
-                setTodayAperturaData(apertura || null);
+                // A cash session remains open across midnight until an
+                // explicit closure is confirmed by the operator.
+                const openSession = getOpenCashSession(savedSales);
+                setTodayAperturaData(openSession?.apertura || null);
                 
                 setIsLoadingLocal(false);
 
@@ -302,15 +302,10 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             setCustomers(savedCustomers);
             setSalesData(savedSales);
             
-            // Recalculate Apertura (uses imported getLocalISODate)
-            const todayStr = getLocalISODate(new Date());
-            
-            const apertura = savedSales.find(s => {
-                if (s.tipo !== 'APERTURA_CAJA' || s.cajaCerrada) return false;
-                const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : todayStr;
-                return saleLocalDay === todayStr;
-            });
-            setTodayAperturaData(apertura || null);
+            // Recalculate the active session without tying it to the
+            // calendar date (important when the app resumes after 00:00).
+            const openSession = getOpenCashSession(savedSales);
+            setTodayAperturaData(openSession?.apertura || null);
         });
     }, [isActive, setProducts]);
 
@@ -601,7 +596,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         const opts = {
             cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, payments, changeBreakdown,
             selectedCustomerId, customers, products, effectiveRate, tasaCop, copEnabled,
-            discountData, useAutoRate, rateMode
+            discountData, useAutoRate, rateMode,
+            businessDate: getSaleBusinessDate(todayAperturaData, getLocalISODate(new Date()))
         };
 
         const result = await processSaleTransaction(opts);
@@ -698,19 +694,29 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     }
     const handleSaveApertura = async (data) => {
         try {
-            const today = new Date().toISOString();
+            const openedAt = new Date();
             const aperturaRecord = {
                 id: `apertura_${Date.now()}`,
                 tipo: 'APERTURA_CAJA',
                 openingUsd: data.openingUsd,
                 openingBs: data.openingBs,
-                timestamp: today,
+                timestamp: openedAt.toISOString(),
+                fechaComercial: getLocalISODate(openedAt),
+                horaComercial: `${String(openedAt.getHours()).padStart(2, '0')}:${String(openedAt.getMinutes()).padStart(2, '0')}`,
                 cajaCerrada: false,
                 cajeroId: usuarioActivo?.id ?? null,
                 cajeroNombre: usuarioActivo?.nombre ?? 'Desconocido',
             };
 
             const existingSales = await storageService.getItem(SALES_KEY, []);
+            const existingSession = getOpenCashSession(existingSales);
+            if (existingSession) {
+                setTodayAperturaData(existingSession.apertura);
+                setIsAperturaOpen(false);
+                showToast(`Ya existe un turno abierto desde ${existingSession.businessDate}.`, 'info');
+                return;
+            }
+
             const updatedSales = [...existingSales, aperturaRecord];
             
             await storageService.setItem(SALES_KEY, updatedSales);
@@ -762,8 +768,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                                     <CheckCircle2 size={18} className="text-emerald-500" />
                                 </div>
                                 <div>
-                                    <p className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400">Apertura Registrada</p>
-                                    <p className="text-[10px] sm:text-xs text-emerald-500/70">${todayAperturaData.openingUsd?.toFixed(2)} · Bs {formatBs(todayAperturaData.openingBs || 0)}</p>
+                                    <p className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400">Turno Abierto</p>
+                                    <p className="text-[10px] sm:text-xs text-emerald-500/70">{getSaleBusinessDate(todayAperturaData)} · ${todayAperturaData.openingUsd?.toFixed(2)} · Bs {formatBs(todayAperturaData.openingBs || 0)}</p>
                                 </div>
                             </div>
                         </div>

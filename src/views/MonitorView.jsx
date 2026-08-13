@@ -3,6 +3,7 @@ import { showToast } from '../components/Toast';
 import { RefreshCw, TrendingUp, TrendingDown, WifiOff, Clock, Maximize, Minimize, Camera, Loader2, AlertTriangle, Sun, Moon } from 'lucide-react';
 // ✅ Asegúrate de tener instalado: npm i html2canvas
 import html2canvas from 'html2canvas';
+import { formatOfficialRate } from '../utils/rateResolver';
 
 export default function MonitorView({ rates, loading, isOffline, onRefresh, toggleTheme, theme, copyLogs, addLog, triggerHaptic }) {
 
@@ -36,10 +37,8 @@ export default function MonitorView({ rates, loading, isOffline, onRefresh, togg
         return new Intl.NumberFormat('es-VE', { maximumFractionDigits: 0 }).format(Math.ceil(amount));
     };
 
-    // [NEW] Formato exacto para tasas (2 decimales, sin redondeo hacia arriba)
-    const formatExactRate = (amount) => {
-        return new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-    };
+    // Mostrar las tasas con dos decimales, conservando la precisión completa internamente.
+    const formatExactRate = formatOfficialRate;
 
     // Cálculos matemáticos
     const spread = rates.euro.price > 0 && rates.bcv.price > 0 ? ((rates.euro.price - rates.bcv.price) / rates.bcv.price) * 100 : 0;

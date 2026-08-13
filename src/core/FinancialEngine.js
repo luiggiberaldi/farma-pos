@@ -10,7 +10,7 @@
  *         to eliminate IEEE 754 floating-point drift.
  */
 
-import { round2, mulR, divR, subR, sumR } from '../utils/dinero';
+import { round2, mulR, divR, subR, sumR } from '../utils/dinero.js';
 
 /**
  * @typedef {Object} CartItem
@@ -66,7 +66,10 @@ export class FinancialEngine {
     static calculateSaleProfit(sale, bcvRate, products) {
         if (!sale || !sale.items || sale.items.length === 0) return 0;
         
-        const saleRate = sale.rate || bcvRate;
+        // `fechaComercialTasa` is stamped by an administrative historical
+        // correction and must take precedence over the rate used when the
+        // transaction was originally captured.
+        const saleRate = sale.fechaComercialTasa || sale.rate || bcvRate;
         
         // Sum the profit of each individual item (Revenue - Cost)
         const itemProfits = sale.items.map(item => {
@@ -189,7 +192,7 @@ export class FinancialEngine {
                     }
 
                     // Use pre-computed amountUsd/amountBs; fallback with sale rate (NEVER hardcoded)
-                    const saleRate = sale.rate || 1;
+                    const saleRate = sale.fechaComercialTasa || sale.rate || 1;
                     const amountUsd = p.amountUsd !== undefined
                         ? round2(p.amountUsd)
                         : (p.currency === 'USD' ? round2(p.amount) : divR(p.amount, saleRate));
@@ -217,7 +220,7 @@ export class FinancialEngine {
             // Instead of silently zeroing anomalous change, we FLAG the sale
             // but still register the full change amount for mathematical accuracy.
             // The UI can read sale._changeAnomaly to display a warning badge.
-            const saleRate = sale.rate || 1;
+            const saleRate = sale.fechaComercialTasa || sale.rate || 1;
             const isChangeAnomalousUsd = safeChangeUsd > 100 && safeChangeUsd > (round2(sale.totalUsd || 0) * 5);
             const isChangeAnomalousBs = safeChangeBs > mulR(100, saleRate) && safeChangeBs > (round2(sale.totalBs || 0) * 5);
             

@@ -2,6 +2,7 @@ import React from 'react';
 import { X, ArrowDownRight, ArrowUpRight, CheckCircle2, Save } from 'lucide-react';
 import { procesarImpactoCliente } from '../../utils/financialLogic';
 import { formatUsd, formatBs } from '../../utils/calculatorUtils';
+import { formatOfficialRate } from '../../utils/rateResolver';
 
 export default function TransactionModal({
     transactionModal,
@@ -187,7 +188,7 @@ export default function TransactionModal({
                             </div>
                         )}
                         <p className="text-[10px] font-medium text-slate-400 mt-2 text-center flex items-center justify-center gap-2">
-                            <span>Tasa BCV: {formatBs(bcvRate)} Bs/$</span>
+                            <span>Tasa BCV: {formatOfficialRate(bcvRate)} Bs/$</span>
                             {copEnabled && <span>• Tasa COP: {formatBs(tasaCop)} COP/$</span>}
                         </p>
                     </div>

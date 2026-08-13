@@ -8,10 +8,17 @@ import { FinancialEngine } from '../../core/FinancialEngine';
 export default function CierreHistoryCard({ cierre, bcvRate, products }) {
     const [isExpanded, setIsExpanded] = useState(false);
 
-    const dateLabel = new Date(cierre.cierreId).toLocaleString('es-VE', { 
-        weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit' 
-    });
+    const closureRate = cierre.rateSnapshot > 0 ? cierre.rateSnapshot : bcvRate;
+    const reconData = cierre.reconData || cierre.closureMeta?.reconData || null;
+    const commercialDate = cierre.businessDate || cierre.closureMeta?.fechaComercial || cierre.fechaComercial;
+    const dateLabel = commercialDate
+        ? `Fecha comercial: ${new Date(`${commercialDate}T12:00:00`).toLocaleDateString('es-VE', {
+            weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+        })}`
+        : new Date(cierre.cierreId).toLocaleString('es-VE', {
+            weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
 
     const handlePrintPDF = (e) => {
         e.stopPropagation();
@@ -31,19 +38,19 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
             }
         });
         const todayTopProducts = Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
-        const todayProfit = FinancialEngine.calculateAggregateProfit(netSalesForStats, bcvRate, products);
+        const todayProfit = FinancialEngine.calculateAggregateProfit(netSalesForStats, closureRate, products);
 
         generateDailyClosePDF({
             sales: cierre.salesForCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA'),
             allSales: cierre.salesForStats,
-            bcvRate,
+            bcvRate: closureRate,
             paymentBreakdown: cierre.paymentBreakdown,
             topProducts: todayTopProducts,
             todayTotalUsd: cierre.totalUsd,
             todayTotalBs: cierre.totalBs,
             todayProfit,
             todayItemsSold: cierre.totalItems,
-            reconData: null,
+            reconData,
             apertura: cierre.apertura,
             isReprint: true
         });
@@ -65,19 +72,19 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
             }
         });
         const todayTopProducts = Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
-        const todayProfit = FinancialEngine.calculateAggregateProfit(netSalesForStats, bcvRate, products);
+        const todayProfit = FinancialEngine.calculateAggregateProfit(netSalesForStats, closureRate, products);
 
         generateDailyCloseLetterPDF({
             sales: cierre.salesForCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA'),
             allSales: cierre.salesForStats,
-            bcvRate,
+            bcvRate: closureRate,
             paymentBreakdown: cierre.paymentBreakdown,
             topProducts: todayTopProducts,
             todayTotalUsd: cierre.totalUsd,
             todayTotalBs: cierre.totalBs,
             todayProfit,
             todayItemsSold: cierre.totalItems,
-            reconData: null,
+            reconData,
             apertura: cierre.apertura,
             products
         });
@@ -106,6 +113,7 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
                     <div>
                         <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${cierre.totalUsd.toFixed(2)}</p>
                         <p className="text-[10px] text-slate-400 font-medium">{formatBs(cierre.totalBs)} Bs</p>
+                        <p className="text-[9px] text-indigo-400 font-bold">Tasa {closureRate.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} Bs/$</p>
                     </div>
                     {isExpanded ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
                 </div>
@@ -145,6 +153,36 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
                             );
                         })}
                     </div>
+
+                    {reconData && (
+                        <div className="py-3 border-t border-slate-100 dark:border-slate-800/50">
+                            <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-2">Cuadre físico registrado</p>
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2">
+                                    <span className="block text-slate-400">USD declarado</span>
+                                    <strong className="text-slate-700 dark:text-slate-200">${(Number(reconData.declaredUsd) || 0).toFixed(2)}</strong>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2">
+                                    <span className="block text-slate-400">Bs declarado</span>
+                                    <strong className="text-slate-700 dark:text-slate-200">{formatBs(Number(reconData.declaredBs) || 0)} Bs</strong>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2">
+                                    <span className="block text-slate-400">Diferencia USD</span>
+                                    <strong className={(Number(reconData.diffUsd) || 0) < 0 ? 'text-red-500' : 'text-emerald-600'}>{(Number(reconData.diffUsd) || 0) >= 0 ? '+' : ''}{(Number(reconData.diffUsd) || 0).toFixed(2)} USD</strong>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2">
+                                    <span className="block text-slate-400">Diferencia Bs</span>
+                                    <strong className={(Number(reconData.diffBs) || 0) < 0 ? 'text-red-500' : 'text-emerald-600'}>{(Number(reconData.diffBs) || 0) >= 0 ? '+' : ''}{formatBs(Number(reconData.diffBs) || 0)} Bs</strong>
+                                </div>
+                                {reconData.declaredCop !== undefined && (
+                                    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2 col-span-2">
+                                        <span className="block text-slate-400">COP declarado / diferencia</span>
+                                        <strong className="text-slate-700 dark:text-slate-200">{(Number(reconData.declaredCop) || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {(Number(reconData.diffCop) || 0) >= 0 ? '+' : ''}{(Number(reconData.diffCop) || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP</strong>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="pt-3 mt-1 flex flex-col sm:flex-row gap-2">
                         <button 

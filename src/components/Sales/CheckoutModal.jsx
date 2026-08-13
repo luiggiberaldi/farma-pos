@@ -3,6 +3,7 @@ import { X, Users, Receipt, ChevronDown, Wallet, Zap, UserPlus, Check, ArrowLeft
 import CasheaIcon from '../CasheaIcon';
 import { BsIcon, UsdIcon } from '../CurrencyIcons';
 import { formatBs } from '../../utils/calculatorUtils';
+import { formatOfficialRate } from '../../utils/rateResolver';
 import { PAYMENT_ICONS, ICON_COMPONENTS } from '../../config/paymentMethods';
 import { round2, mulR, divR, subR, sumR } from '../../utils/dinero';
 
@@ -320,7 +321,7 @@ export default function CheckoutModal({
                 </button>
                 <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide font-sans">COBRAR</h2>
                 <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
-                    {formatBs(effectiveRate)} Bs/$
+                    {formatOfficialRate(effectiveRate)} Bs/$
                 </span>
             </div>
 
@@ -375,7 +376,7 @@ export default function CheckoutModal({
                                 Bolívares (Bs)
                             </h3>
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${sectionStyles.BS.titleBg} ${sectionStyles.BS.title}`}>
-                                Tasa: {formatBs(effectiveRate)}
+                                Tasa: {formatOfficialRate(effectiveRate)}
                             </span>
                         </div>
                         {methodsBs.map(m => renderPaymentBar(m, sectionStyles.BS))}

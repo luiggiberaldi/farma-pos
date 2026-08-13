@@ -1,6 +1,8 @@
 import { storageService } from './storageService';
 import { procesarImpactoCliente } from './financialLogic';
 import { round2, divR, mulR } from './dinero';
+import { getLocalISODate, getLocalISOTime } from './dateHelpers';
+import { getOpenCashSession } from './closureLogic';
 
 /**
  * Procesa la lógica de abonar o endeudar a un cliente desde el TransactionModal.
@@ -44,11 +46,16 @@ export async function processCustomerTransaction({
     const totalEnBs = currencyMode === 'BS' ? rawAmount : mulR(rawAmount, bcvRate);
     const totalEnUsd = amountUsd;
     const totalEnCop = currencyMode === 'COP' ? rawAmount : mulR(amountUsd, tasaCop);
+    const openSession = getOpenCashSession(sales);
+    const fechaComercial = openSession?.businessDate || getLocalISODate(new Date());
+    const horaComercial = getLocalISOTime(new Date());
 
     if (type === 'ABONO') {
         const cobroRecord = {
             id: crypto.randomUUID(),
             timestamp: new Date().toISOString(),
+            fechaComercial,
+            horaComercial,
             tipo: 'COBRO_DEUDA',
             clienteId: customer.id,
             clienteName: customer.name,
@@ -71,6 +78,8 @@ export async function processCustomerTransaction({
         const fiadoRecord = {
             id: crypto.randomUUID(),
             timestamp: new Date().toISOString(),
+            fechaComercial,
+            horaComercial,
             tipo: 'VENTA_FIADA',
             clienteId: customer.id,
             clienteName: customer.name,

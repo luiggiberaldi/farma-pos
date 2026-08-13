@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Clock, Send, Ban, ChevronDown, ChevronUp, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Clock, Send, Ban, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
+import { formatOfficialRate } from '../../utils/rateResolver';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, getPaymentIcon, toTitleCase } from '../../config/paymentMethods';
 import EmptyState from '../EmptyState';
 import CasheaIcon from '../CasheaIcon';
@@ -17,17 +18,30 @@ export default function SalesHistory({
     onRequestClientForTicket,
     onRecycleSale,
     onPrintTicket,
-    isAdmin
+    isAdmin,
+    isCashier = false
 }) {
     const [expandedSaleId, setExpandedSaleId] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10;
+    const pageCount = isCashier ? Math.max(1, Math.ceil(recentSales.length / pageSize)) : 1;
+    const safeCurrentPage = Math.min(currentPage, pageCount);
+    const visibleSales = isCashier
+        ? recentSales.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
+        : recentSales;
 
-    if (recentSales.length === 0) {
+    useEffect(() => {
+        setCurrentPage(1);
+        setExpandedSaleId(null);
+    }, [recentSales, isCashier]);
+
+    if (visibleSales.length === 0) {
         return (
             <div className="mb-20 mt-4">
                 <EmptyState
                     icon={Receipt}
-                    title="Aún no hay ventas"
-                    description="Las ventas recientes aparecerán aquí una vez que comiences a facturar."
+                    title={isCashier ? 'No hay ventas en este turno' : 'Aún no hay ventas'}
+                    description={isCashier ? 'Las ventas de tu turno aparecerán aquí.' : 'Las ventas recientes aparecerán aquí una vez que comiences a facturar.'}
                 />
             </div>
         );
@@ -37,10 +51,10 @@ export default function SalesHistory({
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm mb-20">
             <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1">
-                    <Clock size={12} /> Últimas 7 Ventas
+                    <Clock size={12} /> {isCashier ? 'Ventas de mi turno' : 'Últimas 7 Ventas'}
                 </h3>
                 <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{totalSalesCount} histórico</span>
+                    <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{totalSalesCount} {isCashier ? 'del turno' : 'histórico'}</span>
                     {isAdmin && (
                         <button
                             onClick={onOpenDeleteModal}
@@ -53,8 +67,10 @@ export default function SalesHistory({
                 </div>
             </div>
             <div className="space-y-3">
-                {recentSales.map(s => {
+                {visibleSales.map(s => {
                     const d = new Date(s.timestamp);
+                    const hasSaleNumber = s.saleNumber !== undefined && s.saleNumber !== null && s.saleNumber !== '';
+                    const saleNumberLabel = hasSaleNumber ? `#${String(s.saleNumber).padStart(7, '0')}` : '#S/C';
                     let methodLabel = 'Efectivo';
                     let PayMethodIcon = PAYMENT_ICONS['efectivo_bs'];
 
@@ -111,8 +127,8 @@ export default function SalesHistory({
                                         {s.tipo === 'ANULACION_VENTA' && <span className="text-[9px] bg-red-100 text-red-600 px-1 rounded uppercase">Reverso</span>}
                                     </p>
                                     <p className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
-                                        {s.saleNumber && <span className="font-bold text-indigo-400">#{String(s.saleNumber).padStart(7, '0')}</span>}
-                                        {s.saleNumber && <span>·</span>}
+                                        <span className="font-bold text-indigo-400">{saleNumberLabel}</span>
+                                        <span>·</span>
                                         <span>{d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}</span> ·
                                         <span>{d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</span> ·
                                         <span>{methodLabel}</span>
@@ -169,7 +185,7 @@ export default function SalesHistory({
                                         {/* Tasa aplicada */}
                                         <div className="flex justify-between items-center text-[11px]">
                                             <span className="text-slate-400">Tasa BCV aplicada</span>
-                                            <span className="text-slate-400">{formatBs(s.rate || bcvRate)} Bs/$</span>
+                                            <span className="text-slate-400">{formatOfficialRate(s.rate || bcvRate)} Bs/$</span>
                                         </div>
 
                                         {/* COP si aplica */}
@@ -294,6 +310,30 @@ export default function SalesHistory({
                     );
                 })}
             </div>
+
+            {isCashier && pageCount > 1 && (
+                <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                        type="button"
+                        onClick={() => { setCurrentPage(page => Math.max(1, page - 1)); setExpandedSaleId(null); }}
+                        disabled={safeCurrentPage === 1}
+                        className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 disabled:opacity-40 transition-colors"
+                        aria-label="Ver ventas anteriores"
+                    >
+                        <ChevronLeft size={14} /> Anteriores
+                    </button>
+                    <span className="text-[10px] font-bold text-slate-400">Página {safeCurrentPage} de {pageCount}</span>
+                    <button
+                        type="button"
+                        onClick={() => { setCurrentPage(page => Math.min(pageCount, page + 1)); setExpandedSaleId(null); }}
+                        disabled={safeCurrentPage === pageCount}
+                        className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 disabled:opacity-40 transition-colors"
+                        aria-label="Ver ventas siguientes"
+                    >
+                        Siguientes <ChevronRight size={14} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

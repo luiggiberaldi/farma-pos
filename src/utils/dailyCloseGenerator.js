@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { formatBs } from './calculatorUtils';
+import { formatOfficialRate } from './rateResolver';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { divR, mulR } from './dinero';
 
@@ -130,7 +131,7 @@ export async function generateDailyClosePDF({
         ['Ingresos brutos (Bs)', `Bs ${formatBs(todayTotalBs)}`],
         ['Ganancia estimada ($)', `$${divR(todayProfit, bcvRate).toFixed(2)}`],
         ['Ganancia estimada (Bs)', `Bs ${formatBs(todayProfit)}`],
-        ['Tasa BCV', `Bs ${formatBs(bcvRate)} / $1`],
+        ['Tasa BCV', `Bs ${formatOfficialRate(bcvRate)} / $1`],
     );
 
     statsRows.forEach(([label, value]) => {
@@ -209,6 +210,24 @@ export async function generateDailyClosePDF({
             doc.text(value, RIGHT, y, { align: 'right' });
             y += 5;
         });
+
+        if (reconData.declaredCop !== undefined) {
+            const copDiff = Number(reconData.diffCop) || 0;
+            const copRows = [
+                ['Declarado (COP)', `${Number(reconData.declaredCop || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+                ['Diferencia COP', `${copDiff >= 0 ? '+' : ''}${copDiff.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`],
+            ];
+            copRows.forEach(([label, value], index) => {
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7);
+                doc.setTextColor(...BODY);
+                doc.text(label, M, y);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...(index === 0 ? INK : (Math.abs(copDiff) <= 1 ? MUTED : copDiff < 0 ? RED : GREEN)));
+                doc.text(value, RIGHT, y, { align: 'right' });
+                y += 5;
+            });
+        }
 
         y += 2;
         dash(y); y += 6;
@@ -581,7 +600,7 @@ export async function generateDailyCloseLetterPDF({
     if (copEnabled && tasaCop > 0) {
         aptRows.push(['Fondo Inicial COP', `${(apertura?.totalCop || 0).toLocaleString('es-CO')} COP`]);
     }
-    aptRows.push(['Tasa de Cambio BCV', `Bs ${formatBs(bcvRate)}`]);
+    aptRows.push(['Tasa de Cambio BCV', `Bs ${formatOfficialRate(bcvRate)}`]);
     if (copEnabled && tasaCop > 0) {
         aptRows.push(['Tasa de Cambio COP', `${tasaCop.toLocaleString('es-CO')} COP`]);
     }

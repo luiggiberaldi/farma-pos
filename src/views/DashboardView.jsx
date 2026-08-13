@@ -5,6 +5,7 @@ import { showToast } from '../components/Toast';
 import { SUPPORT_WHATSAPP } from '../config/tenant';
 import { BarChart3, TrendingUp, Package, AlertTriangle, DollarSign, ShoppingBag, Clock, ArrowUpRight, Trash2, ShoppingCart, Store, Users, Send, Ban, ChevronDown, ChevronUp, UserPlus, Phone, FileText, Recycle, Key, Settings, LockIcon, CheckCircle2, LogOut, Bell, Download } from 'lucide-react';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
+import { formatOfficialRate } from '../utils/rateResolver';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, getPaymentIcon, toTitleCase } from '../config/paymentMethods';
 import SalesHistory from '../components/Dashboard/SalesHistory';
 import SalesChart from '../components/Dashboard/SalesChart';
@@ -26,6 +27,13 @@ import { useAuthStore } from '../hooks/store/useAuthStore';
 import { useAudit } from '../hooks/useAudit';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { useConfirm } from '../hooks/useConfirm.jsx';
+import {
+    buildClosureRecord,
+    getCashSessionMovements,
+    getOpenCashSession,
+    getSaleBusinessDate,
+} from '../utils/closureLogic';
+import { commitNormalClosure, finalizeHistoricalBatchInOpenSession } from '../utils/closureService';
 
 import Skeleton from '../components/Skeleton';
 import CasheaIcon from '../components/CasheaIcon';
@@ -48,6 +56,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const { deviceId } = useSecurity();
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
     const isAdmin = !usuarioActivo || usuarioActivo.rol === 'ADMIN';
+    const isCashierBlindClose = !isAdmin && localStorage.getItem('cajero_puede_cerrar_caja') === 'true';
+    const canCloseCash = isAdmin || isCashierBlindClose;
     const authLogout = useAuthStore(s => s.logout);
     const requireLogin = useAuthStore(s => s.requireLogin ?? false);
     const adminEmail = useAuthStore(s => s.adminEmail);
@@ -66,6 +76,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
     const [isCashReconOpen, setIsCashReconOpen] = useState(false);
+    const [isFinalizingHistoricalBatch, setIsFinalizingHistoricalBatch] = useState(false);
     const [ticketPendingSale, setTicketPendingSale] = useState(null);
     const [ticketClientName, setTicketClientName] = useState('');
     const [ticketClientPhone, setTicketClientPhone] = useState('');
@@ -206,40 +217,38 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     };
     const today = getLocalISODate();
 
-    const todaySales = useMemo(() =>
-        sales.filter(s => {
-            if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'ANULACION_VENTA') return false;
-            // Ocultar ventas que ya fueron cerradas previamente
-            if (s.cajaCerrada === true) return false;
+    // The active cash session is the source of truth for the dashboard. It is
+    // intentionally independent from the calendar date, so crossing 00:00
+    // cannot hide the still-open shift or make it look auto-closed.
+    const activeCashSession = useMemo(() => getOpenCashSession(sales), [sales]);
+    const operatingDate = activeCashSession?.businessDate || today;
+    const pendingSessionMovements = useMemo(() => {
+        if (activeCashSession) return getCashSessionMovements(sales, activeCashSession);
+        return sales.filter(s => {
+            if (s.cajaCerrada === true || s.cierreId) return false;
+            return getSaleBusinessDate(s) === operatingDate;
+        });
+    }, [sales, activeCashSession, operatingDate]);
 
-            const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-            return saleLocalDay === today;
+    const todaySales = useMemo(() =>
+        pendingSessionMovements.filter(s => {
+            if (s.status === 'ANULADA') return false;
+            return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'ANULACION_VENTA';
         }),
-        [sales, today]
+        [pendingSessionMovements]
     );
 
     // Movimientos reales de caja para el cuadre (Ventas + Abonos + Egresos + Apertura)
     const todayCashFlow = useMemo(() =>
-        sales.filter(s => {
+        pendingSessionMovements.filter(s => {
             if (s.status === 'ANULADA') return false;
-            if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'APERTURA_CAJA' && s.tipo !== 'ANULACION_VENTA') return false;
-            if (s.cajaCerrada === true) return false;
-
-            const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-            return saleLocalDay === today;
+            return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'APERTURA_CAJA' || s.tipo === 'ANULACION_VENTA';
         }),
-        [sales, today]
+        [pendingSessionMovements]
     );
 
-    // Detect if apertura was already registered today
-    const todayApertura = useMemo(() => {
-        return sales.find(s => {
-            if (s.tipo !== 'APERTURA_CAJA' || s.cajaCerrada) return false;
-            const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : today;
-            return saleLocalDay === today;
-        });
-    }, [sales, today]);
+    // Detect the active opening, even when it was created before midnight.
+    const todayApertura = activeCashSession?.apertura || null;
     const todayTotalBs = useMemo(() => todaySales.reduce((sum, s) => sum + (s.totalBs || 0), 0), [todaySales]);
     const todayTotalUsd = useMemo(() => todaySales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), [todaySales]);
     const todayItemsSold = useMemo(() => todaySales.reduce((sum, s) => sum + (s.items ? s.items.reduce((is, i) => is + i.qty, 0) : 0), 0), [todaySales]);
@@ -253,11 +262,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const todayExpenses = useMemo(() => {
         return sales.filter(s => {
             if (s.tipo !== 'PAGO_PROVEEDOR') return false;
-            if (s.cajaCerrada === true) return false;
-            const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-            return saleLocalDay === today;
+            return pendingSessionMovements.includes(s);
         });
-    }, [sales, today]);
+    }, [pendingSessionMovements]);
     const todayExpensesUsd = useMemo(() => todayExpenses.reduce((sum, s) => sum + Math.abs(s.totalUsd || 0), 0), [todayExpenses]);
 
     const todayProfit = useMemo(() =>
@@ -272,8 +279,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         if (selectedChartDate) {
             return sales.filter(s => {
                 if (!VISIBLE_TIPOS.includes(s.tipo)) return false;
-                const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-                return saleLocalDay === selectedChartDate;
+                return getSaleBusinessDate(s) === selectedChartDate;
             });
         }
         return sales.filter(s => VISIBLE_TIPOS.includes(s.tipo)).slice(0, 7);
@@ -286,8 +292,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const dateStr = getLocalISODate(d);
         const daySales = sales.filter(s => {
             if (s.tipo === 'COBRO_DEUDA' || s.tipo === 'AJUSTE_ENTRADA' || s.tipo === 'AJUSTE_SALIDA' || s.tipo === 'VENTA_FIADA' || s.status === 'ANULADA') return false;
-            const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-            return saleLocalDay === dateStr;
+            return getSaleBusinessDate(s) === dateStr;
         });
         return { date: dateStr, total: daySales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), count: daySales.length };
     }), [sales]);
@@ -350,84 +355,134 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         return Object.values(todayProductMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
     }, [todaySales]);
 
+    const handleFinalizeHistoricalBatch = async () => {
+        if (!activeCashSession || todaySales.length !== 66) return;
+        const confirmed = await confirm({
+            title: 'Finalizar lote histórico',
+            message: 'Se incorporarán exactamente 66 ventas a los tres cierres históricos existentes (25 + 34 + 7). La apertura actual se anulará y no se creará un cuarto cierre.',
+            confirmText: 'Vincular 66 ventas',
+            cancelText: 'Cancelar',
+            variant: 'warning',
+        });
+        if (!confirmed) return;
+
+        setIsFinalizingHistoricalBatch(true);
+        try {
+            const result = await finalizeHistoricalBatchInOpenSession({
+                operator: usuarioActivo,
+                expectedSaleCount: 66,
+            });
+            setSales(result.sales);
+            setIsCashReconOpen(false);
+            showToast('Las 66 ventas fueron vinculadas a los 3 cierres existentes.', 'success');
+        } catch (error) {
+            console.error('[DashboardView] Error finalizando lote histórico:', error);
+            showToast(error.message || 'No se pudo finalizar el lote histórico', 'error');
+        } finally {
+            setIsFinalizingHistoricalBatch(false);
+        }
+    };
+
     // Handler: Cierre de Caja (abre modal de confirmación y cuadre)
     const handleDailyClose = () => {
         triggerHaptic && triggerHaptic();
         if (todayCashFlow.length === 0 && todaySales.length === 0) {
-            showToast('No hay movimientos hoy para cerrar caja', 'error');
+            showToast('No hay movimientos pendientes para cerrar caja', 'error');
             return;
         }
         setIsCashReconOpen(true);
     };
 
     const handleConfirmCashRecon = async (reconData) => {
-        const { declaredUsd, declaredBs, diffUsd, diffBs } = reconData;
+        const { declaredUsd, diffUsd } = reconData;
 
-        // 1. Generar PDF del cierre pasando los datos de reconciliación
-        if (todayCashFlow.length > 0 || todaySales.length > 0) {
-            const allTodayForReport = sales.filter(s => {
-                const saleLocalDay = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
-                // Exclude APERTURA_CAJA from detail listing — shown separately in its own PDF section
-                return saleLocalDay === today && !s.cajaCerrada && s.tipo !== 'APERTURA_CAJA';
-            });
-
-            // Sales used for count and detail = all cash flow except APERTURA_CAJA records
-            const salesForPDF = todayCashFlow.filter(s => s.tipo !== 'APERTURA_CAJA');
-
-            await generateDailyClosePDF({
-                sales: salesForPDF,
-                allSales: allTodayForReport,
-                bcvRate,
-                paymentBreakdown,
-                topProducts: todayTopProducts,
-                todayTotalUsd,
-                todayTotalBs,
-                todayProfit,
-                todayItemsSold,
-                reconData, // Pasamos los datos del cuadre al PDF
-                apertura: todayApertura, // Fondo inicial de caja
-            });
-
-            await generateDailyCloseLetterPDF({
-                sales: salesForPDF,
-                allSales: allTodayForReport,
-                bcvRate,
-                paymentBreakdown,
-                topProducts: todayTopProducts,
-                todayTotalUsd,
-                todayTotalBs,
-                todayProfit,
-                todayItemsSold,
-                reconData,
-                apertura: todayApertura,
-                copEnabled,
-                tasaCop,
-                products,
-            });
+        if (todayCashFlow.length === 0 && todaySales.length === 0) {
+            showToast('No hay movimientos pendientes para cerrar', 'error');
+            return false;
         }
 
-        // 2. Marcar cajaCerrada en vez de borrar las ventas localmente
-        const currentCierreId = new Date().getTime();
-        const validTiposParaCerrar = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA', 'PAGO_PROVEEDOR', 'APERTURA_CAJA', 'ANULACION_VENTA'];
-        const updatedSales = sales.map(s => {
-            // Sweep all unclosed transactions of cash flow types, resolving any "zombie" entries from previous days
-            if (!s.cajaCerrada && validTiposParaCerrar.includes(s.tipo || 'VENTA')) {
-                return { ...s, cajaCerrada: true, cierreId: currentCierreId };
-            }
-            return s;
-        });
+        try {
+            // El cierre normal consume el turno abierto completo, aunque haya
+            // cruzado la medianoche. Nunca se ejecuta automáticamente.
+            const operator = usuarioActivo || { nombre: 'Administrador' };
+            const result = await commitNormalClosure({
+                fechaComercial: operatingDate,
+                tasaBcv: bcvRate,
+                operator,
+                reconData,
+            });
 
-        await storageService.setItem(SALES_KEY, updatedSales);
-        setSales(updatedSales);
-        setIsCashReconOpen(false);
-        showToast('Cierre de caja completado (Historial conservado)', 'success');
-        auditLog('VENTA', 'CIERRE_CAJA', 'Cierre de caja completado');
-        createNotification(
-            NOTIF_TYPES.CAJA_CERRADA,
-            'Caja cerrada',
-            `Cierre completado — $${todayTotalUsd.toFixed(2)} en ventas (${todaySales.length} transacciones)`,
-            { totalUsd: todayTotalUsd, declaredUsd, diffUsd }
-        );
+            const closedSales = result.closedSales || [];
+            const allTodayForReport = closedSales.filter(s => s.tipo !== 'APERTURA_CAJA');
+            const salesForPDF = closedSales.filter(s => s.tipo !== 'APERTURA_CAJA');
+            const closureSummary = buildClosureRecord({
+                cierreId: result.closure.cierreId,
+                sales: closedSales,
+                fechaComercial: operatingDate,
+                tasaBcv: bcvRate,
+                operador: operator,
+                tipo: 'NORMAL',
+                session: activeCashSession,
+                reconData,
+                closedAt: result.closure.cerradoEn,
+            });
+
+            if (isAdmin) {
+                try {
+                    await generateDailyClosePDF({
+                        sales: salesForPDF,
+                        allSales: allTodayForReport,
+                        bcvRate,
+                        paymentBreakdown: result.closure.paymentBreakdown,
+                        topProducts: todayTopProducts,
+                        todayTotalUsd,
+                        todayTotalBs,
+                        todayProfit,
+                        todayItemsSold,
+                        reconData,
+                        apertura: todayApertura,
+                        closure: closureSummary,
+                    });
+
+                    await generateDailyCloseLetterPDF({
+                        sales: salesForPDF,
+                        allSales: allTodayForReport,
+                        bcvRate,
+                        paymentBreakdown: result.closure.paymentBreakdown,
+                        topProducts: todayTopProducts,
+                        todayTotalUsd,
+                        todayTotalBs,
+                        todayProfit,
+                        todayItemsSold,
+                        reconData,
+                        apertura: todayApertura,
+                        copEnabled,
+                        tasaCop,
+                        products,
+                        closure: closureSummary,
+                    });
+                } catch (reportError) {
+                    console.error('[DashboardView] Cierre guardado, pero falló la generación del PDF:', reportError);
+                    showToast('Cierre guardado; no se pudo generar uno de los PDF', 'warning');
+                }
+            }
+
+            setSales(result.updatedSales);
+            setIsCashReconOpen(false);
+            showToast('Cierre de caja completado (Historial conservado)', 'success');
+            auditLog('VENTA', 'CIERRE_CAJA', `Cierre ${operatingDate} completado`);
+            createNotification(
+                NOTIF_TYPES.CAJA_CERRADA,
+                'Caja cerrada',
+                `Cierre completado — $${todayTotalUsd.toFixed(2)} en ventas (${todaySales.length} transacciones)`,
+                { totalUsd: todayTotalUsd, declaredUsd, diffUsd, cierreId: result.closure.cierreId }
+            );
+            return true;
+        } catch (error) {
+            console.error('[DashboardView] Error cerrando caja:', error);
+            showToast(error.message || 'No se pudo completar el cierre de caja', 'error');
+            return false;
+        }
     };
 
     if (isLoading) {
@@ -616,9 +671,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 <div className="absolute -left-8 -bottom-8 w-36 h-36 rounded-full bg-white/5" />
                 <div className="relative z-10 p-5 lg:p-4">
                     <div className="flex items-start justify-between mb-3 lg:mb-2">
-                        <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Ingresos del día</span>
+                        <span className="text-white/70 text-[10px] font-bold uppercase tracking-widest">{activeCashSession ? 'Ingresos del turno' : 'Ingresos del día'}</span>
                         <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm">
-                            {(() => { const d = new Date(); const days = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB']; const months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']; return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`; })()}
+                            {(() => { const d = new Date(`${operatingDate}T12:00:00`); const days = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB']; const months = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']; return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`; })()}
                         </span>
                     </div>
                     <div className="flex items-end justify-between">
@@ -663,7 +718,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div className="w-9 h-9 bg-sky-100 rounded-xl flex items-center justify-center mb-2.5">
                             <ArrowUpRight size={18} className="text-sky-600" strokeWidth={2.5} />
                         </div>
-                        <p className="text-xl font-black text-slate-800 leading-none">{formatBs(bcvRate)}</p>
+                        <p className="text-xl font-black text-slate-800 leading-none">{formatOfficialRate(bcvRate)}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">Bs por dólar</p>
                         <p className="text-[10px] text-sky-500 mt-1.5 font-bold uppercase tracking-wider">Tasa BCV</p>
                     </div>
@@ -730,7 +785,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
             {/* ── CERRAR CAJA ── */}
             {(todayCashFlow.length > 0 || todaySales.length > 0) ? (
-                (isAdmin || localStorage.getItem('cajero_puede_cerrar_caja') === 'true') ? (
+                canCloseCash ? (
                 <button onClick={handleDailyClose}
                     className="w-full rounded-2xl p-4 flex items-center justify-between active:scale-[0.98] transition-all group"
                     style={{ background: 'linear-gradient(135deg, #F97316, #EF4444)', boxShadow: '0 6px 20px rgba(239,68,68,0.25)' }}>
@@ -1066,10 +1121,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
             <SalesHistory
                 sales={sales}
-                recentSales={recentSales}
+                recentSales={isAdmin ? recentSales : todaySales}
                 bcvRate={bcvRate}
-                totalSalesCount={sales.length}
+                totalSalesCount={isAdmin ? sales.length : todaySales.length}
                 isAdmin={isAdmin}
+                isCashier={!isAdmin}
                 onVoidSale={handleVoidSale}
                 onShareWhatsApp={handleShareWhatsApp}
                 onDownloadPDF={handleDownloadPDF}
@@ -1314,7 +1370,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 bcvRate={bcvRate}
                 copEnabled={copEnabled}
                 tasaCop={tasaCop}
-                blindClose={!isAdmin && localStorage.getItem('cajero_puede_cerrar_caja') === 'true'}
+                businessDate={operatingDate}
+                blindClose={isCashierBlindClose}
+                historicalBatchReady={isAdmin && Boolean(activeCashSession) && todaySales.length === 66}
+                onFinalizeHistoricalBatch={isAdmin ? handleFinalizeHistoricalBatch : undefined}
+                finalizingHistoricalBatch={isFinalizingHistoricalBatch}
             />
 
 

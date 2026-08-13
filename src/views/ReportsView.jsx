@@ -3,6 +3,7 @@ import { FinancialEngine } from '../core/FinancialEngine';
 import { BarChart3, Calendar, Download, TrendingUp, ShoppingBag, DollarSign, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Receipt, Search, X, Filter, Recycle, LockIcon } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
+import { formatOfficialRate } from '../utils/rateResolver';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../config/paymentMethods';
 import { generateTicketPDF } from '../utils/ticketGenerator';
 import { useProductContext } from '../context/ProductContext';
@@ -12,8 +13,10 @@ import ConfirmModal from '../components/ConfirmModal';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { loadClosures } from '../utils/closureService';
 import CierreHistoryCard from '../components/Reports/CierreHistoryCard';
 import CasheaIcon from '../components/CasheaIcon';
+
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -30,6 +33,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const { products, setProducts, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
     const { loadCart } = useCart();
     const [allSales, setAllSales] = useState([]);
+    const [closures, setClosures] = useState([]);
     const [activeTab, setActiveTab] = useState('metrics');
     const [selectedRange, setSelectedRange] = useState('week');
     const [customFrom, setCustomFrom] = useState('');
@@ -68,9 +72,13 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         if (isActive === false) return; // Si es explicitamente false, abortamos
         let mounted = true;
         const load = async () => {
-            const saved = await storageService.getItem(SALES_KEY, []);
+            const [saved, savedClosures] = await Promise.all([
+                storageService.getItem(SALES_KEY, []),
+                loadClosures(),
+            ]);
             if (mounted) {
                 setAllSales(saved);
+                setClosures(savedClosures);
                 setIsLoading(false);
             }
         };
@@ -103,10 +111,10 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
 
     const groupedClosings = useMemo(() => {
         if (activeTab === 'history') {
-            return groupSalesByCierreId(allSales, from, to);
+            return groupSalesByCierreId(allSales, from, to, closures);
         }
         return [];
-    }, [allSales, from, to, activeTab]);
+    }, [allSales, closures, from, to, activeTab]);
 
     const maxDayTotal = Math.max(...salesByDay.map(d => d.total), 1);
 
@@ -162,13 +170,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     </div>
                     Reportes
                 </h2>
-                <button
-                    onClick={handleExportPDF}
-                    disabled={salesForStats.length === 0 && salesForCashFlow.length === 0}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-500/20 active:scale-95 transition-all"
-                >
-                    <Download size={16} /> Descargar PDF
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={salesForStats.length === 0 && salesForCashFlow.length === 0}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-500/20 active:scale-95 transition-all"
+                    >
+                        <Download size={16} /> Descargar PDF
+                    </button>
+                </div>
             </div>
 
             {/* Tab Selector */}
@@ -662,6 +672,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 message={'Esta accion:\n- Marcara la venta como ANULADA\n- Devolvera el stock a la bodega\n- Revertira deudas o saldos a favor\n\nEsta accion no se puede deshacer.'}
                 confirmText="Si, anular"
             />
+
+
         </div>
     );
 }
@@ -811,7 +823,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
 
                         <div className="flex justify-between items-center text-[11px]">
                             <span className="text-slate-400">Tasa BCV aplicada</span>
-                            <span className="text-slate-400">{formatBs(s.rate || bcvRate)} Bs/$</span>
+                            <span className="text-slate-400">{formatOfficialRate(s.fechaComercialTasa || s.rate || bcvRate)} Bs/$</span>
                         </div>
 
                         {s.tasaCop > 0 && (

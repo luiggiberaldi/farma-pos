@@ -3,6 +3,8 @@ import { logEvent } from '../services/auditService';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { round2 } from './dinero';
 import { createNotification, NOTIF_TYPES } from '../services/notificationService';
+import { getLocalISOTime } from './dateHelpers';
+import { getOpenCashSession, getSaleBusinessDate, isMovementInCashSession } from './closureLogic';
 
 const SALES_KEY = 'bodega_sales_v1';
 const CUSTOMERS_KEY = 'bodega_customers_v1';
@@ -17,7 +19,12 @@ export async function processVoidSale(sale, currentSales, currentProducts, optio
     // 1. Crear transacción de anulación en negativo y agregar metadatos a la original
     const voidId = `void_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const user = useAuthStore.getState().usuarioActivo;
-    const voidTimestamp = new Date().toISOString();
+    const voidNow = new Date();
+    const voidTimestamp = voidNow.toISOString();
+    const openSession = getOpenCashSession(currentSales);
+    const sessionDate = openSession && isMovementInCashSession(sale, openSession)
+        ? openSession.businessDate
+        : getSaleBusinessDate(sale);
 
     const voidTransaction = {
         id: voidId,
@@ -26,6 +33,8 @@ export async function processVoidSale(sale, currentSales, currentProducts, optio
         originSaleId: sale.id,
         originSaleNumber: sale.saleNumber,
         timestamp: voidTimestamp,
+        fechaComercial: sessionDate,
+        horaComercial: getLocalISOTime(voidNow),
         cierreId: null,
         cajaCerrada: false,
         totalUsd: -(sale.totalUsd || 0),

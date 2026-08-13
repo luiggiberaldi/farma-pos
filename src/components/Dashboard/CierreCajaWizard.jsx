@@ -21,11 +21,16 @@ export default function CierreCajaWizard({
     copEnabled = false,
     tasaCop = 0,
     blindClose = false,
+    businessDate = null,
+    historicalBatchReady = false,
+    onFinalizeHistoricalBatch = null,
+    finalizingHistoricalBatch = false,
 }) {
     const [step, setStep] = useState(1);
     const [actualUsd, setActualUsd] = useState('');
     const [actualBs, setActualBs] = useState('');
     const [actualCop, setActualCop] = useState('');
+    const [isConfirming, setIsConfirming] = useState(false);
 
     const activeSalesCount = todaySales.filter(s => !s.relatedVoidId && s.tipo !== 'ANULACION_VENTA').length;
     const voidSalesCount = todaySales.filter(s => s.tipo === 'ANULACION_VENTA').length;
@@ -36,9 +41,9 @@ export default function CierreCajaWizard({
     const expectedBs = paymentBreakdown['efectivo_bs']?.total || 0;
     const expectedCop = paymentBreakdown['efectivo_cop']?.total || 0;
 
-    const declaredUsd = parseFloat(actualUsd) || 0;
-    const declaredBs = parseFloat(actualBs) || 0;
-    const declaredCop = parseFloat(actualCop) || 0;
+    const declaredUsd = Math.max(0, parseFloat(actualUsd) || 0);
+    const declaredBs = Math.max(0, parseFloat(actualBs) || 0);
+    const declaredCop = Math.max(0, parseFloat(actualCop) || 0);
     const diffUsd = declaredUsd - expectedUsd;
     const diffBs = declaredBs - expectedBs;
     const diffCop = declaredCop - expectedCop;
@@ -63,15 +68,23 @@ export default function CierreCajaWizard({
         return { color: 'red', label: 'Discrepancia significativa', icon: AlertTriangle, bg: 'bg-red-500' };
     };
 
-    const handleConfirm = () => {
-        onConfirm({ declaredUsd, declaredBs, declaredCop, diffUsd, diffBs, diffCop });
-        setStep(1);
-        setActualUsd('');
-        setActualBs('');
-        setActualCop('');
+    const handleConfirm = async () => {
+        if (isConfirming) return;
+        setIsConfirming(true);
+        try {
+            const result = await onConfirm({ declaredUsd, declaredBs, declaredCop, diffUsd, diffBs, diffCop });
+            if (result === false) return;
+            setStep(1);
+            setActualUsd('');
+            setActualBs('');
+            setActualCop('');
+        } finally {
+            setIsConfirming(false);
+        }
     };
 
     const handleClose = () => {
+        if (isConfirming) return;
         setStep(1);
         setActualUsd('');
         setActualBs('');
@@ -104,6 +117,9 @@ export default function CierreCajaWizard({
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <h2 className="text-lg font-black text-slate-800 dark:text-white">Cierre de Caja</h2>
+                            {businessDate && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">Turno comercial: {businessDate}</p>
+                            )}
                             {blindClose && (
                                 <div className="flex items-center gap-1 mt-0.5">
                                     <EyeOff size={11} className="text-amber-500" />
@@ -111,7 +127,7 @@ export default function CierreCajaWizard({
                                 </div>
                             )}
                         </div>
-                        <button onClick={handleClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        <button onClick={handleClose} disabled={isConfirming} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40">
                             <X size={18} />
                         </button>
                     </div>
@@ -152,7 +168,7 @@ export default function CierreCajaWizard({
                             {/* Totales principales */}
                             <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-5 text-white relative overflow-hidden">
                                 <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-                                <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1">Ingresos brutos del dia</p>
+                                <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1">{businessDate ? 'Ingresos brutos del turno' : 'Ingresos brutos del dia'}</p>
                                 <p className="text-3xl font-black">${todayTotalUsd.toFixed(2)}</p>
                                 <p className="text-sm font-bold text-indigo-200 mt-0.5">{formatBs(todayTotalBs)} Bs</p>
                                 {hasCopTransactions && todayTotalCop > 0 && (
@@ -263,13 +279,34 @@ export default function CierreCajaWizard({
                                 </div>
                             )}
 
+                            {historicalBatchReady && onFinalizeHistoricalBatch && !blindClose && (
+                                <div className="rounded-2xl border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/20 p-3 space-y-2">
+                                    <div className="flex gap-2">
+                                        <AlertTriangle size={17} className="text-amber-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-xs font-black text-amber-800 dark:text-amber-300">Este lote corresponde a los 3 cierres históricos</p>
+                                            <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80 mt-0.5 leading-relaxed">Se detectaron exactamente 66 ventas (25 + 34 + 7). No las cierres como un cuarto cierre.</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={onFinalizeHistoricalBatch}
+                                        disabled={finalizingHistoricalBatch}
+                                        className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black disabled:opacity-50"
+                                    >
+                                        {finalizingHistoricalBatch ? 'Vinculando ventas...' : 'Vincular 66 ventas a los 3 cierres'}
+                                    </button>
+                                </div>
+                            )}
+
                             {/* CTA */}
-                            <button
-                                onClick={() => setStep(2)}
-                                className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm"
-                            >
-                                Continuar al Conteo <ArrowRight size={18} />
-                            </button>
+                            {!historicalBatchReady && (
+                                <button
+                                    onClick={() => setStep(2)}
+                                    className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm"
+                                >
+                                    Continuar al Conteo <ArrowRight size={18} />
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -295,6 +332,7 @@ export default function CierreCajaWizard({
                                     <DollarSign size={18} className="absolute left-4 text-slate-400" />
                                     <input
                                         type="number"
+                                        min="0"
                                         step="any"
                                         inputMode="decimal"
                                         value={actualUsd}
@@ -318,6 +356,7 @@ export default function CierreCajaWizard({
                                     <span className="absolute left-4 font-bold text-slate-400 text-sm">Bs</span>
                                     <input
                                         type="number"
+                                        min="0"
                                         step="any"
                                         inputMode="decimal"
                                         value={actualBs}
@@ -345,6 +384,7 @@ export default function CierreCajaWizard({
                                         <Coins size={18} className="absolute left-4 text-amber-500" />
                                         <input
                                             type="number"
+                                            min="0"
                                             step="any"
                                             inputMode="decimal"
                                             value={actualCop}
@@ -411,9 +451,10 @@ export default function CierreCajaWizard({
                                         </button>
                                         <button
                                             onClick={handleConfirm}
-                                            className="flex-1 py-3.5 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                            disabled={isConfirming}
+                                            className="flex-1 py-3.5 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                                         >
-                                            <CheckCircle2 size={18} /> Confirmar Cierre
+                                            {isConfirming ? 'Guardando...' : <><CheckCircle2 size={18} /> Confirmar Cierre</>}
                                         </button>
                                     </div>
                                 </div>
@@ -498,9 +539,10 @@ export default function CierreCajaWizard({
                                     </button>
                                     <button
                                         onClick={handleConfirm}
-                                        className={`flex-1 py-3.5 text-sm font-bold text-white ${sem.bg} hover:brightness-110 rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2`}
+                                        disabled={isConfirming}
+                                        className={`flex-1 py-3.5 text-sm font-bold text-white ${sem.bg} hover:brightness-110 rounded-xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60`}
                                     >
-                                        <CheckCircle2 size={18} /> Confirmar Cierre
+                                        {isConfirming ? 'Guardando...' : <><CheckCircle2 size={18} /> Confirmar Cierre</>}
                                     </button>
                                 </div>
                             </div>

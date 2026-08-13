@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { broadcastFactoryReset, broadcastForceReload } from '../hooks/useCloudSync';
+import { uploadBackupToCloud } from '../hooks/useCloudAuthLogic';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from '../components/Settings/PaymentMethodsManager';
 import UsersManager from '../components/Settings/UsersManager';
@@ -88,6 +89,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const pinLoginEnabled = requireLogin && isCloudConfigured;
     const effectiveAdmin = isAdmin || !pinLoginEnabled;
     const [showPostImportCloud, setShowPostImportCloud] = useState(false);
+    const [importedBackup, setImportedBackup] = useState(null);
 
     const handleSaveBusinessData = () => {
         localStorage.setItem('business_name', businessName);
@@ -159,6 +161,45 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
     const handleImportClick = () => fileInputRef.current?.click();
 
+    const handleUploadImportedBackup = async () => {
+        if (!importedBackup?.data) return;
+
+        try {
+            const { data: { session } } = await supabaseCloud.auth.getSession();
+            if (!session?.user?.email) {
+                showToast('Primero vincula o inicia sesión en una cuenta cloud.', 'error');
+                setShowPostImportCloud(false);
+                setActiveTab('usuarios');
+                return;
+            }
+
+            const ok = await confirm({
+                title: 'Sobrescribir backup en la nube',
+                message: `Se reemplazarán los datos cloud de ${session.user.email} por el backup restaurado. Esta acción no se puede deshacer desde la app. ¿Continuar?`,
+                confirmText: 'Subir backup',
+                cancelText: 'Cancelar',
+                variant: 'warning',
+            });
+            if (!ok) return;
+
+            setImportStatus('loading');
+            setStatusMessage('Subiendo backup a la nube...');
+            await uploadBackupToCloud(session.user.email, importedBackup, { strictSync: true });
+            sessionStorage.setItem('skip_cloud_pull', '1');
+            auditLog('NUBE', 'BACKUP_SUBIDO', `Backup restaurado subido a ${session.user.email}`);
+            setImportStatus('success');
+            setStatusMessage('Backup guardado en la nube. Recargando...');
+            showToast('Backup guardado en la nube', 'success');
+            triggerHaptic?.('success');
+            setShowPostImportCloud(false);
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            setImportStatus('error');
+            setStatusMessage('Error al subir el backup a la nube.');
+            showToast(error.message || 'No se pudo subir el backup a la nube.', 'error');
+        }
+    };
+
     const handleFileChange = (event) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -178,17 +219,11 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                 } else {
                     if (json.data.bodega_products_v1) await lf.setItem(getScopedStorageKey('bodega_products_v1'), typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
                 }
+                setImportedBackup(json);
                 setImportStatus('success'); setStatusMessage('Restauracion finalizada.');
                 auditLog('SISTEMA', 'BACKUP_IMPORTADO', 'Backup restaurado'); triggerHaptic?.();
-                // Check if imported data has cloud credentials
-                const importedAuth = json.data?.ls?.['abasto-auth-storage'];
-                let hasCloudInBackup = false;
-                try { hasCloudInBackup = importedAuth && !!JSON.parse(importedAuth)?.state?.adminEmail; } catch {}
-                if (!hasCloudInBackup) {
-                    setShowPostImportCloud(true);
-                } else {
-                    setTimeout(() => window.location.reload(), 1500);
-                }
+                // Mantener el diálogo abierto para permitir una subida explícita.
+                setShowPostImportCloud(true);
             } catch {
                 setImportStatus('error'); setStatusMessage('Error: archivo corrupto o invalido.');
             }
@@ -444,19 +479,26 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         <div className="w-16 h-16 mx-auto bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 rounded-2xl flex items-center justify-center mb-4">
                             <CloudUpload size={28} />
                         </div>
-                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Backup importado</h3>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Backup restaurado</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
-                            El backup no tenía cuenta cloud vinculada. ¿Deseas conectar una cuenta ahora para activar la licencia y sincronización?
+                            Los datos ya están en este dispositivo. Puedes subirlos explícitamente a la cuenta cloud activa o vincular una cuenta primero.
                         </p>
-                        <div className="flex gap-3">
+                        <div className="grid grid-cols-3 gap-2">
                             <button
                                 onClick={() => {
                                     setShowPostImportCloud(false);
                                     setTimeout(() => window.location.reload(), 300);
                                 }}
-                                className="flex-1 py-3.5 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                                className="py-3 text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
                             >
                                 Ahora no
+                            </button>
+                            <button
+                                onClick={handleUploadImportedBackup}
+                                disabled={importStatus === 'loading'}
+                                className="py-3 text-xs font-bold text-white bg-emerald-500 rounded-xl hover:bg-emerald-600 active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Upload size={14} /> Subir nube
                             </button>
                             <button
                                 onClick={() => {
@@ -465,9 +507,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                     // Scroll to top to show the cloud login section
                                     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
                                 }}
-                                className="flex-1 py-3.5 text-sm font-bold text-white bg-indigo-500 rounded-xl hover:bg-indigo-600 active:scale-95 transition-all flex items-center justify-center gap-2"
+                                className="py-3 text-xs font-bold text-white bg-indigo-500 rounded-xl hover:bg-indigo-600 active:scale-95 transition-all flex items-center justify-center gap-1"
                             >
-                                <CloudUpload size={16} /> Vincular cuenta
+                                <CloudUpload size={14} /> Vincular
                             </button>
                         </div>
                     </div>

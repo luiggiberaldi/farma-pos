@@ -3,6 +3,7 @@ import { Plus, Trash2, Send, CreditCard, Landmark, DollarSign, X, Bitcoin, Smart
 import { useSecurity } from '../hooks/useSecurity';
 import { storageService } from '../utils/storageService';
 import { SUPPORT_WHATSAPP } from '../config/tenant';
+import { formatOfficialRate } from '../utils/rateResolver';
 
 // ✅ LISTA OFICIAL DE BANCOS VENEZOLANOS (2025)
 const VENEZUELA_BANKS = [
@@ -160,7 +161,7 @@ export default function WalletView({ rates }) {
                 const rateVal = rates.bcv.price;
                 if (rateVal > 0) {
                     const amountUSD = parseFloat(amountBs) / rateVal;
-                    message += `💵 Monto a enviar: $${amountUSD.toFixed(2)}\n(Ref: ${fmt(amountBs)} Bs a tasa ${selectedRate.toUpperCase()} ${fmt(rateVal)})`;
+                    message += `💵 Monto a enviar: $${amountUSD.toFixed(2)}\n(Ref: ${fmt(amountBs)} Bs a tasa ${selectedRate.toUpperCase()} ${formatOfficialRate(rateVal)})`;
                 }
             }
         } else if (account.type === 'binance') {
@@ -169,7 +170,7 @@ export default function WalletView({ rates }) {
                 const rateVal = rates.bcv.price;
                 if (rateVal > 0) {
                     const amountUSD = parseFloat(amountBs) / rateVal;
-                    message += `💵 Monto a enviar: ${amountUSD.toFixed(2)} USD\n(Ref: ${fmt(amountBs)} Bs a tasa BCV ${fmt(rateVal)})`;
+                    message += `💵 Monto a enviar: ${amountUSD.toFixed(2)} USD\n(Ref: ${fmt(amountBs)} Bs a tasa BCV ${formatOfficialRate(rateVal)})`;
                 }
             }
         }

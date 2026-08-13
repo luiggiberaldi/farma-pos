@@ -37,6 +37,7 @@ const SYNC_KEYS = [
     'bodega_products_v1',
     'bodega_customers_v1',
     'bodega_sales_v1',
+    'bodega_cierres_v1',
     'bodega_payment_methods_v1',
     'bodega_accounts_v2',
     // 'abasto_audit_log_v1' eliminado: el audit va incremental a la tabla
@@ -123,6 +124,7 @@ const MERGEABLE_KEYS = [
     // El inventario no se mezcla: la cuenta/nube activa es la fuente de verdad.
     'bodega_customers_v1',
     'bodega_sales_v1',
+    'bodega_cierres_v1',
     'bodega_payment_methods_v1',
     'bodega_accounts_v2',
     'my_categories_v1',
@@ -146,28 +148,28 @@ function _mergeArraysById(localArr, cloudArr) {
 
     // Primero agregar todos los locales
     for (const item of localArr) {
-        const id = item?.id;
-        if (id) map.set(id, item);
+        const id = item?.id ?? item?.cierreId;
+        if (id !== null && id !== undefined) map.set(String(id), item);
     }
 
     // Luego agregar/sobreescribir con los de la nube si son más recientes
     for (const item of cloudArr) {
-        const id = item?.id;
-        if (!id) {
+        const id = item?.id ?? item?.cierreId;
+        if (id === null || id === undefined) {
             // Items sin id: agregar directamente
             map.set(Symbol(), item);
             continue;
         }
 
-        const existing = map.get(id);
+        const existing = map.get(String(id));
         if (!existing) {
-            map.set(id, item);
+            map.set(String(id), item);
         } else {
             // Comparar timestamps — gana el más reciente
             const localTime = existing.updatedAt || existing.createdAt || '';
             const cloudTime = item.updatedAt || item.createdAt || '';
             if (cloudTime >= localTime) {
-                map.set(id, item);
+                map.set(String(id), item);
             }
             // Si local es más reciente, se queda el local (ya está en el map)
         }

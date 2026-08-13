@@ -1,4 +1,5 @@
 import { formatBs, formatVzlaPhone } from './calculatorUtils';
+import { formatOfficialRate } from './rateResolver';
 
 export function shareSaleWhatsApp(sale, saleCustomer, bcvRate) {
     let text = `*COMPROBANTE DE VENTA | LISTO POS LITE*\n`;
@@ -18,7 +19,7 @@ export function shareSaleWhatsApp(sale, saleCustomer, bcvRate) {
     }
 
     text += `*TOTAL A PAGAR: $${(sale.totalUsd || 0).toFixed(2)}*\n`;
-    text += ` Ref: ${formatBs(sale.totalBs || 0)} Bs a ${formatBs(sale.rate || bcvRate)} Bs/$\n`;
+    text += ` Ref: ${formatBs(sale.totalBs || 0)} Bs a ${formatOfficialRate(sale.rate || bcvRate)} Bs/$\n`;
 
     if (sale.fiadoUsd > 0) {
         text += `\n*SALDO PENDIENTE (FIADO): $${sale.fiadoUsd.toFixed(2)}*\n`;

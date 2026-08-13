@@ -38,6 +38,7 @@ api/*.js
 !api/share.js
 !api/checkout.js
 !api/update-profile.js
+!api/rates.js
 
 # Backups y datos locales
 backup_*.json
@@ -86,6 +87,8 @@ scripts/
 
 # Herramientas de agente y configs de deploy privadas
 .agent/
+.freebuff/
+.wrangler/
 .vercel
 capacitor.config.json
 

@@ -1,13 +1,17 @@
 import { FinancialEngine } from '../core/FinancialEngine';
 import { getLocalISODate } from './dateHelpers';
+import {
+    getClosureDate,
+    getClosureRate,
+    getSaleBusinessDate,
+} from './closureLogic';
 
 export function calculateReportsData(allSales, from, to, bcvRate, products) {
     // Ventas de Mercancía (para Totales, Profit, Top Productos)
     const salesForStats = allSales.filter(s => {
         if (s.status === 'ANULADA') return false;
         if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'ANULACION_VENTA') return false;
-        if (!s.timestamp || isNaN(new Date(s.timestamp).getTime())) return false;
-        const dateStr = getLocalISODate(new Date(s.timestamp));
+        const dateStr = getSaleBusinessDate(s);
         return dateStr >= from && dateStr <= to;
     });
 
@@ -15,15 +19,13 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
     const salesForCashFlow = allSales.filter(s => {
         if (s.status === 'ANULADA') return false;
         if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'ANULACION_VENTA') return false;
-        if (!s.timestamp || isNaN(new Date(s.timestamp).getTime())) return false;
-        const dateStr = getLocalISODate(new Date(s.timestamp));
+        const dateStr = getSaleBusinessDate(s);
         return dateStr >= from && dateStr <= to;
     });
 
     const historySales = allSales.filter(s => {
         if (s.tipo === 'AJUSTE_ENTRADA' || s.tipo === 'AJUSTE_SALIDA') return false;
-        if (!s.timestamp || isNaN(new Date(s.timestamp).getTime())) return false;
-        const dateStr = getLocalISODate(new Date(s.timestamp));
+        const dateStr = getSaleBusinessDate(s);
         return dateStr >= from && dateStr <= to;
     });
 
@@ -47,7 +49,7 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
     // Ventas por día para mini gráfica
     const map = {};
     salesForStats.forEach(s => {
-        const day = s.timestamp ? getLocalISODate(new Date(s.timestamp)) : getLocalISODate(new Date());
+        const day = getSaleBusinessDate(s, getLocalISODate(new Date()));
         if (!map[day]) map[day] = { date: day, total: 0, count: 0 };
         map[day].total += s.totalUsd || 0;
         map[day].count++;
@@ -68,21 +70,26 @@ export function calculateReportsData(allSales, from, to, bcvRate, products) {
     };
 }
 
-export function groupSalesByCierreId(allSales, from, to) {
-    // 1. Encontrar ventas/aperturas que caen en el rango y tienen cierreId
+export function groupSalesByCierreId(allSales, from, to, closures = []) {
+    const closureById = new Map((Array.isArray(closures) ? closures : []).map(closure => [String(closure.cierreId), closure]));
+
+    // Encontrar ventas/aperturas que caen en el rango comercial y tienen cierreId.
     const entitiesInDateRange = allSales.filter(s => {
-        const dateStr = getLocalISODate(new Date(s.timestamp));
+        const dateStr = getSaleBusinessDate(s);
         return dateStr >= from && dateStr <= to && s.cierreId;
     });
 
-    // 2. Agrupar por cierreId
     const cMap = {};
     entitiesInDateRange.forEach(entity => {
         const cId = entity.cierreId;
+        const closureMeta = closureById.get(String(cId)) || null;
         if (!cMap[cId]) {
+            const commercialDate = closureMeta ? getClosureDate(closureMeta, getSaleBusinessDate(entity)) : getSaleBusinessDate(entity);
             cMap[cId] = {
                 cierreId: cId,
                 timestamp: cId,
+                businessDate: commercialDate,
+                closureMeta,
                 apertura: null,
                 sales: [],
             };
@@ -94,37 +101,34 @@ export function groupSalesByCierreId(allSales, from, to) {
         }
     });
 
-    // 3. Calcular resumen y ordenar desc
-    const result = Object.values(cMap)
+    return Object.values(cMap)
         .filter(c => c.sales.length > 0)
         .map(c => {
-            const dateObj = new Date(c.cierreId);
+            const dateObj = c.businessDate
+                ? new Date(`${c.businessDate}T12:00:00`)
+                : new Date(c.cierreId);
 
-            // Filtrar para métricas generales (stats) y flujo de caja (cashflow)
             const salesForStats = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'ANULACION_VENTA');
             const salesForCashFlow = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'ANULACION_VENTA');
 
             const totalUsd = salesForStats.reduce((acc, s) => acc + (s.totalUsd || 0), 0);
             const totalBs = salesForStats.reduce((acc, s) => acc + (s.totalBs || 0), 0);
             const totalItems = salesForStats.reduce((acc, s) => acc + (s.items ? s.items.reduce((is, it) => is + it.qty, 0) : 0), 0);
-            
-            // Reconstruir desglose de pago de esta caja
             const paymentBreakdown = FinancialEngine.calculatePaymentBreakdown(salesForCashFlow);
+            const rateSnapshot = getClosureRate(c.closureMeta, 0);
 
             return {
                 ...c,
                 dateObj,
+                rateSnapshot,
                 salesForStats,
                 salesForCashFlow,
                 totalUsd,
                 totalBs,
                 totalItems,
                 paymentBreakdown,
-                // Total de operaciones del cierre (excluye APERTURA_CAJA, ya separada)
                 salesCount: c.sales.length,
             };
         })
         .sort((a, b) => b.cierreId - a.cierreId);
-
-    return result;
 }

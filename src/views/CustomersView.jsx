@@ -14,6 +14,8 @@ import SwipeableItem from '../components/SwipeableItem';
 import { useProductContext } from '../context/ProductContext';
 import { useAudit } from '../hooks/useAudit';
 import { useAuthStore } from '../hooks/store/useAuthStore';
+import { getLocalISODate, getLocalISOTime } from '../utils/dateHelpers';
+import { getOpenCashSession } from '../utils/closureLogic';
 
 // Importaciones de Proveedores
 import SuppliersList from '../components/Suppliers/SuppliersList';
@@ -180,13 +182,19 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
 
         // 2. Registrar en Caja como Egreso
         const sales = await storageService.getItem('bodega_sales_v1', []);
+        const openSession = getOpenCashSession(sales);
+        const movementNow = new Date();
+        const fechaComercial = openSession?.businessDate || getLocalISODate(movementNow);
+        const horaComercial = getLocalISOTime(movementNow);
         const totalEnBs = currency === 'BS' ? amountBs : mulR(amountUsd, bcvRate);
         const totalEnUsd = currency === 'USD' ? amountUsd : (bcvRate > 0 ? divR(amountBs, bcvRate) : 0);
         const totalEnCop = currency === 'COP' ? amountBs : mulR(amountUsd, tasaCop);
 
         const pagoRecord = {
             id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
+            timestamp: movementNow.toISOString(),
+            fechaComercial,
+            horaComercial,
             tipo: 'PAGO_PROVEEDOR',
             supplierId: supplier.id,
             supplierName: supplier.name,

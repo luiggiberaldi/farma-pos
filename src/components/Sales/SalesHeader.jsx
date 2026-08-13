@@ -1,8 +1,10 @@
 import { RefreshCw, ShoppingCart, Keyboard, Lock, Landmark, Euro, PenTool } from 'lucide-react';
 import Tooltip from '../Tooltip';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
+import { formatOfficialRate } from '../../utils/rateResolver';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+const formatRate = formatOfficialRate;
 
 export default function SalesHeader({
     effectiveRate,
@@ -60,7 +62,7 @@ export default function SalesHeader({
                                     {rateMode === 'manual' && <PenTool size={11} />}
                                 </span>
                             )}
-                            <strong className="text-[11px] font-black">{formatBs(effectiveRate)}</strong>
+                            <strong className="text-[11px] font-black">{formatRate(effectiveRate)}</strong>
                         </button>
                     </div>
                 </div>
@@ -110,7 +112,7 @@ export default function SalesHeader({
                                     </>
                                 )}
                             </span>
-                            <strong className="text-sm font-black">{formatBs(effectiveRate)} Bs</strong>
+                            <strong className="text-sm font-black">{formatRate(effectiveRate)} Bs</strong>
                         </button>
                     </Tooltip>
                 </div>
@@ -135,7 +137,7 @@ export default function SalesHeader({
                             <Landmark size={20} className={rateMode === 'bcv' ? 'text-emerald-500' : 'text-slate-400 dark:text-slate-500'} />
                             <span className="text-[10px] font-black tracking-tight leading-none mt-1">Dólar BCV</span>
                             {rates?.bcv?.price > 0 && (
-                                <span className="text-[9px] font-bold opacity-80 mt-1">{formatBs(rates.bcv.price)}</span>
+                                <span className="text-[9px] font-bold opacity-80 mt-1">{formatRate(rates.bcv.price)}</span>
                             )}
                         </button>
 
@@ -152,7 +154,7 @@ export default function SalesHeader({
                             <Euro size={20} className={rateMode === 'euro' ? 'text-blue-500' : 'text-slate-400 dark:text-slate-500'} />
                             <span className="text-[10px] font-black tracking-tight leading-none mt-1">Euro BCV</span>
                             {rates?.euro?.price > 0 && (
-                                <span className="text-[9px] font-bold opacity-80 mt-1">{formatBs(rates.euro.price)}</span>
+                                <span className="text-[9px] font-bold opacity-80 mt-1">{formatRate(rates.euro.price)}</span>
                             )}
                         </button>
 

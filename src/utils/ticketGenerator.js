@@ -1,4 +1,5 @@
 import { formatBs, formatUsd } from './calculatorUtils';
+import { formatOfficialRate } from './rateResolver';
 
 /**
  * Genera el HTML del ticket térmico (fuente única de verdad para print y PDF).
@@ -198,7 +199,7 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
     <table class="${isCarta ? 'items-table' : ''}">${itemsHtml}</table>
     <hr class="dash">
     <div class="center" style="font-size:${fTiny};color:#555;margin:4px 0;">
-        <div style="margin-bottom:2px;">Tasa BCV: Bs ${formatBs(rate)} por $1</div>
+        <div style="margin-bottom:2px;">Tasa BCV: Bs ${formatOfficialRate(rate)} por $1</div>
         ${sale.tasaCop > 0 ? `<div>Tasa COP: ${sale.tasaCop.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} por $1</div>` : ''}
     </div>
     <div style="margin:8px 0;">

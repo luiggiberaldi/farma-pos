@@ -5,6 +5,12 @@ export function getLocalISODate(d = new Date()) {
     return `${year}-${month}-${day}`;
 }
 
+export function getLocalISOTime(d = new Date()) {
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
 export function getDateRange(rangeId) {
     const now = new Date();
     const todayStr = getLocalISODate(now);

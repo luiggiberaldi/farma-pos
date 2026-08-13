@@ -8,6 +8,8 @@
  * En móvil o Firefox, `isSupported()` retorna false.
  */
 
+import { formatOfficialRate } from '../utils/rateResolver';
+
 // ── Comandos ESC/POS ──
 const ESC = 0x1B;
 const GS  = 0x1D;
@@ -138,7 +140,7 @@ function buildEscPosTicket(sale, rate) {
 
     parts.push(encode(`${sep}\n`));
     parts.push(CMD.alignCenter);
-    parts.push(encode(`Tasa: ${effectiveRate.toFixed(2)} Bs/$\n`));
+    parts.push(encode(`Tasa: ${formatOfficialRate(effectiveRate)} Bs/$\n`));
     parts.push(encode('¡Gracias por su compra!\n'));
     parts.push(CMD.alignLeft);
 

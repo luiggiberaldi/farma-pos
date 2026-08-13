@@ -6,6 +6,7 @@ import { round2, subR, sumR, mulR } from './dinero';
 import { supabase } from '../core/supabaseClient';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { PrinterSerial } from '../services/PrinterSerial';
+import { getLocalISODate, getLocalISOTime } from './dateHelpers';
 
 const SALES_KEY = 'bodega_sales_v1';
 
@@ -24,7 +25,9 @@ export async function processSaleTransaction({
     copEnabled,
     discountData,
     useAutoRate,
-    rateMode
+    rateMode,
+    businessDate = null,
+    businessTime = null
 }) {
     if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
 
@@ -133,6 +136,10 @@ export async function processSaleTransaction({
             ? (rateMode === 'bcv' ? 'BCV Auto' : (rateMode === 'euro' ? 'Euro Auto' : 'Manual')) 
             : (useAutoRate ? 'BCV Auto' : 'Manual'),
         timestamp: new Date().toISOString(),
+        // The commercial date belongs to the open cash session, not blindly
+        // to the calendar date. This keeps a shift crossing midnight intact.
+        fechaComercial: businessDate || getLocalISODate(new Date()),
+        horaComercial: businessTime || getLocalISOTime(new Date()),
         changeUsd: tipoVenta !== 'VENTA' ? 0 : (changeBreakdown?.changeUsdGiven || 0),
         changeBs: tipoVenta !== 'VENTA' ? 0 : (changeBreakdown?.changeBsGiven || 0),
         customerId: selectedCustomerId || null,

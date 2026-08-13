@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs } from '../../utils/calculatorUtils';
+import { formatOfficialRate } from '../../utils/rateResolver';
 import { printThermalTicket } from '../../utils/ticketGenerator';
 import { PrinterSerial } from '../../services/PrinterSerial';
 
@@ -106,7 +107,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
 
                         <div className="mt-6 flex flex-col items-center gap-1">
                             <p className="text-center text-[10px] text-slate-400 uppercase tracking-wider font-bold">
-                                Tasa BCV Aplicada: {formatBs(receipt.rate)} Bs/$
+                                Tasa BCV Aplicada: {formatOfficialRate(receipt.rate)} Bs/$
                             </p>
                             {receipt.tasaCop > 0 && (
                                 <p className="text-center text-[10px] text-slate-400 uppercase tracking-wider font-bold">

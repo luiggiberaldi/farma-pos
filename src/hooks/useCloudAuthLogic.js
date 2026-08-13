@@ -8,6 +8,63 @@ import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
 import { setActiveAccountId } from '../config/storageScope';
 
+// El Worker local no suele tener SUPABASE_SERVICE_KEY; no lanzar peticiones
+// destinadas al despliegue desde el servidor de desarrollo.
+const PROFILE_SYNC_ENABLED = import.meta.env.PROD
+    && typeof window !== 'undefined'
+    && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+
+/**
+ * Guarda explícitamente un backup completo en la cuenta cloud y espeja sus datos
+ * en sync_documents para que la restauración sea visible en los demás equipos.
+ */
+export const uploadBackupToCloud = async (email, backupData, { strictSync = false } = {}) => {
+    if (!email || !backupData?.data) throw new Error('Backup o cuenta cloud inválidos.');
+
+    const { error } = await supabaseCloud
+        .from('cloud_backups')
+        .upsert({
+            email: email.toLowerCase(),
+            backup_data: backupData,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'email' });
+    if (error) throw error;
+
+    const { data: { session } } = await supabaseCloud.auth.getSession();
+    if (!session?.user?.id) throw new Error('La sesión cloud expiró. Vuelve a iniciar sesión.');
+
+    const syncPayloads = [];
+    for (const [key, value] of Object.entries(backupData.data.idb || {})) {
+        syncPayloads.push({
+            user_id: session.user.id,
+            collection: 'store',
+            doc_id: key,
+            data: { payload: sanitizeForPush(key, value) },
+            updated_at: new Date().toISOString()
+        });
+    }
+    for (const [key, value] of Object.entries(backupData.data.ls || {})) {
+        let finalVal = value;
+        try { finalVal = JSON.parse(value); } catch { /* valores de localStorage que no son JSON */ }
+        syncPayloads.push({
+            user_id: session.user.id,
+            collection: 'local',
+            doc_id: key,
+            data: { payload: sanitizeForPush(key, finalVal) },
+            updated_at: new Date().toISOString()
+        });
+    }
+    if (syncPayloads.length > 0) {
+        const { error: syncError } = await supabaseCloud
+            .from('sync_documents')
+            .upsert(syncPayloads, { onConflict: 'user_id,collection,doc_id' });
+        if (syncError) {
+            if (strictSync) throw syncError;
+            console.warn('[Realtime Sync Init] Fallo inicializando sync_documents:', syncError.message);
+        }
+    }
+};
+
 export function useCloudAuthLogic() {
     // Tomamos businessName del localStorage directamente
     const businessName = localStorage.getItem('business_name') || '';
@@ -123,51 +180,7 @@ export function useCloudAuthLogic() {
         };
     };
 
-    const uploadLocalBackup = async (email, backupData) => {
-        const { error } = await supabaseCloud
-            .from('cloud_backups')
-            .upsert({
-                email: email.toLowerCase(),
-                backup_data: backupData,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'email' });
-        if (error) throw error;
-
-        try {
-            const { data: { session } } = await supabaseCloud.auth.getSession();
-            if (session?.user?.id) {
-                // sanitizeForPush aplica las mismas reglas que el sync normal:
-                // quita adminPassword, imágenes base64 y recorta las ventas a la
-                // ventana de sync — sin esto, cada login re-inflaba los documentos.
-                const syncPayloads = [];
-                for (const [key, value] of Object.entries(backupData.data.idb || {})) {
-                    syncPayloads.push({
-                        user_id: session.user.id,
-                        collection: 'store',
-                        doc_id: key,
-                        data: { payload: sanitizeForPush(key, value) },
-                        updated_at: new Date().toISOString()
-                    });
-                }
-                for (const [key, value] of Object.entries(backupData.data.ls || {})) {
-                    let finalVal = value;
-                    try { finalVal = JSON.parse(value); } catch(e) {}
-                    syncPayloads.push({
-                        user_id: session.user.id,
-                        collection: 'local',
-                        doc_id: key,
-                        data: { payload: sanitizeForPush(key, finalVal) },
-                        updated_at: new Date().toISOString()
-                    });
-                }
-                if (syncPayloads.length > 0) {
-                    await supabaseCloud.from('sync_documents').upsert(syncPayloads, { onConflict: 'user_id,collection,doc_id' });
-                }
-            }
-        } catch(syncErr) {
-            console.warn('[Realtime Sync Init] Fallo inicializando sync_documents:', syncErr);
-        }
-    };
+    const uploadLocalBackup = uploadBackupToCloud;
 
     const registerDevice = async (email) => {
         const alias = localStorage.getItem('pda_device_alias') || `Dispositivo ${navigator.platform || 'Web'}`;
@@ -354,7 +367,7 @@ export function useCloudAuthLogic() {
 
                     // Sincronizar Display name y Phone en auth.users via Admin API (worker)
                     const { data: { session } } = await supabaseCloud.auth.getSession();
-                    if (session?.access_token && (lic?.business_name || lic?.phone)) {
+                    if (PROFILE_SYNC_ENABLED && session?.access_token && (lic?.business_name || lic?.phone)) {
                         fetch('/api/update-profile', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -372,22 +385,18 @@ export function useCloudAuthLogic() {
 
             {
                 let rpcResult;
-                try {
-                    const { data, error: rpcError } = await supabaseCloud.rpc('register_and_check_device', {
-                        p_email: emailToUse,
-                        p_device_id: deviceId || 'UNKNOWN',
-                        p_device_alias: finalAlias
-                    });
-                    if (rpcError) {
-                        const authFailure = rpcError.status === 401 || rpcError.code === '401'
-                            || /JWT|permission|not authenticated/i.test(rpcError.message || '');
-                        if (authFailure) throw new Error('La sesión expiró o no quedó activa. Vuelve a iniciar sesión.');
-                        throw rpcError;
-                    }
-                    rpcResult = data;
-                } catch (rpcErr) {
-                    throw rpcErr;
+                const { data, error: rpcError } = await supabaseCloud.rpc('register_and_check_device', {
+                    p_email: emailToUse,
+                    p_device_id: deviceId || 'UNKNOWN',
+                    p_device_alias: finalAlias
+                });
+                if (rpcError) {
+                    const authFailure = rpcError.status === 401 || rpcError.code === '401'
+                        || /JWT|permission|not authenticated/i.test(rpcError.message || '');
+                    if (authFailure) throw new Error('La sesión expiró o no quedó activa. Vuelve a iniciar sesión.');
+                    throw rpcError;
                 }
+                rpcResult = data;
 
                 if (rpcResult === 'license_inactive') {
                     throw new Error('Licencia suspendida por el administrador.');
@@ -556,7 +565,7 @@ export function useCloudAuthLogic() {
                 // Sincronizar Display name y Phone en auth.users via Admin API (worker)
                 try {
                     const { data: { session } } = await supabaseCloud.auth.getSession();
-                    if (session?.access_token) {
+                    if (PROFILE_SYNC_ENABLED && session?.access_token) {
                         fetch('/api/update-profile', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },

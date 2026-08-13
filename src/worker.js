@@ -322,6 +322,39 @@ async function handleShare(request, env) {
     }
 }
 
+// ── BCV rates proxy ─────────────────────────────────────────────────────────
+async function handleRates(request) {
+    const headers = corsHeaders(request);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+    if (request.method !== 'GET') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
+
+    try {
+        const response = await fetch('https://bcv.today/api/v1/rate.json', {
+            headers: { Accept: 'application/json' },
+            cf: { cacheTtl: 0, cacheEverything: false },
+        });
+        if (!response.ok) throw new Error(`BCV respondió ${response.status}`);
+
+        const data = await response.json();
+        const usd = Number(data?.USD ?? data?.usd);
+        const eur = Number(data?.EUR ?? data?.eur);
+        if ((!Number.isFinite(usd) || usd <= 0) && (!Number.isFinite(eur) || eur <= 0)) {
+            throw new Error('El feed BCV no contiene tasas válidas');
+        }
+
+        const validDate = data?.effective_date || data?.effectiveDate || data?.date || null;
+        const observedAt = data?.updated_at || data?.updatedAt || null;
+        return Response.json({
+            bcv: { price: usd > 0 ? usd : 0, validDate, observedAt, source: 'BCV (datos bcv.org.ve)' },
+            euro: { price: eur > 0 ? eur : 0, validDate, observedAt, source: 'BCV (datos bcv.org.ve)' },
+            lastUpdate: new Date().toISOString(),
+        }, { status: 200, headers });
+    } catch (error) {
+        console.error('[rates] Error consultando BCV:', error);
+        return Response.json({ error: 'No se pudo consultar la tasa BCV' }, { status: 502, headers });
+    }
+}
+
 // ── Main fetch handler ─────────────────────────────────────────────────────
 export default {
     async fetch(request, env) {
@@ -333,6 +366,10 @@ export default {
 
         if (url.pathname.startsWith('/api/share')) {
             return handleShare(request, env);
+        }
+
+        if (url.pathname.startsWith('/api/rates')) {
+            return handleRates(request);
         }
 
         if (url.pathname.startsWith('/api/checkout')) {
