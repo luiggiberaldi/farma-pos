@@ -64,7 +64,7 @@ Implementación: `rol in ('DUENO','ADMIN','CAJERO')` en `useAuthStore` + helpers
 
 ## 4. Sedes
 
-`src/config/sedes.js`: `[{id:'central', nombre:'Sede Central', color:'#0B8D63'}, {id:'norte', nombre:'Sede Norte', color:'#0066CC'}, {id:'sur', nombre:'Sede Sur', color:'#8B5CF6'}]` + editable desde Configuración (nombre/dirección/teléfono, guardado en `farmacia_sedes_config_v1` global).
+`src/config/sedes.js`: `[{id:'central', nombre:'C&Y 2025', color:'#0B8D63'}, {id:'norte', nombre:'C&Y 2026', color:'#0066CC'}, {id:'sur', nombre:'Farmacia Las 24 Horas', color:'#8B5CF6'}]` + editable desde Configuración (nombre/dirección/teléfono, guardado en `farmacia_sedes_config_v1` global).
 
 ## 5. Módulos
 
