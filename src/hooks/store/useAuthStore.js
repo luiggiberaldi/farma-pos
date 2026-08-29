@@ -13,8 +13,9 @@ export async function hashPin(pin) {
 }
 
 const DEFAULT_USERS = [
-    { id: 1, nombre: 'Administrador', rol: 'ADMIN', pin: '123456', pinHashed: false },
-    { id: 2, nombre: 'Cajero', rol: 'CAJERO', pin: '0000', pinHashed: false }
+    { id: 1, nombre: 'Dueño', rol: 'DUENO', sedeId: null, pin: '123456', pinHashed: false },
+    { id: 2, nombre: 'Administrador', rol: 'ADMIN', sedeId: 'central', pin: '123456', pinHashed: false },
+    { id: 3, nombre: 'Cajero', rol: 'CAJERO', sedeId: 'central', pin: '0000', pinHashed: false }
 ];
 
 export const useAuthStore = create(
@@ -72,6 +73,7 @@ export const useAuthStore = create(
                         }));
                     }
                     const sessionUser = { ...userEncontrado, pin: undefined, pinHashed: undefined };
+                    if (!sessionUser.sedeId && sessionUser.rol !== 'DUENO') sessionUser.sedeId = 'central';
                     set({ usuarioActivo: sessionUser });
                     localStorage.setItem('abasto-device-session', JSON.stringify(sessionUser));
                     logEvent('AUTH', 'LOGIN', `${userEncontrado.nombre} inicio sesion`, sessionUser);
@@ -86,7 +88,7 @@ export const useAuthStore = create(
             // clave maestra ocurre en SuperAdminModal antes de llamar esto.
             loginAsSuperAdmin: () => {
                 const { usuarios } = get();
-                const admin = usuarios.find(u => u.rol === 'ADMIN');
+                const admin = usuarios.find(u => (u.rol === 'ADMIN' || u.rol === 'DUENO'));
                 if (!admin) return false;
                 const sessionUser = { ...admin, pin: undefined, pinHashed: undefined };
                 set({ usuarioActivo: sessionUser });
@@ -102,7 +104,7 @@ export const useAuthStore = create(
                 set(state => ({
                     usuarios: state.usuarios.map(u => ({
                         ...u,
-                        pin: u.rol === 'ADMIN' ? adminPin : otherPin,
+                        pin: (u.rol === 'ADMIN' || u.rol === 'DUENO') ? adminPin : otherPin,
                         pinHashed: true,
                     }))
                 }));
@@ -143,7 +145,7 @@ export const useAuthStore = create(
             eliminarUsuario: (userId) => {
                 const { usuarios, usuarioActivo } = get();
                 // No permitir eliminar al último ADMIN
-                const admins = usuarios.filter(u => u.rol === 'ADMIN');
+                const admins = usuarios.filter(u => (u.rol === 'ADMIN' || u.rol === 'DUENO'));
                 const target = usuarios.find(u => u.id === userId);
                 if (target?.rol === 'ADMIN' && admins.length <= 1) return false;
                 // No permitir eliminarse a sí mismo
@@ -185,7 +187,7 @@ export const useAuthStore = create(
                 // v0 → v1: admin PIN cambia de 4 a 6 dígitos (1234 → 123456)
                 if (fromVersion < 1 && persistedState?.usuarios) {
                     persistedState.usuarios = persistedState.usuarios.map(u =>
-                        u.rol === 'ADMIN' && u.pin === '1234'
+                        (u.rol === 'ADMIN' || u.rol === 'DUENO') && u.pin === '1234'
                             ? { ...u, pin: '123456' }
                             : u
                     );

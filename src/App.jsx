@@ -32,15 +32,25 @@ import { purgeOldEntries, syncAuditToCloud } from './services/auditService';
 import { useCloudSync } from './hooks/useCloudSync';
 import { supabaseCloud, isCloudConfigured as envCloudConfigured } from './config/supabaseCloud';
 import { useConfirm } from './hooks/useConfirm.jsx';
-import { setActiveAccountId } from './config/storageScope';
+import { setActiveAccountId, setActiveSedeId } from './config/storageScope';
+import { useSedeStore } from './hooks/store/useSedeStore';
+import SedeSelector from './components/SedeSelector';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
+  const usuarioActivo = useAuthStore(state => state.usuarioActivo);
+  const syncSedeWithUser = useSedeStore(state => state.syncWithUser);
+  const sedeActivaId = useSedeStore(state => state.sedeActivaId);
   const [installPrompt, setInstallPrompt] = useState(() => window.deferredInstallPrompt);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
 
   // Inicializar Sincronización Realtime con Supabase
   useCloudSync();
+
+  useEffect(() => {
+    const sede = syncSedeWithUser(usuarioActivo);
+    setActiveSedeId(sede);
+  }, [usuarioActivo, syncSedeWithUser]);
 
   // Apply saved screen scale on mount
   useEffect(() => {
@@ -250,7 +260,6 @@ export default function App() {
   }, []);
 
   // === Auth — condiciones para mostrar pantalla de PIN ===
-  const usuarioActivo = useAuthStore(s => s.usuarioActivo);
   const requireLogin = useAuthStore(s => s.requireLogin ?? false);
   const adminEmail = useAuthStore(s => s.adminEmail);
   const adminPassword = useAuthStore(s => s.adminPassword);
@@ -287,8 +296,8 @@ export default function App() {
   // Sin PIN no hay seguridad de roles, así que el usuario siempre es Admin.
   useEffect(() => {
     if (!pinLoginEnabled) {
-      const admins = useAuthStore.getState().usuarios.filter(u => u.rol === 'ADMIN');
-      if (admins.length > 0 && usuarioActivo?.rol !== 'ADMIN') {
+      const admins = useAuthStore.getState().usuarios.filter(u => u.rol === 'ADMIN' || u.rol === 'DUENO');
+      if (admins.length > 0 && usuarioActivo?.rol !== 'ADMIN' && usuarioActivo?.rol !== 'DUENO') {
         useAuthStore.setState({ usuarioActivo: admins[0] });
       } else if (!usuarioActivo && admins.length > 0) {
         useAuthStore.setState({ usuarioActivo: admins[0] });
@@ -349,6 +358,8 @@ export default function App() {
 
   return (
     <div className="font-sans antialiased bg-[#F8FAFC] h-[100dvh] flex flex-col overflow-clip">
+
+      <div className="fixed top-3 left-3 z-40"><SedeSelector /></div>
 
       {/* Terms and Conditions Overlay (First Use) */}
       <TermsOverlay />
