@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEFAULT_SEDE_ID, getSedeById, getVisibleSedes } from '../../config/sedes';
+import { DEFAULT_SEDE_ID, getVisibleSedes } from '../../config/sedes';
 
 export const useSedeStore = create(
     persist(
@@ -18,7 +18,6 @@ export const useSedeStore = create(
                 if (current !== get().sedeActivaId) set({ sedeActivaId: current });
                 return current;
             },
-            getSedeActiva: () => getSedeById(get().sedeActivaId),
         }),
         { name: 'farmacia-sede-storage', partialize: state => ({ sedeActivaId: state.sedeActivaId }) }
     )

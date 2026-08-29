@@ -45,6 +45,3 @@ export function getScopedStorageKey(key) {
     return `${getScopedStoragePrefix(key)}${key}`;
 }
 
-export function isSedeScopedKey(key) {
-    return SEDE_SCOPED_KEYS.has(key);
-}

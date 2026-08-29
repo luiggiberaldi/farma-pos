@@ -6,12 +6,10 @@ export const SEDES = [
 
 export const DEFAULT_SEDE_ID = SEDES[0].id;
 
-export function getSedeById(id) {
-    return SEDES.find(sede => sede.id === id) || SEDES[0];
-}
 
 export function getVisibleSedes(usuario) {
     if (usuario?.rol === 'DUENO') return SEDES;
-    const sede = getSedeById(usuario?.sedeId);
-    return usuario?.sedeId ? [sede] : [SEDES[0]];
+    return usuario?.sedeId
+        ? SEDES.filter(sede => sede.id === usuario.sedeId)
+        : [SEDES[0]];
 }

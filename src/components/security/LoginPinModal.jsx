@@ -4,7 +4,7 @@ import LoginAvatar from './LoginAvatar';
 import { logEvent } from '../../services/auditService';
 import { createNotification, NOTIF_TYPES } from '../../services/notificationService';
 
-const getPinLength = (rol) => (rol === 'ADMIN' || rol === 'DUENO') ? 6 : 4;
+const getPinLength = (rol) => rol === 'ADMIN' || rol === 'DUENO' ? 6 : 4;
 
 const LOCKOUT_SECONDS = 30;
 const MAX_ATTEMPTS = 3;
