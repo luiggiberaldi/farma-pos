@@ -1,7 +1,8 @@
 // src/config/tenant.js
 
 export const TENANTS = {
-    REVENDEDOR: 'REVENDEDOR', // El proyecto original
+    FARMACIA: 'FARMACIA',   // Farmacia multi-sede con lotes/vencimientos (activo)
+    REVENDEDOR: 'REVENDEDOR',
     BODEGA: 'BODEGA',         // Maneja stock, balanzas, cobro rápido
     COMIDA: 'COMIDA',         // Modificadores, comandas, facturación rápida
     REPUESTOS: 'REPUESTOS',   // SKU complejo, número de parte, vehículos
@@ -9,18 +10,34 @@ export const TENANTS = {
 };
 
 // -------------------------------------------------------------
-// [CONFIGURACIÓN ACTIVA] -> Cambia esto para generar el nuevo MVP
+// [CONFIGURACIÓN ACTIVA] -> Farmacia César (multi-sede)
 // -------------------------------------------------------------
-export const ACTIVE_TENANT = TENANTS.BODEGA;
+export const ACTIVE_TENANT = TENANTS.FARMACIA;
 
 // Configuración de metadatos globales de la UI dependiendo del MVP
 export const getTenantTheme = () => {
     switch (ACTIVE_TENANT) {
+        case TENANTS.FARMACIA:
+            return {
+                appName: 'Farmacia César',
+                tagline: 'POS Multi-Sede',
+                primaryColor: 'primary', // Verde farmacéutico definido en tailwind.config
+                themeMode: 'light',
+                features: {
+                    hasInventoryTracking: true,   // Stock por sede
+                    hasWeightScale: false,
+                    hasSku: true,                 // Código de barras de medicamento
+                    hasLotes: true,               // Lotes + vencimientos (FEFO)
+                    hasRecetas: true,             // Productos que requieren receta
+                    hasControlados: true,         // Libro de medicamentos controlados
+                    hasMultiSede: true            // Central / Norte / Sur
+                }
+            };
         case TENANTS.BODEGA:
             return {
                 appName: 'Mi Bodega Inteligente',
-                primaryColor: 'emerald', // Colores definidos en tailwind.config
-                themeMode: 'light', // o dark
+                primaryColor: 'emerald',
+                themeMode: 'light',
                 features: {
                     hasInventoryTracking: true,
                     hasWeightScale: true,
@@ -52,9 +69,9 @@ export const getTenantTheme = () => {
         case TENANTS.REVENDEDOR:
         default:
             return {
-                appName: 'Listo POS Lite',
-                primaryColor: 'brand',
-                themeMode: 'dark',
+                appName: 'Farmacia César',
+                primaryColor: 'primary',
+                themeMode: 'light',
                 features: {
                     hasInventoryTracking: false,
                     hasWeightScale: false,
@@ -65,6 +82,3 @@ export const getTenantTheme = () => {
 };
 
 export const tenantConfig = getTenantTheme();
-
-// Número de soporte WhatsApp (formato internacional sin +)
-export const SUPPORT_WHATSAPP = '584124051793';

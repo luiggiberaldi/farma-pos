@@ -44,11 +44,11 @@ export default defineConfig({
         ]
       },
       manifest: {
-        name: 'Listo POS Lite',
-        short_name: 'Listo Lite',
-        description: 'Punto de venta simple y poderoso para tu negocio',
-        theme_color: '#0EA5E9',      // sky-500 — color del logo
-        background_color: '#F8FAFC', // gris hielo
+        name: 'Farmacia César POS',
+        short_name: 'Farmacia',
+        description: 'Sistema de gestión para farmacia multi-sede — POS, inventario, lotes y vencimientos',
+        theme_color: '#0B8D63',      // verde farmacéutico — color del logo
+        background_color: '#F8FAFB', // gris hielo
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
@@ -97,8 +97,7 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           icons: ['lucide-react'],
           pdf: ['jspdf', 'html2canvas'],
-          cloud: ['@supabase/supabase-js'],
-          ai: ['groq-sdk']
+          cloud: ['@supabase/supabase-js']
         }
       }
     }

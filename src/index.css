@@ -13,7 +13,7 @@
     --color-primary-200: 186 230 253;
     --color-primary-300: 125 211 252;
     --color-primary-400:  56 189 248;
-    --color-primary-500:  14 165 233;  /* #0EA5E9 — color base */
+    --color-primary-500:  14 165 233;  /* #0B8D63 — color base */
     --color-primary-600:   2 132 199;
     --color-primary-700:   3 105 161;
     --color-primary-800:   7  89 133;
@@ -62,7 +62,7 @@
     --color-bg-dark:  var(--color-surface-900);
 
     /* Gradiente del logo (sky → teal) — disponible como var CSS */
-    --gradient-brand: linear-gradient(135deg, #7DD3FC 0%, #5EEAD4 100%);
+    --gradient-brand: linear-gradient(135deg, #8FD4BC 0%, #6FD9B8 100%);
   }
 }
 

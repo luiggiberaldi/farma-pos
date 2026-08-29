@@ -33,9 +33,6 @@ export default async function handler(req, res) {
     const ALLOWED_ORIGINS = [
         'http://localhost:5173',
         'http://localhost:4173',
-        'https://tasasaldia.com',
-        'https://www.tasasaldia.com',
-        'https://listo-pos-lite.vercel.app'
     ];
     const allowed = ALLOWED_ORIGINS.includes(origin);
     res.setHeader('Access-Control-Allow-Origin', allowed ? origin : '');

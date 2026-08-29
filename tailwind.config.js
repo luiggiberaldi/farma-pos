@@ -10,28 +10,29 @@ export default {
       colors: {
 
         // ─────────────────────────────────────────────────────
-        // 🎨 LISTO POS LITE — PALETA SEMÁNTICA OFICIAL
-        // Extraída del gradiente del logo (sky-blue → teal)
+        // 🎨 FARMACIA CÉSAR — PALETA SEMÁNTICA OFICIAL
+        // Verde farmacéutico (cruz de farmacia)
         // ─────────────────────────────────────────────────────
 
         // 1. LA MARCA (Acción, Foco, Botones principales)
         primary: {
-          DEFAULT: '#0EA5E9', // sky-500 — color central del logo
-          hover:   '#0284C7', // sky-600 — hover states
-          light:   '#E0F2FE', // sky-100 — fondos suaves, badges
-          focus:   '#BAE6FD', // sky-200 — anillo de foco en inputs
-          dark:    '#0369A1', // sky-700 — pressed/active states
+          DEFAULT: '#0B8D63', // Verde esmeralda — color de la cruz de farmacia
+          hover:   '#0AA577', // Verde hover (más brillante)
+          bright:  '#0AA577', // Acentos brillantes
+          light:   '#E8F5F0', // Fondos suaves, badges
+          focus:   '#C3EADC', // Anillo de foco en inputs
+          dark:    '#086B4D', // pressed/active states
         },
 
         // 2. FONDOS DE PANTALLA
         app: {
-          light: '#F8FAFC', // Gris Hielo — fondo general
-          dark:  '#0F172A', // Azul Noche — modo oscuro (alias, no activo)
+          light: '#F8FAFB', // Gris hielo — fondo general
+          dark:  '#0F172A', // Azul noche — modo oscuro
         },
 
         // 3. FONDOS DE TARJETAS / MODALES / SIDEBAR
         surface: {
-          light: '#FFFFFF', // Blanco Puro
+          light: '#FFFFFF', // Blanco puro
           dark:  '#1E293B', // Slate-800 modo oscuro
         },
 
@@ -44,77 +45,96 @@ export default {
 
         // 5. ESTADOS SEMÁNTICOS
         status: {
-          success:   '#10B981', // Emerald-500 — Venta OK
-          successBg: '#D1FAE5', // Emerald-100
-          danger:    '#F43F5E', // Rose-500 — Error, borrar, anular
-          dangerBg:  '#FFE4E6', // Rose-100
-          warning:   '#F59E0B', // Amber-500 — Alerta
-          warningBg: '#FEF3C7', // Amber-100
+          success:   '#0B8D63', // Verde farmacia — Venta OK
+          successBg: '#D1FAE5',
+          danger:    '#DC2626', // Rojo — Error, vencidos, borrar
+          dangerBg:  '#FEE2E2',
+          warning:   '#F59E0B', // Amber — Vence pronto, alertas
+          warningBg: '#FEF3C7',
+          info:      '#0066CC', // Azul clínico — información
+          infoBg:    '#E6F0FF',
         },
 
         // 6. BORDES Y SEPARADORES
         border: {
           subtle: '#E2E8F0', // Slate-200 — líneas finas
-          focus:  '#0EA5E9', // sky-500 — borde activo en inputs
+          focus:  '#0B8D63', // Verde — borde activo en inputs
         },
 
         // ─────────────────────────────────────────────────────
         // 🔄 ALIASES RETROACTIVOS (Compatibilidad con código existente)
-        // Redirigen las clases viejas al nuevo sistema semántico.
-        // Efecto visual: toda la app cambia automáticamente.
+        // Redirigen las clases viejas (sky/blue/indigo/purple) al verde
+        // farmacéutico. Efecto visual: toda la app cambia automáticamente.
         // ─────────────────────────────────────────────────────
 
+        // Escala verde farmacia (base de los aliases)
+        // 500 = primario · 600 = hover brillante · 700 = oscuro
         // brand (viejo token de color primario)
         brand: {
-          light:   '#E0F2FE',
-          DEFAULT: '#0EA5E9',
-          dark:    '#0284C7',
+          light:   '#E8F5F0',
+          DEFAULT: '#0B8D63',
+          dark:    '#086B4D',
         },
 
         // background (viejo token de fondo)
         background: {
-          light: '#F8FAFC',
+          light: '#F8FAFB',
           dark:  '#0F172A',
         },
 
-        // blue → sky (todo bg-blue-* se vuelve sky automáticamente)
+        // sky → verde (la paleta anterior era sky)
+        sky: {
+          50:  '#F0FAF7',
+          100: '#E8F5F0',
+          200: '#C3EADC',
+          300: '#8FD4BC',
+          400: '#4CB998',
+          500: '#0B8D63',
+          600: '#0AA577',
+          700: '#086B4D',
+          800: '#06573F',
+          900: '#04402E',
+          950: '#02291E',
+        },
+
+        // blue → verde (todo bg-blue-* se vuelve verde automáticamente)
         blue: {
-          50:  '#F0F9FF',
-          100: '#E0F2FE',
-          200: '#BAE6FD',
-          300: '#7DD3FC',
-          400: '#38BDF8',
-          500: '#0EA5E9',
-          600: '#0284C7',
-          700: '#0369A1',
-          800: '#075985',
-          900: '#0C4A6E',
-          950: '#082F49',
+          50:  '#F0FAF7',
+          100: '#E8F5F0',
+          200: '#C3EADC',
+          300: '#8FD4BC',
+          400: '#4CB998',
+          500: '#0B8D63',
+          600: '#0AA577',
+          700: '#086B4D',
+          800: '#06573F',
+          900: '#04402E',
+          950: '#02291E',
         },
 
-        // indigo → sky (compatibilidad con CloudAuthModal, spinner, etc)
+        // indigo → verde (compatibilidad con CloudAuthModal, spinner, etc)
         indigo: {
-          50:  '#F0F9FF',
-          100: '#E0F2FE',
-          200: '#BAE6FD',
-          300: '#7DD3FC',
-          400: '#38BDF8',
-          500: '#0EA5E9',
-          600: '#0284C7',
-          700: '#0369A1',
-          800: '#075985',
-          900: '#0C4A6E',
-          950: '#082F49',
+          50:  '#F0FAF7',
+          100: '#E8F5F0',
+          200: '#C3EADC',
+          300: '#8FD4BC',
+          400: '#4CB998',
+          500: '#0B8D63',
+          600: '#0AA577',
+          700: '#086B4D',
+          800: '#06573F',
+          900: '#04402E',
+          950: '#02291E',
         },
 
-        // purple → sky (activos de nav, badges)
+        // purple → verde (activos de nav, badges)
         purple: {
-          50:  '#F0F9FF',
-          100: '#E0F2FE',
-          400: '#38BDF8',
-          500: '#0EA5E9',
-          600: '#0284C7',
-          700: '#0369A1',
+          50:  '#F0FAF7',
+          100: '#E8F5F0',
+          400: '#4CB998',
+          500: '#0B8D63',
+          600: '#0AA577',
+          700: '#086B4D',
         },
 
         // slate (neutros — sin cambios, son la base del sistema)
@@ -137,22 +157,22 @@ export default {
           50:  '#ECFDF5',
           100: '#D1FAE5',
           400: '#34D399',
-          500: '#10B981',
-          600: '#059669',
+          500: '#0B8D63',
+          600: '#086B4D',
           900: '#064E3B',
         },
 
-        // red → danger (errores, borrar)
+        // red → danger (errores, borrar, vencidos)
         red: {
-          50:  '#FFF1F2',
-          100: '#FFE4E6',
-          400: '#FB7185',
-          500: '#F43F5E',
-          600: '#E11D48',
-          900: '#881337',
+          50:  '#FEF2F2',
+          100: '#FEE2E2',
+          400: '#F87171',
+          500: '#DC2626',
+          600: '#B91C1C',
+          900: '#7F1D1D',
         },
 
-        // amber → warning (alertas)
+        // amber → warning (alertas, vencimientos próximos)
         amber: {
           50:  '#FFFBEB',
           100: '#FEF3C7',

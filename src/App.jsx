@@ -30,7 +30,7 @@ import { useAuthStore } from './hooks/store/useAuthStore';
 import { useAutoLock } from './hooks/useAutoLock';
 import { purgeOldEntries, syncAuditToCloud } from './services/auditService';
 import { useCloudSync } from './hooks/useCloudSync';
-import { supabaseCloud } from './config/supabaseCloud';
+import { supabaseCloud, isCloudConfigured as envCloudConfigured } from './config/supabaseCloud';
 import { useConfirm } from './hooks/useConfirm.jsx';
 import { setActiveAccountId } from './config/storageScope';
 
@@ -63,130 +63,38 @@ export default function App() {
   // Cloud Auth Session State
   const [cloudSession, setCloudSession] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
-  const [graceInfo, setGraceInfo] = useState(null); // { daysOverdue, daysLeft } durante período de gracia
 
-  // ── Sesión Supabase + límite de dispositivos vía RPC ─────────────────────
+  // ── Sesión Supabase ───────────────────────────────────────────────────────
+  // Sin proyecto cloud configurado la app corre en modo local (offline total):
+  // se omite el gate de sesión y el acceso queda gobernado por el PIN local.
   useEffect(() => {
     let mounted = true;
 
-    // ── Cache de verificación de dispositivo (15 min) ─────────────────────────
-    // El RPC register_and_check_device + select account_devices se llama en cada
-    // recarga y authStateChange. Con 30 clientes recargas frecuentes suman ~1-2MB/día.
-    // Cache de 60 min: si el dispositivo ya fue verificado recientemente, se omite el RPC.
-    const DEVICE_CHECK_CACHE_KEY = 'pda_device_check_ts';
-    const DEVICE_CHECK_TTL_MS = 60 * 60 * 1000; // 60 minutos — optimizado para egress
-
-    const isDeviceCheckCached = () => {
-      const ts = localStorage.getItem(DEVICE_CHECK_CACHE_KEY);
-      return ts && Date.now() - parseInt(ts, 10) < DEVICE_CHECK_TTL_MS;
-    };
+    if (!envCloudConfigured) {
+      setActiveAccountId(null);
+      setCloudSession(null);
+      setCheckingSession(false);
+      return;
+    }
 
     const applySession = async (session) => {
       if (!mounted) return;
-
       if (!session?.user?.email) {
         setActiveAccountId(null);
         setCloudSession(null);
         setCheckingSession(false);
         return;
       }
-
-      const email = session.user.email.toLowerCase();
       // Se fija antes de montar ProductProvider para que IndexedDB nunca lea otra cuenta.
       setActiveAccountId(session.user.id);
-      const deviceId = localStorage.getItem('pda_device_id') || 'UNKNOWN';
-
-      try {
-        const savedAlias = localStorage.getItem('pda_device_alias');
-        const defaultAlias = `Dispositivo ${navigator.platform || 'Web'}`;
-        const finalAlias = savedAlias && savedAlias.trim() !== '' ? savedAlias.trim() : defaultAlias;
-
-        const isExplicitLogin = localStorage.getItem('pda_explicit_login') === 'true';
-
-        // Si ya verificamos el dispositivo recientemente y no es un login explícito, omitir llamadas a Supabase
-        if (!isExplicitLogin && isDeviceCheckCached()) {
-          if (mounted) {
-            setCloudSession(session);
-            setCheckingSession(false);
-          }
-          return;
-        }
-
-        // Si el login NO es explícito (es un auto-login normal),
-        // checamos si este dispositivo ya fue expulsado.
-        if (!isExplicitLogin) {
-            const { data: existingDevice, error: selectErr } = await supabaseCloud
-               .from('account_devices')
-               .select('id')
-               .eq('device_id', deviceId)
-               .eq('email', email)
-               .maybeSingle();
-
-            // Tumbamos la sesión SOLO si la conexión funcionó (sin errores) y NO se encontró el dispositivo
-            if (!selectErr && existingDevice === null) {
-                // Fue expulsado o no existe. Tumbamos sesión.
-                await supabaseCloud.auth.signOut();
-                if (mounted) { setCloudSession(null); setCheckingSession(false); }
-                return;
-            }
-        }
-
-        // El flujo de login explícito ya verifica el dispositivo en
-        // CloudAuthModal. Evitar una segunda RPC en paralelo elimina la carrera
-        // que podía cerrar la sesión antes de mostrar los dispositivos.
-        if (isExplicitLogin) return;
-
-        const { data: result, error } = await supabaseCloud.rpc('register_and_check_device', {
-          p_email: email,
-          p_device_id: deviceId,
-          p_device_alias: finalAlias,
-        });
-
-        if (!error) {
-          if (result === 'license_inactive' || result === 'limit_reached') {
-            localStorage.removeItem(DEVICE_CHECK_CACHE_KEY);
-            await supabaseCloud.auth.signOut();
-            if (mounted) { setCloudSession(null); setCheckingSession(false); }
-            return;
-          }
-          if (result === 'license_expired') {
-            // Verificar período de gracia de 5 días
-            const GRACE_DAYS = 5;
-            const { data: licRow } = await supabaseCloud
-              .from('cloud_licenses')
-              .select('valid_until')
-              .eq('email', email)
-              .maybeSingle();
-            const validUntil = licRow?.valid_until ? new Date(licRow.valid_until) : null;
-            const now = new Date();
-            const daysOverdue = validUntil ? Math.ceil((now - validUntil) / 86400000) : 999;
-            if (!validUntil || daysOverdue > GRACE_DAYS) {
-              localStorage.removeItem(DEVICE_CHECK_CACHE_KEY);
-              await supabaseCloud.auth.signOut();
-              if (mounted) { setCloudSession(null); setCheckingSession(false); }
-              return;
-            }
-            // Dentro de gracia — permitir pero mostrar banner
-            if (mounted) setGraceInfo({ daysOverdue, daysLeft: GRACE_DAYS - daysOverdue });
-          }
-          // Verificación exitosa — guardar timestamp del cache
-          localStorage.setItem(DEVICE_CHECK_CACHE_KEY, String(Date.now()));
-          if (isExplicitLogin) localStorage.removeItem('pda_explicit_login');
-        }
-        // Si la RPC no existe aún (error), el login explícito lo procesa el modal.
-      } catch {
-        // Sin conexión o RPC pendiente — dejar pasar
-      }
-
-      if (mounted) {
-        setCloudSession(session);
-        setCheckingSession(false);
-      }
+      setCloudSession(session);
+      setCheckingSession(false);
     };
 
     const onCloudLoginCompleted = (event) => {
       const session = event.detail?.session;
       if (session?.user?.email && mounted) {
+        setActiveAccountId(session.user.id);
         setCloudSession(session);
         setCheckingSession(false);
       }
@@ -404,13 +312,13 @@ export default function App() {
   if (checkingSession) {
     return (
       <div className="h-[100dvh] w-full bg-[#F8FAFC] flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-4 border-[#0EA5E9] border-t-transparent animate-spin" />
+        <div className="w-8 h-8 rounded-full border-4 border-[#0B8D63] border-t-transparent animate-spin" />
       </div>
     );
   }
 
-  // Global Hard Gate: Must have Cloud Session
-  if (!cloudSession) {
+  // Global Hard Gate: Must have Cloud Session (solo si hay proyecto cloud configurado)
+  if (envCloudConfigured && !cloudSession) {
     return (
       <CloudAuthModal 
         forceLogin={true} 
@@ -435,7 +343,7 @@ export default function App() {
   }
   if (!usuarioActivo) return (
     <div className="h-[100dvh] w-full bg-[#F8FAFC] flex items-center justify-center">
-      <div className="w-8 h-8 rounded-full border-4 border-[#0EA5E9] border-t-transparent animate-spin" />
+      <div className="w-8 h-8 rounded-full border-4 border-[#0B8D63] border-t-transparent animate-spin" />
     </div>
   );
 
@@ -458,17 +366,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Grace Period Banner */}
-      {graceInfo && (
-        <div className="w-full bg-amber-500 px-4 py-2 flex items-center justify-center gap-2 text-white text-xs font-semibold z-[190]">
-          <span>⚠️ Tu licencia venció hace {graceInfo.daysOverdue} día{graceInfo.daysOverdue !== 1 ? 's' : ''}.</span>
-          <span>Tienes {graceInfo.daysLeft} día{graceInfo.daysLeft !== 1 ? 's' : ''} restante{graceInfo.daysLeft !== 1 ? 's' : ''} para renovar.</span>
-          <a href="https://wa.me/584124051793" target="_blank" rel="noopener noreferrer" className="underline opacity-90 hover:opacity-100">Contacta a soporte para continuar.</a>
-        </div>
-      )}
-
-
 
       {/* Tour Spotlight */}
       {!tourDone && (
@@ -624,14 +521,14 @@ export default function App() {
           <div className="bg-[#1E293B] border border-slate-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <FlaskConical className="text-[#0EA5E9]" /> Panel Dev
+                <FlaskConical className="text-[#0B8D63]" /> Panel Dev
               </h2>
               <button onClick={() => setShowAdminPanel(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <button
               onClick={() => { triggerHaptic(); setShowTester(true); setShowAdminPanel(false); }}
-              className="w-full bg-[#0EA5E9] hover:bg-[#0284C7] text-white font-bold py-3 rounded-lg text-sm uppercase tracking-wider transition-colors"
+              className="w-full bg-[#0B8D63] hover:bg-[#0AA577] text-white font-bold py-3 rounded-lg text-sm uppercase tracking-wider transition-colors"
             >
               🚀 Abrir Tester
             </button>
@@ -645,7 +542,7 @@ export default function App() {
 
 function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <button data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#0B8D63] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
       {icon}
       {isActive && <span className="text-[9px] sm:text-[10px] font-extrabold animate-in zoom-in duration-200">{label}</span>}
     </button>

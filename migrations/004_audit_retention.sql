@@ -2,7 +2,7 @@
 -- MIGRACIÓN 004: Retención de audit_log + índice de lectura
 --                + limpieza del doc legado abasto_audit_log_v1
 -- Ejecutar en Supabase SQL Editor:
--- https://supabase.com/dashboard/project/fgzwmwrugerptfqfrsjd/sql
+-- https://supabase.com/dashboard/project/<NUEVO_PROJECT_REF>/sql
 -- Requiere la extensión pg_cron (se habilita abajo; también puede
 -- activarse en Dashboard → Database → Extensions).
 -- ============================================================

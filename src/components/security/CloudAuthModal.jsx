@@ -8,9 +8,9 @@ import { useConfirm } from '../../hooks/useConfirm.jsx';
 
 // ─── Constantes de color del brand ──────────────────────────────────
 const C = {
-    primary:      '#0EA5E9', // sky-500
-    primaryHover: '#0284C7', // sky-600
-    primaryLight: '#E0F2FE', // sky-100
+    primary:      '#0B8D63', // sky-500
+    primaryHover: '#0AA577', // sky-600
+    primaryLight: '#E8F5F0', // sky-100
     surface:      '#FFFFFF',
     surfaceSub:   '#F8FAFC',
     border:       '#E2E8F0',
@@ -223,7 +223,7 @@ export default function CloudAuthModal({
                                 <button
                                     onClick={handleResetPasswordRequest} disabled={importStatus === 'loading'}
                                     className="w-full py-3.5 text-white text-sm font-black rounded-xl transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2"
-                                    style={{ background: `linear-gradient(135deg, ${C.primary}, #5EEAD4)` }}
+                                    style={{ background: `linear-gradient(135deg, ${C.primary}, #6FD9B8)` }}
                                 >
                                     {importStatus === 'loading' ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Enviar correo de recuperación'}
                                 </button>
@@ -334,7 +334,7 @@ export default function CloudAuthModal({
                                     onClick={handleSaveCloudAccount}
                                     disabled={importStatus === 'loading'}
                                     className="w-full py-3.5 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-sky-500/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
-                                    style={{ background: `linear-gradient(135deg, ${C.primary} 0%, #5EEAD4 100%)` }}
+                                    style={{ background: `linear-gradient(135deg, ${C.primary} 0%, #6FD9B8 100%)` }}
                                 >
                                     {importStatus === 'loading' ? (
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

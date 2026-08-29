@@ -1,7 +1,7 @@
 -- ============================================================
 -- MIGRACIÓN 001: Índices + Idempotencia de ventas offline
 -- Ejecutar en Supabase SQL Editor:
--- https://supabase.com/dashboard/project/fgzwmwrugerptfqfrsjd/sql
+-- https://supabase.com/dashboard/project/<NUEVO_PROJECT_REF>/sql
 -- ============================================================
 
 -- ── 1. sync_documents: índices para delta sync eficiente ────

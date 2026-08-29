@@ -1,5 +1,5 @@
 /**
- * Cloudflare Worker — listo-pos-lite
+ * Cloudflare Worker — Farmacia César
  *
  * /api/share  — Upstash Redis relay for inventory share codes.
  * /api/checkout — Proxy seguro para process_checkout: upsertea productos
@@ -8,7 +8,9 @@
  * Todo lo demás cae al SPA estático.
  */
 
-const SUPABASE_URL = 'https://fgzwmwrugerptfqfrsjd.supabase.co';
+// TODO: Configurar SUPABASE_URL con las credenciales del NUEVO proyecto Supabase
+// (variable de entorno del worker en wrangler.jsonc / dashboard de Cloudflare).
+const SUPABASE_URL = '';
 const TTL_SECONDS = 86400; // 24 horas
 const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -39,11 +41,6 @@ function corsHeaders(request) {
     const ALLOWED = [
         'http://localhost:5173',
         'http://localhost:4173',
-        'https://listo-pos-lite.camelai.app',
-        'https://listo-pos-lite.apps.camelai.dev',
-        'https://listo-pos-lite.vercel.app',
-        'https://tasasaldia.com',
-        'https://www.tasasaldia.com',
     ];
     return {
         'Access-Control-Allow-Origin': ALLOWED.includes(origin) ? origin : '',

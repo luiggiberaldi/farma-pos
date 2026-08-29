@@ -1,7 +1,7 @@
 -- ============================================================
 -- MIGRACIÓN 002: Eliminar sync_documents de Realtime publication
 -- Ejecutar en Supabase SQL Editor:
--- https://supabase.com/dashboard/project/fgzwmwrugerptfqfrsjd/sql
+-- https://supabase.com/dashboard/project/<NUEVO_PROJECT_REF>/sql
 --
 -- PROBLEMA: sync_documents estaba en supabase_realtime, lo que
 -- forzaba al demonio de replicación lógica a decodificar cada

@@ -1,16 +1,13 @@
 // Vercel Serverless Function — Checkout proxy
 // Upserts unknown products then calls process_checkout RPC using service_role key.
 
-// La URL de producción debe venir de Vercel; el fallback conserva compatibilidad
-// con despliegues antiguos, pero no debe ser la fuente principal.
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://fgzwmwrugerptfqfrsjd.supabase.co';
+// La URL del proyecto debe venir de las variables de entorno del deploy.
+// TODO: Configurar VITE_SUPABASE_URL con las credenciales del NUEVO proyecto Supabase.
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 
 const CORS_ORIGINS = [
     'http://localhost:5173',
     'http://localhost:4173',
-    'https://listo-pos-lite.vercel.app',
-    'https://listo-pos-lite.camelai.app',
-    'https://listo-pos-lite.apps.camelai.dev',
 ];
 
 function corsHeaders(origin) {

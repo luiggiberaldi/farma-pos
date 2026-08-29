@@ -1,7 +1,7 @@
 -- ============================================================
 -- MIGRACIÓN 003: Habilitar RLS y Políticas de Seguridad en audit_log
 -- Ejecutar en Supabase SQL Editor:
--- https://supabase.com/dashboard/project/fgzwmwrugerptfqfrsjd/sql
+-- https://supabase.com/dashboard/project/<NUEVO_PROJECT_REF>/sql
 -- ============================================================
 
 -- Crear la tabla audit_log si no existe (por seguridad)

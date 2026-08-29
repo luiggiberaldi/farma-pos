@@ -1,6 +1,6 @@
 -- =================================================================================
 -- SETUP COMPLETO: TABLAS PARA LICENCIAS Y CONTROL DE DISPOSITIVOS
--- Ejecuta esto en el SQL Editor de Supabase (proyecto fgzwmwrugerptfqfrsjd)
+-- Ejecuta esto en el SQL Editor de Supabase (NUEVO proyecto Supabase)
 -- =================================================================================
 
 -- 1. cloud_backups

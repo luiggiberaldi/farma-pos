@@ -3,11 +3,6 @@ const BCV_FEED_URL = 'https://bcv.today/api/v1/rate.json';
 const ALLOWED_ORIGINS = new Set([
     'http://localhost:5173',
     'http://localhost:4173',
-    'https://listo-pos-lite.vercel.app',
-    'https://listo-pos-lite.camelai.app',
-    'https://listo-pos-lite.apps.camelai.dev',
-    'https://tasasaldia.com',
-    'https://www.tasasaldia.com',
 ]);
 
 function setCors(res, origin) {

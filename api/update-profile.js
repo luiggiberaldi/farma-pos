@@ -1,14 +1,13 @@
 // Vercel Serverless Function — actualizar metadatos del perfil
 // La clave de servicio solo se usa en este backend y nunca se envía al cliente.
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://fgzwmwrugerptfqfrsjd.supabase.co';
+// La URL del proyecto debe venir de las variables de entorno del deploy.
+// TODO: Configurar VITE_SUPABASE_URL con las credenciales del NUEVO proyecto Supabase.
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 
 const ALLOWED_ORIGINS = new Set([
     'http://localhost:5173',
     'http://localhost:4173',
-    'https://listo-pos-lite.vercel.app',
-    'https://listo-pos-lite.camelai.app',
-    'https://listo-pos-lite.apps.camelai.dev',
 ]);
 
 function applyCors(res, origin) {

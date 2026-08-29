@@ -50,7 +50,7 @@ export default function EmailConfirmedView({ onDone }) {
                 <button
                     onClick={onDone}
                     className="w-full py-4 text-white text-sm font-black rounded-2xl transition-all shadow-lg shadow-sky-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
-                    style={{ background: 'linear-gradient(135deg, #0EA5E9, #5EEAD4)' }}
+                    style={{ background: 'linear-gradient(135deg, #0B8D63, #6FD9B8)' }}
                 >
                     <LogIn size={17} strokeWidth={2.5} />
                     Iniciar sesión

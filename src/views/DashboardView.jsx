@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { FinancialEngine } from '../core/FinancialEngine';
 import { storageService } from '../utils/storageService';
 import { showToast } from '../components/Toast';
-import { SUPPORT_WHATSAPP } from '../config/tenant';
 import { BarChart3, TrendingUp, Package, AlertTriangle, DollarSign, ShoppingBag, Clock, ArrowUpRight, Trash2, ShoppingCart, Store, Users, Send, Ban, ChevronDown, ChevronUp, UserPlus, Phone, FileText, Recycle, Key, Settings, LockIcon, CheckCircle2, LogOut, Bell, Download } from 'lucide-react';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
 import { formatOfficialRate } from '../utils/rateResolver';
@@ -39,7 +38,7 @@ import Skeleton from '../components/Skeleton';
 import CasheaIcon from '../components/CasheaIcon';
 
 const SALES_KEY = 'bodega_sales_v1';
-export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, isDemo, demoTimeLeft, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
+export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const { unreadCount: alertCount, notifications: adminAlerts, markAllRead: markAlertsRead, clearAll: clearAlerts } = useAdminAlerts();
     const [showAlerts, setShowAlerts] = useState(false);
@@ -542,7 +541,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             {/* Pull-to-refresh indicator */}
             {(pullDistance > 0 || isRefreshing) && (
                 <div className="flex justify-center pb-3 transition-all" style={{ height: pullDistance > 0 ? pullDistance : 40 }}>
-                    <div className={`w-6 h-6 rounded-full border-2 border-slate-200 border-t-[#0EA5E9] ${isRefreshing || pullDistance > 60 ? 'animate-spin-slow' : ''}`}
+                    <div className={`w-6 h-6 rounded-full border-2 border-slate-200 border-t-[#0B8D63] ${isRefreshing || pullDistance > 60 ? 'animate-spin-slow' : ''}`}
                         style={{ opacity: Math.min(pullDistance / 60, 1), transform: `rotate(${pullDistance * 4}deg)` }}
                     />
                 </div>
@@ -645,28 +644,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             {/* ── SCROLL CONTENT ── */}
             <div className="flex flex-col gap-3 px-4 sm:px-6 pt-2 pb-20 lg:pb-14">
 
-            {/* Demo Banner */}
-            {isDemo && demoTimeLeft && (
-                <div className="rounded-2xl p-4 relative overflow-hidden text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #F59E0B, #F97316)' }}>
-                    <div className="absolute right-0 top-0 w-28 h-28 bg-white/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
-                    <div className="flex items-center gap-3 relative z-10">
-                        <div className="w-10 h-10 bg-black/20 rounded-xl flex items-center justify-center"><Key size={20} className="text-amber-100" /></div>
-                        <div>
-                            <h3 className="text-[12px] font-bold text-amber-50">Licencia de Prueba</h3>
-                            <p className="text-lg font-black">{demoTimeLeft}</p>
-                        </div>
-                    </div>
-                    <div className="relative z-10">
-                        <button className="text-[10px] font-black bg-white/25 hover:bg-white/35 px-3 py-1.5 rounded-lg active:scale-95 transition-colors"
-                            onClick={() => window.open(`https://wa.me/${SUPPORT_WHATSAPP}?text=Hola! Quiero adquirir Listo POS Lite. ID: ${deviceId || 'N/A'}`.replace(/\s+/g, '%20'), '_blank')}>
-                            ADQUIRIR
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* ── HERO REVENUE CARD ── */}
-            <div className="relative rounded-[1.5rem] overflow-hidden" style={{ background: 'linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #5EEAD4 100%)' }}>
+            <div className="relative rounded-[1.5rem] overflow-hidden" style={{ background: 'linear-gradient(135deg, #0B8D63 0%, #06B6D4 50%, #6FD9B8 100%)' }}>
                 <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10" />
                 <div className="absolute -left-8 -bottom-8 w-36 h-36 rounded-full bg-white/5" />
                 <div className="relative z-10 p-5 lg:p-4">
@@ -729,7 +708,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             {(installPrompt || showIOSButton) && (
                 <button
                     onClick={() => { triggerHaptic(); installPrompt ? onInstall() : onShowIOSInstall(); }}
-                    className="w-full flex items-center gap-3 bg-gradient-to-r from-[#0EA5E9] to-[#0284C7] text-white rounded-2xl p-3 shadow-md active:scale-[0.98] transition-all"
+                    className="w-full flex items-center gap-3 bg-gradient-to-r from-[#0B8D63] to-[#0AA577] text-white rounded-2xl p-3 shadow-md active:scale-[0.98] transition-all"
                 >
                     <div className="bg-white/20 rounded-xl p-2.5">
                         <Download size={20} strokeWidth={2.5} />
@@ -748,7 +727,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 <div className="flex gap-2">
                     <button onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }}
                         className="flex-1 flex flex-col items-center gap-1.5 py-3.5 rounded-xl active:scale-95 transition-all"
-                        style={{ background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
+                        style={{ background: 'linear-gradient(135deg, #0B8D63, #0AA577)', boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
                         <ShoppingCart size={22} className="text-white" />
                         <span className="text-[11px] font-black text-white">Vender</span>
                     </button>
@@ -937,7 +916,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <div key={method} className="mb-3">
                             <div className="flex justify-between items-center mb-1.5">
                                 <span className={`font-bold text-xs flex items-center gap-1.5 ${isChange ? 'text-orange-500' : 'text-slate-600'}`}>
-                                    {PayIcon && <PayIcon size={14} className={isChange ? 'text-orange-400' : 'text-[#0EA5E9]'} />}
+                                    {PayIcon && <PayIcon size={14} className={isChange ? 'text-orange-400' : 'text-[#0B8D63]'} />}
                                     {label}
                                 </span>
                                 <div className="text-right flex items-center gap-2">
@@ -952,7 +931,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             </div>
                             {!isChange && data.currency !== 'FIADO' && (
                                 <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full transition-all bg-gradient-to-r from-[#0EA5E9] to-[#5EEAD4]" style={{ width: `${pct}%` }} />
+                                    <div className="h-full rounded-full transition-all bg-gradient-to-r from-[#0B8D63] to-[#6FD9B8]" style={{ width: `${pct}%` }} />
                                 </div>
                             )}
                         </div>
@@ -1111,7 +1090,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                     <p className="text-xs font-bold text-slate-700 truncate">{p.name}</p>
                                 </div>
                                 <div className="flex flex-col items-end shrink-0 pl-2">
-                                    <span className="text-xs font-black text-[#0EA5E9]">{p.qty} u</span>
+                                    <span className="text-xs font-black text-[#0B8D63]">{p.qty} u</span>
                                 </div>
                             </div>
                         ))}
@@ -1157,7 +1136,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     >
                         <div className="p-6">
                             <div className="flex justify-center mb-4">
-                                <div className="w-16 h-16 bg-[#0EA5E9]/10 text-[#0EA5E9] rounded-full flex items-center justify-center">
+                                <div className="w-16 h-16 bg-[#0B8D63]/10 text-[#0B8D63] rounded-full flex items-center justify-center">
                                     <UserPlus size={28} />
                                 </div>
                             </div>
@@ -1298,7 +1277,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     >
                         <div className="p-6 text-center">
                             <div className="flex justify-center mb-4">
-                                <div className="w-16 h-16 bg-[#0EA5E9]/10 text-[#0EA5E9] rounded-full flex items-center justify-center">
+                                <div className="w-16 h-16 bg-[#0B8D63]/10 text-[#0B8D63] rounded-full flex items-center justify-center">
                                     <Recycle size={28} />
                                 </div>
                             </div>
@@ -1336,7 +1315,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                     setRecycleOffer(null);
                                     if (onNavigate) onNavigate('ventas');
                                 }}
-                                className="flex-1 py-3 bg-[#0EA5E9] hover:bg-[#0284C7] text-white font-bold rounded-xl active:scale-[0.98] transition-all flex justify-center items-center gap-2 shadow-md shadow-[#0EA5E9]/20"
+                                className="flex-1 py-3 bg-[#0B8D63] hover:bg-[#0AA577] text-white font-bold rounded-xl active:scale-[0.98] transition-all flex justify-center items-center gap-2 shadow-md shadow-[#0B8D63]/20"
                             >
                                 <Recycle size={16} /> Reciclar
                             </button>

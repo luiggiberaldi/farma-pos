@@ -4,7 +4,7 @@ import {
     Store, CreditCard, Database, Users,
     AlertTriangle, Download, Upload, Share2,
     Sun, Moon, LogOut, Trash2, Copy, Check,
-    ChevronRight, ShieldCheck, Package, Printer, BadgeCheck, CloudUpload
+    ChevronRight, ShieldCheck, Package, Printer, CloudUpload
 } from 'lucide-react';
 import { storageService } from '../utils/storageService';
 import { broadcastFactoryReset, broadcastForceReload } from '../hooks/useCloudSync';
@@ -26,14 +26,12 @@ import SettingsTabNegocio from '../components/Settings/tabs/SettingsTabNegocio';
 import SettingsTabVentas from '../components/Settings/tabs/SettingsTabVentas';
 import SettingsTabUsuarios from '../components/Settings/tabs/SettingsTabUsuarios';
 import SettingsTabSistema from '../components/Settings/tabs/SettingsTabSistema';
-import SettingsTabLicencia from '../components/Settings/tabs/SettingsTabLicencia';
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 const TABS = [
     { id: 'negocio',   label: 'Negocio',   icon: Store,        color: 'indigo' },
     { id: 'ventas',    label: 'Ventas',     icon: CreditCard,   color: 'emerald' },
     { id: 'usuarios',  label: 'Usuarios',   icon: Users,        color: 'violet', adminOnly: true },
-    { id: 'licencia',  label: 'Licencia',   icon: BadgeCheck,   color: 'sky',    adminOnly: true },
     { id: 'sistema',   label: 'Sistema',    icon: Database,     color: 'amber' },
 ];
 
@@ -352,14 +350,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         />
                     )}
 
-                    {/* ═══ TAB LICENCIA ═══ */}
-                    {activeTab === 'licencia' && effectiveAdmin && (
-                        <SettingsTabLicencia
-                            isCloudConfigured={isCloudConfigured}
-                            adminEmail={adminEmail}
-                        />
-                    )}
-
                     {/* ═══ TAB SISTEMA ═══ */}
                     {activeTab === 'sistema' && (
                         <SettingsTabSistema
@@ -380,7 +370,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                     {/* Version footer */}
                     <div className="text-center pt-2 pb-1">
                         <p className="text-[10px] text-slate-300 dark:text-slate-700 font-bold tracking-widest uppercase">
-                            Listo POS Lite · v1.0
+                            Farmacia César · POS Multi-Sede
                         </p>
                     </div>
                 </div>

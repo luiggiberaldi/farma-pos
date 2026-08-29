@@ -1,6 +1,6 @@
 -- ============================================================
 -- MIGRACIÓN 004: Seguridad de datos + checkout idempotente
--- Proyecto: fgzwmwrugerptfqfrsjd
+-- Proyecto: <NUEVO_PROJECT_REF>
 --
 -- Esta migración no borra ni transforma inventario, ventas o clientes.
 -- Solo reemplaza políticas de acceso y funciones de seguridad.

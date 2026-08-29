@@ -1,7 +1,8 @@
 {
-  "name": "tasas-al-dia-base",
+  "name": "farmacia-cesar-pos",
+  "description": "Sistema de gestión para farmacia multi-sede (Central, Norte, Sur) — POS, inventario con lotes/vencimientos, transferencias y dashboard consolidado.",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,7 +18,6 @@
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@supabase/supabase-js": "^2.97.0",
-    "groq-sdk": "^0.37.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",
     "localforage": "^1.10.0",

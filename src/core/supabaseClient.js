@@ -1,3 +1,3 @@
-// Re-export del cliente único de Supabase (proyecto fgzwmwrugerptfqfrsjd).
-// El cliente legacy separado ya no existe — todo usa supabaseCloud.
+// Re-export del cliente único de Supabase.
+// TODO: Configurar VITE_SUPABASE_URL/ANON_KEY con el NUEVO proyecto Supabase.
 export { supabaseCloud as supabase } from '../config/supabaseCloud';
