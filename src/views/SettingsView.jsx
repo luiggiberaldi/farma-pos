@@ -53,7 +53,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         tasaCop: calculatedTasaCop
     } = useProductContext();
 
-    const isAdmin = useAuthStore(s => s.usuarioActivo)?.rol === 'ADMIN';
+    const isAdmin = ['ADMIN', 'DUENO'].includes(useAuthStore(s => s.usuarioActivo)?.rol);
     const requireLogin = useAuthStore(s => s.requireLogin ?? false);
     const setRequireLogin = useAuthStore(s => s.setRequireLogin);
     const adminEmail = useAuthStore(s => s.adminEmail);

@@ -9,7 +9,7 @@ const toTitleCase = (str) => {
 };
 
 export default function UserCard({ user, onClick }) {
-  const isAdmin = user.rol === 'ADMIN';
+  const isAdmin = user.rol === 'ADMIN' || user.rol === 'DUENO';
 
   return (
     <div onClick={onClick} className="cursor-pointer outline-none focus:outline-none active:scale-95 transition-transform duration-200">
@@ -56,7 +56,7 @@ export default function UserCard({ user, onClick }) {
               {toTitleCase(user.nombre)}
             </h3>
             <span className={`block text-[9px] font-black uppercase tracking-[0.2em] ${isAdmin ? 'text-sky-500' : 'text-teal-500'}`}>
-              {user.rol === 'ADMIN' ? 'Administrador' : 'Cajero'}
+              {user.rol === 'DUENO' ? 'Dueño' : user.rol === 'ADMIN' ? 'Administrador' : 'Cajero'}
             </span>
           </CardItem>
 

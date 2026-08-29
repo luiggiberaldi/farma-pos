@@ -7,6 +7,14 @@ import {
 } from 'lucide-react';
 
 const ROLE_CONFIG = {
+    DUENO: {
+        label: 'Dueño',
+        gradient: 'from-amber-500 to-orange-500',
+        bg: 'bg-amber-50 dark:bg-amber-900/20',
+        text: 'text-amber-600 dark:text-amber-400',
+        border: 'border-amber-200 dark:border-amber-800/40',
+        icon: Crown,
+    },
     ADMIN: {
         label: 'Administrador',
         gradient: 'from-indigo-500 to-purple-500',
@@ -26,7 +34,7 @@ const ROLE_CONFIG = {
 };
 
 // ─── PIN Length by role ───────────────────────────
-const getPinLength = (rol) => rol === 'ADMIN' ? 6 : 4;
+const getPinLength = (rol) => (rol === 'ADMIN' || rol === 'DUENO') ? 6 : 4;
 
 // ─── PIN Input (4 or 6 digits) ─────────────────────────
 function PinInput({ value, onChange, label, length = 4 }) {
@@ -76,7 +84,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
     const roleConf = ROLE_CONFIG[user.rol] || ROLE_CONFIG.CAJERO;
     const RoleIcon = roleConf.icon;
     const isCurrentUser = user.id === currentUserId;
-    const isAdmin = user.rol === 'ADMIN';
+    const isAdmin = user.rol === 'ADMIN' || user.rol === 'DUENO';
 
     return (
         <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isCurrentUser ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-800/30' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
@@ -256,7 +264,7 @@ export default function UsersManager({ triggerHaptic }) {
                     {/* Role Selector */}
                     <div>
                         <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Rol</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                             {Object.entries(ROLE_CONFIG).map(([key, conf]) => {
                                 const Icon = conf.icon;
                                 return (
