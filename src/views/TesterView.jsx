@@ -381,7 +381,7 @@ export const TesterView = ({ onBack }) => {
 
             {/* ── Footer ── */}
             <p className="text-center text-[7px] sm:text-[9px] text-slate-700 font-mono uppercase pb-20 mt-4">
-                Listo POS • Auditor Financiero v5.0 • {new Date().getFullYear()} • Determinista
+                Farma POS • Auditor Financiero v5.0 • {new Date().getFullYear()} • Determinista
             </p>
         </div>
     );

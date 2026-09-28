@@ -6,6 +6,7 @@
 // ============================================================
 
 import { supabase } from '../core/supabaseClient';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE, pausedCloudOperation } from '../config/operationSafety.js';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { round2, sumR, subR } from '../utils/dinero';
 
@@ -44,6 +45,10 @@ function createSeededRandom(seed) {
  * @param {function} onLog - callback(msg, type) para mostrar progreso.
  */
 export async function injectHybridFlowSales(onLog = () => {}) {
+    if (REMOTE_OPERATIONS_PAUSED) {
+        onLog(CLOUD_PAUSE_MESSAGE, 'warn');
+        return { ...pausedCloudOperation(), successCount: 0, failCount: 0, mode: 'paused' };
+    }
     const rand = createSeededRandom(99999);
     const isOnline = navigator.onLine;
 

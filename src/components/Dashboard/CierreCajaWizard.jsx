@@ -369,7 +369,7 @@ export default function CierreCajaWizard({
                                     <p className="text-[11px] mt-1.5 pl-1">
                                         {
                                             expectedBs < 0
-                                                ? <span className="font-bold text-amber-500">⚠ La gaveta usó Bs {formatBs(Math.abs(expectedBs))} extra para dar cambio</span>
+                                                ? <span className="font-bold text-amber-500">Atención: la gaveta usó Bs {formatBs(Math.abs(expectedBs))} extra para dar cambio</span>
                                                 : <span className="text-slate-400">Sistema espera: <span className="font-bold text-indigo-500">{formatBs(expectedBs)} Bs</span></span>
                                         }
                                     </p>

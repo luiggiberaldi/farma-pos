@@ -1,223 +1,80 @@
-import { storageService } from './storageService';
-import { procesarImpactoCliente } from './financialLogic';
-import { logEvent } from '../services/auditService';
-import { useAuthStore } from '../hooks/store/useAuthStore';
-import { round2, subR, sumR, mulR } from './dinero';
-import { supabase } from '../core/supabaseClient';
-import { offlineQueueService } from '../services/offlineQueueService';
-import { PrinterSerial } from '../services/PrinterSerial';
-import { getLocalISODate, getLocalISOTime } from './dateHelpers';
+import { storageService } from './storageService.js';
+import { useAuthStore } from '../hooks/store/useAuthStore.js';
+import { PrinterSerial } from '../services/PrinterSerial.js';
+import { captureStorageContext, assertStorageContextActive } from '../config/storageScope.js';
+import { beginLocalOperation } from '../services/localOperationGuard.js';
+import { drainSnapshotWrites } from '../services/localSnapshotQueue.js';
+import { discountAuthorizationDetails } from './discountAuthorization.js';
+import { prepareSale } from './salePlan.js';
+import { REMOTE_OPERATIONS_PAUSED } from '../config/operationSafety.js';
 
-const SALES_KEY = 'bodega_sales_v1';
-
-export async function processSaleTransaction({
-    cart,
-    cartTotalUsd,
-    cartTotalBs,
-    cartSubtotalUsd,
-    payments,
-    changeBreakdown,
-    selectedCustomerId,
-    customers,
-    products,
-    effectiveRate,
-    tasaCop,
-    copEnabled,
-    discountData,
-    useAutoRate,
-    rateMode,
-    businessDate = null,
-    businessTime = null
-}) {
-    if (cart.length === 0) return { success: false, error: 'Carrito vacío' };
-
-    const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
-
-    const invalidPayment = payments.find(p => typeof p.amountUsd !== 'number' || isNaN(p.amountUsd));
-    if (invalidPayment) return { success: false, error: 'Pago sin monto válido en USD' };
-
-    const totalPaidUsd = sumR(payments.map(p => p.amountUsd));
-    const remainingUsd = round2(Math.max(0, subR(cartTotalUsd, totalPaidUsd)));
-    const changeUsd = round2(Math.max(0, subR(totalPaidUsd, cartTotalUsd)));
-
-    if (!selectedCustomer && remainingUsd > 0.01) {
-        return { success: false, error: 'Se requiere cliente para ventas fiadas' };
-    }
-
-    if (isNaN(cartTotalUsd) || cartTotalUsd < 0 || isNaN(totalPaidUsd) || totalPaidUsd < 0) {
-        return { success: false, error: 'Integridad matemática comprometida' };
-    }
-
-    if (cartTotalUsd <= 0.01) {
-        return { success: false, error: 'No se pueden generar ventas de $0.00' };
-    }
-
-    const fiadoAmountUsd = remainingUsd > 0.01 ? remainingUsd : 0;
-    
-    // Preparar el Payload para la validación centralizada
-    // Se envía currency y methodLabel para que el RPC pueda mapear cuentas contables
-    // correctamente sin depender del methodId hardcodeado.
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const toUuid = id => (id && UUID_RE.test(id) ? id : crypto.randomUUID());
-
-    const rpcPayload = {
-      total: cartTotalUsd,
-      cart: cart.map(i => ({ id: toUuid(i._originalId || i.id), qty: i.qty, priceUsd: i.priceUsd, name: i.name || '' })),
-      payments: payments.map(p => ({
-        methodId: p.methodId,
-        amountUsd: p.amountUsd,
-        currency: p.currency || 'USD',          // 'USD' | 'BS' | 'COP'
-        methodLabel: p.methodLabel || p.methodId // Nombre legible: "Pago Móvil", "Binance", etc.
-      })),
-      fiadoUsd: fiadoAmountUsd
-    };
-
-    let saleMode = 'online';
-    let finalSaleId = null;
-    let offlineQueueEntry = null;
-
-    if (navigator.onLine) {
-       try {
-         const checkoutPromise = fetch('/api/checkout', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify(rpcPayload),
-           signal: AbortSignal.timeout(5000),
-         }).then(r => r.json());
-
-         const data = await checkoutPromise;
-         if (data.error || data.code) throw new Error(data.message || data.error || 'RPC error');
-
-         finalSaleId = data.sale_id;
-       } catch (err) {
-         console.warn("[Checkout] Fallo en /api/checkout, cambiando a MODO OFFLINE", err);
-         saleMode = 'offline';
-       }
-    } else {
-       saleMode = 'offline';
-    }
-
-    if (saleMode === 'offline') {
-       // Persistir primero en una cola aislada por cuenta y con una clave
-       // idempotente para sobrevivir a apagones y reintentos.
-       offlineQueueEntry = await offlineQueueService.addSaleToQueue(rpcPayload);
-    }
-
-    // ── GESTIÓN DE CACHÉ LOCAL (Para no bloquear al usuario) ──
-    const casheaPayment = payments.find(p => p.methodId === 'cashea');
-    const casheaUsd = casheaPayment ? round2(casheaPayment.amountUsd) : 0;
-
-    // Cuando Cashea financia parte de la venta, la deuda del cliente es sólo
-    // el monto que Cashea adelantó (casheaUsd), NO el fiadoAmountUsd completo.
-    // fiadoAmountUsd sigue yendo al RPC para cuadrar la contabilidad de Supabase.
-    const deudaParaCliente = casheaUsd > 0 ? casheaUsd : fiadoAmountUsd;
-    const tipoVenta = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADA' : 'VENTA');
-
-    const sale = {
-        id: finalSaleId || offlineQueueEntry?.queue_id || crypto.randomUUID(),
-        syncQueueId: offlineQueueEntry?.queue_id || null,
-        tipo: tipoVenta,
-        status: saleMode === 'online' ? 'COMPLETADA' : 'PENDIENTE_SYNC',
-        items: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, priceUsd: i.priceUsd, costBs: i.costBs || 0, costUsd: i.costUsd || 0, isWeight: i.isWeight })),
-        cartSubtotalUsd: cartSubtotalUsd,
-        discountType: discountData?.type || null,
-        discountValue: discountData?.value || 0,
-        discountAmountUsd: discountData?.amountUsd || 0,
-        totalUsd: cartTotalUsd,
-        totalBs: (typeof cartTotalBs === 'number' && !isNaN(cartTotalBs) && cartTotalBs >= 0)
-            ? cartTotalBs
-            : mulR(cartTotalUsd, effectiveRate || 0),
-        totalCop: copEnabled && tasaCop > 0 ? mulR(cartTotalUsd, tasaCop) : 0,
-        payments,
-        rate: effectiveRate,
-        tasaCop: copEnabled ? tasaCop : 0,
-        copEnabled: copEnabled,
-        rateSource: rateMode 
-            ? (rateMode === 'bcv' ? 'BCV Auto' : (rateMode === 'euro' ? 'Euro Auto' : 'Manual')) 
-            : (useAutoRate ? 'BCV Auto' : 'Manual'),
-        timestamp: new Date().toISOString(),
-        // The commercial date belongs to the open cash session, not blindly
-        // to the calendar date. This keeps a shift crossing midnight intact.
-        fechaComercial: businessDate || getLocalISODate(new Date()),
-        horaComercial: businessTime || getLocalISOTime(new Date()),
-        changeUsd: tipoVenta !== 'VENTA' ? 0 : (changeBreakdown?.changeUsdGiven || 0),
-        changeBs: tipoVenta !== 'VENTA' ? 0 : (changeBreakdown?.changeBsGiven || 0),
-        customerId: selectedCustomerId || null,
-        customerName: selectedCustomer ? selectedCustomer.name : 'Consumidor Final',
-        customerDocument: selectedCustomer?.documentId || null,
-        customerPhone: selectedCustomer?.phone || null,
-        fiadoUsd: fiadoAmountUsd,
-        casheaUsd,
-    };
-
-    const existingSales = await storageService.getItem(SALES_KEY, []);
-    const saleNumber = existingSales.reduce((mx, s) => Math.max(mx, s.saleNumber || 0), 0) + 1;
-    const finalPersistedSale = Object.freeze({ ...sale, saleNumber });
-
-    await storageService.setItem(SALES_KEY, [finalPersistedSale, ...existingSales]);
-
-    // Audit log
-    const user = useAuthStore.getState().usuarioActivo;
-    const tipo = casheaUsd > 0 ? 'VENTA_CASHEA' : (fiadoAmountUsd > 0 ? 'VENTA_FIADO' : 'VENTA_COMPLETADA');
-    logEvent('VENTA', tipo, `Venta #${saleNumber} [${saleMode.toUpperCase()}] - $${cartTotalUsd.toFixed(2)} - ${cart.length} items - ${selectedCustomer?.name || 'Consumidor Final'}`, user, { saleId: finalPersistedSale.id, total: cartTotalUsd, items: cart.length });
-
-    // Deduct stock in local cache immediately
-    const updatedProducts = products.map(p => {
-        const cartItemsForThisProduct = cart.filter(i => (i._originalId || i.id) === p.id);
-        if (cartItemsForThisProduct.length > 0) {
-            const totalDeducted = cartItemsForThisProduct.reduce((sum, item) => {
-                if (item.isWeight) return sum + item.qty;
-                if (item._mode === 'unit') {
-                    const pkg = item._unitsPerPackage > 0 ? item._unitsPerPackage : 1;
-                    return sum + (item.qty / pkg);
-                }
-                return sum + item.qty;
-            }, 0);
-
-            const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-            const newStock = (p.stock ?? 0) - totalDeducted;
-            return { ...p, stock: allowNeg ? newStock : Math.max(0, newStock) };
+export async function processSaleTransaction(input) {
+    const options = structuredClone({ ...input, products: undefined, customers: undefined });
+    const context = Object.freeze({ ...(options.storageContext || captureStorageContext()) });
+    assertStorageContextActive(context);
+    const state = useAuthStore.getState();
+    const operator = state.usuarioActivo;
+    const sessionId = state.operatorSession?.sessionId;
+    if (!operator || !['DUENO', 'ADMIN', 'CAJERO'].includes(operator.rol)) return { success: false, error: 'Selecciona tu usuario antes de vender.' };
+    if (operator.rol === 'CAJERO' && operator.sedeId !== context.sedeId) return { success: false, error: 'El cajero no pertenece a la sede activa.' };
+    const assertActor = () => {
+        assertStorageContextActive(context);
+        const active = useAuthStore.getState();
+        if (active.usuarioActivo?.id !== operator.id || active.usuarioActivo?.rol !== operator.rol || active.operatorSession?.sessionId !== sessionId) {
+            throw new Error('El operador cambió durante la venta.');
         }
-        return p;
-    });
-
-    await storageService.setItem('bodega_products_v1', updatedProducts);
-
-    let updatedCustomer = null;
-    let updatedCustomers = customers;
-
-    if (selectedCustomer) {
-        const amount_favor_used = payments.filter(p => p.methodId === 'saldo_favor').reduce((sum, p) => sum + p.amountUsd, 0);
-
-        const transaccionOpts = {
-            usaSaldoFavor: amount_favor_used,
-            esCredito: deudaParaCliente > 0.009,
-            deudaGenerada: deudaParaCliente,
-            esCashea: casheaUsd > 0,   // deuda va a casheaDeuda si es Cashea
-            vueltoParaMonedero: 0
-        };
-
-        updatedCustomer = procesarImpactoCliente(selectedCustomer, transaccionOpts);
-        updatedCustomers = customers.map(c => c.id === selectedCustomer.id ? updatedCustomer : c);
-
-        await storageService.setItem('bodega_customers_v1', updatedCustomers);
-    }
-
-    // Apertura automática del cajón si está configurado y la impresora está conectada
-    if (
-        localStorage.getItem('printer_serial_auto_drawer') === 'true' &&
-        PrinterSerial.isConnected()
-    ) {
-        PrinterSerial.openDrawer().catch(err =>
-            console.warn('[Checkout] No se pudo abrir el cajón:', err)
-        );
-    }
-
-    return {
-        success: true,
-        sale: finalPersistedSale,
-        updatedProducts,
-        updatedCustomers,
-        syncMode: saleMode
     };
+    const operationId = options.operationId || crypto.randomUUID();
+    if (typeof operationId !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(operationId)) return { success: false, error: 'Identificador de operación inválido.' };
+    if (!REMOTE_OPERATIONS_PAUSED) return { success: false, code: 'REMOTE_RELEASE_REQUIRES_REVIEW', error: 'La liberación remota requiere el nuevo contrato de sincronización; no actives el motor legado.' };
+    // No read-modify-write or remote request occurs before this local commit.
+    // A validated operation is committed with its immutable origin and outbox.
+    // The remote sender remains separately paused until server release checks.
+    const release = beginLocalOperation('CHECKOUT', context);
+    try {
+        await drainSnapshotWrites(context);
+        assertActor();
+        const timestamp = new Date().toISOString();
+        let approval;
+        let details;
+        const records = [
+            { name: 'products', key: 'bodega_products_v1', fallback: [] },
+            { name: 'customers', key: 'bodega_customers_v1', fallback: [] },
+            { name: 'sales', key: 'bodega_sales_v1', fallback: [] },
+            { name: 'lots', key: 'farmacia_lotes_v1', fallback: [] },
+            { name: 'queue', key: 'offline_sales_queue', context: { ...context, accountId: context.accountId || 'local' }, fallback: [] },
+            { name: 'controlled', key: 'farmacia_controlados_v1', fallback: [] },
+            { name: 'audit', key: 'abasto_audit_log_v1', fallback: [] },
+        ];
+        const result = await storageService.transaction(records, snapshot => {
+            assertActor();
+            try {
+                const existing = Array.isArray(snapshot.sales) && snapshot.sales.some(sale => sale.operationId === operationId || sale.id === operationId);
+                if (!existing && options.discountData?.value > 0 && operator.rol === 'CAJERO') {
+                    details = discountAuthorizationDetails({ ...options.discountData, cartSubtotalUsd: options.cartSubtotalUsd, cart: options.cart });
+                    approval = useAuthStore.getState().checkApproval(options.discountData.approvalId, 'DISCOUNT', details);
+                    if (!approval) throw new Error('Solicita el PIN administrativo para autorizar este descuento y esta cesta.');
+                }
+                return prepareSale(options, snapshot, { operationId, operator, context, timestamp,
+                    discountAuthorization: approval ? { approver: approval.approver, authorizedAt: approval.createdAt, action: approval.action } : null });
+            } catch (error) {
+                // Business rejection is a no-write transaction; infrastructure
+                // errors still reject the outer promise, never a false receipt.
+                return { writes: {}, result: { success: false, error: error.message } };
+            }
+        }, context);
+        if (result.success && !result.duplicate && approval) {
+            try { useAuthStore.getState().consumeApproval(approval.id, 'DISCOUNT', details); } catch { /* A committed sale remains committed. */ }
+        }
+        if (result.success && !result.duplicate) {
+            try {
+                if (localStorage.getItem('printer_serial_auto_drawer') === 'true' && PrinterSerial.isConnected()) {
+                    Promise.resolve(PrinterSerial.openDrawer()).then(drawer => {
+                        if (drawer?.ok === false) console.warn('[Checkout] Venta guardada; no se abrió el cajón:', drawer.error);
+                    }).catch(error => console.warn('[Checkout] Venta guardada; no se pudo abrir el cajón:', error));
+                }
+            } catch { result.warnings = ['La venta se guardó; no se pudo consultar la configuración del cajón.']; }
+        }
+        return result;
+    } finally { release(); }
 }

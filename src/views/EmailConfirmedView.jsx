@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
 import { CheckCircle, LogIn, ShieldCheck } from 'lucide-react';
 import { supabaseCloud } from '../config/supabaseCloud';
+import { signOutCloudAccount } from '../services/cloudSessionLifecycle.js';
+import { SYSTEM_BRAND } from '../config/branding';
 
 export default function EmailConfirmedView({ onDone }) {
     // Cerramos la sesión de confirmación para que el usuario inicie sesión manualmente
     useEffect(() => {
-        supabaseCloud.auth.signOut().catch(() => {});
+        signOutCloudAccount(supabaseCloud).catch(() => {});
         // Limpiar el hash de la URL sin recargar la página
         window.history.replaceState({}, document.title, window.location.pathname);
     }, []);
@@ -21,8 +23,8 @@ export default function EmailConfirmedView({ onDone }) {
             <div className="relative w-full max-w-sm animate-in slide-in-from-bottom-6 duration-300 flex flex-col items-center text-center">
                 {/* Logo */}
                 <img
-                    src="/logo.png"
-                    alt="Listo POS Lite"
+                    src={SYSTEM_BRAND.logo}
+                    alt="Farma POS"
                     className="h-24 w-auto object-contain select-none mb-8"
                     draggable={false}
                 />
@@ -36,7 +38,7 @@ export default function EmailConfirmedView({ onDone }) {
                     ¡Correo verificado!
                 </h1>
                 <p className="text-slate-500 text-sm leading-relaxed mb-8 max-w-xs">
-                    Tu cuenta en <strong className="text-slate-700">Listo POS Lite</strong> está activa.
+                    Tu cuenta en <strong className="text-slate-700">Farma POS</strong> está activa.
                     Inicia sesión para empezar a usar tu negocio en la nube.
                 </p>
 

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { assertSupabaseBrowserKey } from './src/config/supabasePublicKey.js'
 
 export default defineConfig({
   server: {
@@ -13,12 +14,22 @@ export default defineConfig({
     }
   },
   plugins: [
+    {
+      name: 'supabase-public-key-preflight',
+      configResolved(config) {
+        // Check both public variables before a secret can be bundled, even if
+        // the other variable would win at runtime. Never print their values.
+        assertSupabaseBrowserKey(config.env.VITE_SUPABASE_PUBLISHABLE_KEY)
+        assertSupabaseBrowserKey(config.env.VITE_SUPABASE_ANON_KEY)
+      },
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       // Archivos estáticos que deben estar disponibles offline
-      includeAssets: ['favicon.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'logo.png'],
+      includeAssets: ['logos/farma-pos.png', 'logos/farma-pos-pwa.png'],
       workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
@@ -44,8 +55,8 @@ export default defineConfig({
         ]
       },
       manifest: {
-        name: 'Farmacia César POS',
-        short_name: 'Farmacia',
+        name: 'Farma POS',
+        short_name: 'Farma POS',
         description: 'Sistema de gestión para farmacia multi-sede — POS, inventario, lotes y vencimientos',
         theme_color: '#0B8D63',      // verde farmacéutico — color del logo
         background_color: '#F8FAFB', // gris hielo
@@ -55,17 +66,17 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'logos/farma-pos-pwa.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'logos/farma-pos-pwa.png',
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'logos/farma-pos-pwa.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'

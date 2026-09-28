@@ -1,17 +1,16 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from './store/useAuthStore';
 import { logEvent } from '../services/auditService';
+import { getActiveAccountId } from '../config/storageScope.js';
 
 const CAJERO_LOCK_MINUTES = 5; // Fijo, no configurable
 
 export function useAutoLock() {
     const { usuarioActivo, logout, requireLogin } = useAuthStore();
-    const adminEmail = useAuthStore(s => s.adminEmail);
-    const isCloudConfigured = Boolean(adminEmail);
-    // Lock aplica si: es ADMIN con cloud+requireLogin, O si es CAJERO (siempre)
-    const isAdmin = usuarioActivo?.rol === 'ADMIN';
+    // Cloud accounts always require operator PIN; cashier lock remains enabled.
+    const isAdmin = ['ADMIN', 'DUENO'].includes(usuarioActivo?.rol);
     const isCajero = usuarioActivo?.rol === 'CAJERO';
-    const isLoginRequired = (requireLogin ?? false) && isCloudConfigured;
+    const isLoginRequired = Boolean(requireLogin || getActiveAccountId());
     const shouldLock = (isAdmin && isLoginRequired) || isCajero;
     const timeoutRef = useRef(null);
 

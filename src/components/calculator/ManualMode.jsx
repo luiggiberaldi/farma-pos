@@ -21,7 +21,10 @@ export const ManualMode = ({ rates, accounts, theme, triggerHaptic, isKeyboardOp
     // Modal state removed as PaymentSummaryChat is gone
 
     // [NEW] History State
-    const [history, setHistory] = useState([]);
+    const [history, setHistory] = useState(() => {
+        try { const saved = JSON.parse(localStorage.getItem('calc_history') || '[]'); return Array.isArray(saved) ? saved : []; }
+        catch { return []; }
+    });
 
     // [NEW] Send Logic State
     const [isSendModalOpen, setIsSendModalOpen] = useState(false);
@@ -30,14 +33,6 @@ export const ManualMode = ({ rates, accounts, theme, triggerHaptic, isKeyboardOp
     const [mainCurrency, setMainCurrency] = useState('auto'); // 'auto', 'BS', 'USD', 'EUR'
     const [showReference, setShowReference] = useState(true);
 
-    useEffect(() => {
-        try {
-            const saved = localStorage.getItem('calc_history');
-            if (saved) setHistory(JSON.parse(saved));
-        } catch (e) {
-            console.error(e);
-        }
-    }, []);
 
     const addToHistory = () => {
         if (!calc.amountTop || !calc.amountBot) return;
@@ -72,7 +67,7 @@ export const ManualMode = ({ rates, accounts, theme, triggerHaptic, isKeyboardOp
         triggerHaptic && triggerHaptic();
         addToHistory(); // [NEW] Save to history
         if (!calc.amountBot) return;
-        const text = `💰 Cambio: ${calc.amountTop} ${calc.from} -> ${calc.amountBot} ${calc.to}`;
+        const text = `Cambio: ${calc.amountTop} ${calc.from} -> ${calc.amountBot} ${calc.to}`;
         navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000);
     };
 
@@ -318,17 +313,17 @@ export const ManualMode = ({ rates, accounts, theme, triggerHaptic, isKeyboardOp
             </Modal>
 
             {/* Modal Upgrade Premium */}
-            <Modal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} title="👑 Función Premium">
+            <Modal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} title="Función Premium">
                 <div className="text-center py-2">
                     <p className="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
-                        El envío directo a WhatsApp es una función exclusiva de <strong>Listo POS Lite Business</strong>.
+                        El envío directo a WhatsApp es una función exclusiva de <strong>Farma POS Business</strong>.
                     </p>
                     <p className="text-xs text-slate-400 mb-5">
                         Puedes seguir usando <strong>Copiar</strong> para pegar manualmente en cualquier chat.
                     </p>
                     <button
                         onClick={() => {
-                            const msg = `Hola! Me interesa la licencia Premium de Listo POS Lite para enviar cotizaciones por WhatsApp.`;
+                            const msg = `Hola! Me interesa la licencia Premium de Farma POS para enviar cotizaciones por WhatsApp.`;
                             window.open(`https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(msg)}`, '_blank');
                         }}
                         className="w-full py-3 bg-[#10B981] text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform text-sm"

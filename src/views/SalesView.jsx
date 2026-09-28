@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
-import { storageService } from '../utils/storageService';
+import { bindStorageContext } from '../utils/scopedStorage.js';
 import { round2, divR } from '../utils/dinero';
 import { useSounds } from '../hooks/useSounds';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
@@ -33,15 +33,20 @@ import ConfirmModal from '../components/ConfirmModal';
 import Confetti from '../components/Confetti';
 import { processSaleTransaction } from '../utils/checkoutProcessor';
 import { useSalesKeyboard } from '../hooks/useSalesKeyboard';
+import { isStorageContextActive } from '../config/storageScope.js';
+import { beginLocalOperation } from '../services/localOperationGuard.js';
+import { ledgerRecords, ledgerAudit, movementStamp, pendingOperation } from '../utils/localLedger.js';
+import { quantityInBase, isBulkProduct, isPackageProduct, packageFactor } from '../utils/inventoryQuantities.js';
 
 const SALES_KEY = 'bodega_sales_v1';
 
 export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }) {
+    const [storageService] = useState(bindStorageContext);
     const { playAdd, playRemove, playCheckout, playError } = useSounds();
     const { notifySaleComplete, notifyLowStock } = useNotifications();
 
     // ── Global Context ──────────────────────────────────────
-    const { products, setProducts, isLoadingProducts, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, copEnabled, tasaCop, rateMode, setRateMode } = useProductContext();
+    const { products, adoptCommittedProducts, isLoadingProducts, useAutoRate, setUseAutoRate, customRate, setCustomRate, effectiveRate, copEnabled, tasaCop, rateMode, setRateMode } = useProductContext();
     const { usuarioActivo } = useAuthStore();
 
     // ── State ──────────────────────────────────────
@@ -59,7 +64,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const [todayAperturaData, setTodayAperturaData] = useState(null);
 
     // Cart (from global context)
-    const { cart, setCart, cartRef, pendingNavigate, setPendingNavigate, discount, setDiscount } = useCart();
+    const { cart, setCart, cartRef, pendingNavigate, setPendingNavigate, discount, setDiscount, operationId, checkpointCheckout, storageContext } = useCart();
     const [showDiscountModal, setShowDiscountModal] = useState(false);
 
     // Search
@@ -206,7 +211,8 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         amountUsd: discountAmountUsd,
         amountBs: discountAmountBs,
         type: discount?.type,
-        value: discount?.value
+        value: discount?.value,
+        approvalId: discount?.approvalId || null,
     };
 
     // ── Current cash float (for soft change warning in CheckoutModal) ──
@@ -234,37 +240,23 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
     // Search Deferred Value for Performance (moved to top of memos)
 
-    // Persist cart (With Debounce to avoid blocking UI on rapid scans)
-    const isCartInitialized = useRef(false);
-    useEffect(() => {
-        if (!isCartInitialized.current) { isCartInitialized.current = true; return; }
-        const timer = setTimeout(() => {
-            if (cart.length > 0) storageService.setItem('bodega_pending_cart_v1', cart);
-            else storageService.removeItem('bodega_pending_cart_v1');
-        }, 1000);
-        return () => clearTimeout(timer);
-    }, [cart]);
+    // CartProvider owns a synchronous branch-scoped v2 draft. Legacy v1
+    // drafts remain untouched for explicit origin reconciliation.
 
     // Load data
     useEffect(() => {
         let mounted = true;
         const load = async () => {
-            const [savedCustomers, methods, savedCart, savedSales] = await Promise.all([
-                storageService.getItem('bodega_customers_v1', []),
-                getActivePaymentMethods(),
-                storageService.getItem('bodega_pending_cart_v1', []),
-                storageService.getItem(SALES_KEY, [])
+            const [savedCustomers, methods, savedSales] = await Promise.all([
+                storageService.getItem('bodega_customers_v1', [], storageContext),
+                getActivePaymentMethods(storageContext),
+                storageService.getItem(SALES_KEY, [], storageContext)
             ]);
             if (mounted) { setSalesData(savedSales); }
             if (mounted) {
                 setCustomers(savedCustomers);
                 setPaymentMethods(methods);
                 
-                // Only set cart if it's currently empty (don't overwrite if user somehow added items before load)
-                if (savedCart && savedCart.length > 0 && cartRef.current.length === 0) {
-                    setCart(savedCart);
-                }
-
                 // A cash session remains open across midnight until an
                 // explicit closure is confirmed by the operator.
                 const openSession = getOpenCashSession(savedSales);
@@ -292,12 +284,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     const handleReloadContent = useCallback(() => {
         if (!isActive) return;
         Promise.all([
-            storageService.getItem('bodega_products_v1', []),
-            getActivePaymentMethods(),
-            storageService.getItem('bodega_customers_v1', []),
-            storageService.getItem(SALES_KEY, [])
-        ]).then(([savedProducts, methods, savedCustomers, savedSales]) => {
-            setProducts(savedProducts);
+            getActivePaymentMethods(storageContext),
+            storageService.getItem('bodega_customers_v1', [], storageContext),
+            storageService.getItem(SALES_KEY, [], storageContext)
+        ]).then(([methods, savedCustomers, savedSales]) => {
+            if (!isStorageContextActive(storageContext)) return;
             setPaymentMethods(methods);
             setCustomers(savedCustomers);
             setSalesData(savedSales);
@@ -307,7 +298,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             const openSession = getOpenCashSession(savedSales);
             setTodayAperturaData(openSession?.apertura || null);
         });
-    }, [isActive, setProducts]);
+    }, [isActive, storageContext, storageService]);
 
     useEffect(() => {
         handleReloadContent();
@@ -366,6 +357,13 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             return;
         }
 
+        // Bloqueo farmacéutico: producto vencido no se vende (F3.7)
+        if (product.vencimiento && product.vencimiento <= getLocalISODate()) {
+            playError();
+            showToast(`${product.name}: VENCIDO (${product.vencimiento}) — venta bloqueada`, 'error');
+            return;
+        }
+
         // Validación temprana de stock (si la configuración lo exige)
         const allowNegativeStock = localStorage.getItem('allow_negative_stock') === 'true';
         const currentStock = parseFloat(product.stock) || 0;
@@ -391,45 +389,14 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             cartName = product.name + ' (Ud.)';
         }
 
-        // Pre-calculate stock check BEFORE setCart to avoid React StrictMode double-firing
-        if (!allowNegativeStock) {
-            const currentCart = cartRef.current;
-            const existingInCart = currentCart.find(i => i.id === cartId && i.priceUsd === priceToUse);
-            const addingQty = existingInCart ? (qtyOverride || 1) : qtyToAdd;
-            const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
-            const newQty = existingQtyForThis + addingQty;
-            const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
-
-            const otherCartItems = currentCart.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
-            const otherStockUsed = otherCartItems.reduce((sum, item) => {
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                return sum + item.qty;
-            }, 0);
-
-            if (stockNeeded + otherStockUsed > currentStock) {
-                playError();
-                showToast(`${product.name}: stock maximo alcanzado`, 'warning');
-                return;
-            }
-        }
-
-        // Soft warning when allowNegativeStock is ON but stock just ran out
-        if (allowNegativeStock && currentStock > 0) {
-            const currentCart = cartRef.current;
-            const existingInCart = currentCart.find(i => i.id === cartId && i.priceUsd === priceToUse);
-            const existingQtyForThis = existingInCart ? existingInCart.qty : 0;
-            const newQty = existingQtyForThis + (qtyOverride || 1);
-            const stockNeeded = forceMode === 'unit' ? newQty / (product.unitsPerPackage || 1) : newQty;
-
-            const otherCartItems = currentCart.filter(i => (i._originalId || i.id) === product.id && i.id !== cartId);
-            const otherStockUsed = otherCartItems.reduce((sum, item) => {
-                if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                return sum + item.qty;
-            }, 0);
-
-            if (stockNeeded + otherStockUsed > currentStock) {
-                showToast(`${product.name}: stock agotado, vendiendo sin inventario`, 'info');
-            }
+        if (product.kind !== 'custom') {
+            try {
+                if (isPackageProduct(product) && product.stockUnit !== 'base') throw new Error('Confirma primero la existencia física en unidades desde Inventario.');
+                const used = cartRef.current.filter(item => (item.productId || item._originalId || item.id) === product.id)
+                    .reduce((sum, item) => sum + quantityInBase(item, product).quantityBase, 0);
+                const added = quantityInBase({ qty: qtyToAdd, _mode: forceMode || (isBulkProduct(product) ? 'weight' : 'package') }, product).quantityBase;
+                if (used + added > currentStock) throw new Error(`${product.name}: stock máximo alcanzado`);
+            } catch (error) { playError(); showToast(error.message, 'warning'); return; }
         }
 
         setCart(prev => {
@@ -440,11 +407,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             const itemCostBs = product.costBs || (product.costUsd ? product.costUsd * effectiveRate : 0);
             return [{
                 ...product, id: cartId, name: cartName, priceUsd: priceToUse,
-                exactBs: product.exactBs || null,
+                exactBs: product.exactBs != null ? product.exactBs / (forceMode === 'unit' ? packageFactor(product) : 1) : null,
                 costBs: forceMode === 'unit' ? itemCostBs / (product.unitsPerPackage || 1) : itemCostBs,
                 costUsd: forceMode === 'unit' ? (product.costUsd || 0) / (product.unitsPerPackage || 1) : (product.costUsd || 0),
-                qty: qtyToAdd, isWeight: !!qtyOverride,
-                _originalId: product.id, _mode: forceMode || 'package', _unitsPerPackage: product.unitsPerPackage || 1,
+                qty: qtyToAdd, isWeight: isBulkProduct(product), productId: product.id,
+                _originalId: product.id, _mode: forceMode || (isBulkProduct(product) ? 'weight' : 'package'), _unitsPerPackage: product.unitsPerPackage || 1,
             }, ...prev];
         });
         handleSetSearchTerm('');
@@ -461,10 +428,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         triggerHaptic && triggerHaptic();
         if (delta < 0) playRemove();
 
-        const allowNeg = localStorage.getItem('allow_negative_stock') === 'true';
-
-        // Pre-check stock BEFORE setCart to avoid React StrictMode double toast
-        if (!allowNeg && delta > 0) {
+        // Pharmacy stock cannot be silently oversold. The final transaction
+        // repeats this check against persisted stock under the database lock.
+        if (delta > 0) {
             const currentCart = cartRef.current;
             const cartItem = currentCart.find(i => i.id === id);
             if (cartItem) {
@@ -476,10 +442,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     const totalUsed = currentCart.reduce((sum, item) => {
                         if ((item._originalId || item.id) !== originalId) return sum;
                         if (item.id === id) return sum;
-                        if (item._mode === 'unit') return sum + (item.qty / (item._unitsPerPackage || 1));
-                        return sum + item.qty;
+                        return sum + quantityInBase(item, productData).quantityBase;
                     }, 0);
-                    const thisItemStock = cartItem._mode === 'unit' ? newQty / (cartItem._unitsPerPackage || 1) : newQty;
+                    const thisItemStock = quantityInBase({ ...cartItem, qty: newQty }, productData).quantityBase;
                     if (totalUsed + thisItemStock > availableStock) {
                         playError();
                         showToast(`${cartItem.name}: stock maximo alcanzado`, 'warning');
@@ -534,8 +499,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
 
     const [isProcessingSale, setIsProcessingSale] = useState(false);
-    const handleCheckout = async (payments, changeBreakdown) => {
-        if (isProcessingSale) return;
+    const checkoutInFlight = useRef(false);
+    const handleCheckout = async (payments, changeBreakdown, prescription = null) => {
+        if (checkoutInFlight.current) return;
         setIsProcessingSale(true);
         triggerHaptic && triggerHaptic();
 
@@ -596,11 +562,25 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         const opts = {
             cart, cartTotalUsd, cartTotalBs, cartSubtotalUsd, payments, changeBreakdown,
             selectedCustomerId, customers, products, effectiveRate, tasaCop, copEnabled,
-            discountData, useAutoRate, rateMode,
+            discountData, useAutoRate, rateMode, storageContext, operationId, prescription,
+            cashSessionId: todayAperturaData?.id,
             businessDate: getSaleBusinessDate(todayAperturaData, getLocalISODate(new Date()))
         };
 
-        const result = await processSaleTransaction(opts);
+        let result;
+        checkoutInFlight.current = true;
+        try {
+            opts.operationId = checkpointCheckout();
+            result = await processSaleTransaction(opts);
+        } catch (error) {
+            console.error('[Checkout] No se pudo confirmar la venta local:', error);
+            showToast('No se pudo confirmar el guardado. Revisa el historial y la cola antes de reintentar.', 'error');
+            playError();
+            return;
+        } finally {
+            checkoutInFlight.current = false;
+            setIsProcessingSale(false);
+        }
         
         if (!result.success) {
             console.error('Abortando venta:', result.error);
@@ -610,21 +590,20 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             return;
         }
 
-        // Apply state updates using the returned optimized datasets
-        setProducts(result.updatedProducts);
+        // Do not publish an old request into a remounted branch view.
+        if (!isStorageContextActive(storageContext)) return;
+        try { storageService.assertActive(); } catch { return; }
+        adoptCommittedProducts(result.updatedProducts);
         
         if (result.updatedCustomers) {
             setCustomers(result.updatedCustomers);
         }
 
-        setSalesData(prev => [result.sale, ...prev]);
-
-        setShowReceipt(result.sale); 
-        playCheckout(); 
+        setSalesData(prev => [result.sale, ...prev.filter(sale => sale.id !== result.sale.id)]);
+        setShowReceipt(result.sale);
+        try { playCheckout(); notifyLowStock(result.updatedProducts); } catch { /* Receipt already committed. */ }
         setShowConfetti(true);
-        notifyLowStock(result.updatedProducts);
-        
-        setCart([]);
+        try { setCart([]); } catch { showToast('Venta guardada. No se pudo vaciar el borrador; su identificador evita duplicarla al reintentar.', 'warning'); }
         setShowCheckout(false);
         setSelectedCustomerId('');
         setCartSelectedIndex(-1);
@@ -633,9 +612,13 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
     const handleCreateCustomer = async (name, documentId, phone) => {
         const newCustomer = { id: crypto.randomUUID(), name, documentId: documentId || '', phone: phone || '', deuda: 0, favor: 0, createdAt: new Date().toISOString() };
-        const updated = [...customers, newCustomer];
+        const updated = await storageService.transaction([{ name: 'customers', key: 'bodega_customers_v1', fallback: [] }], state => {
+            if (!Array.isArray(state.customers)) throw new Error('Clientes inválidos; no se sobrescribirán.');
+            const next = [...state.customers, newCustomer];
+            return { writes: { customers: next }, result: next };
+        });
+        storageService.assertActive();
         setCustomers(updated);
-        await storageService.setItem('bodega_customers_v1', updated);
         return newCustomer;
     };
 
@@ -659,7 +642,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         if (amountUsd <= 0) return;
         
         const customProduct = {
-            id: `custom_${Date.now()}`,
+            id: `custom_${crypto.randomUUID()}`, kind: 'custom',
             name: 'Venta Libre',
             priceUsdt: amountUsd, // Usamos priceUsdt para que la validación temprana lo acepte
             exactBs: exactBsToStore, // Monto exacto original en Bs, o null si debe flotar
@@ -693,7 +676,10 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         );
     }
     const handleSaveApertura = async (data) => {
+        let release;
         try {
+            storageService.assertActive();
+            release = beginLocalOperation('OPEN_CASH', storageContext);
             const openedAt = new Date();
             const aperturaRecord = {
                 id: `apertura_${Date.now()}`,
@@ -708,28 +694,32 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 cajeroNombre: usuarioActivo?.nombre ?? 'Desconocido',
             };
 
-            const existingSales = await storageService.getItem(SALES_KEY, []);
-            const existingSession = getOpenCashSession(existingSales);
-            if (existingSession) {
-                setTodayAperturaData(existingSession.apertura);
-                setIsAperturaOpen(false);
-                showToast(`Ya existe un turno abierto desde ${existingSession.businessDate}.`, 'info');
-                return;
-            }
-
-            const updatedSales = [...existingSales, aperturaRecord];
-            
-            await storageService.setItem(SALES_KEY, updatedSales);
-            setTodayAperturaData(aperturaRecord);
+            if (![data.openingUsd, data.openingBs].every(value => Number.isFinite(value) && value >= 0 && value === round2(value))) throw new Error('El fondo inicial debe ser finito, no negativo y con dos decimales.');
+            const opening = await storageService.transaction(ledgerRecords(['sales', 'queue', 'audit'], storageContext), current => {
+                storageService.assertActive();
+                const existing = getOpenCashSession(current.sales);
+                if (existing) return { writes: {}, result: existing.apertura };
+                const actor = useAuthStore.getState().usuarioActivo;
+                const mayOpen = ['DUENO', 'ADMIN'].includes(actor?.rol) || actor?.rol === 'CAJERO' && actor.sedeId === storageContext.sedeId && localStorage.getItem('cajero_puede_abrir_caja') !== 'false';
+                if (!mayOpen) throw new Error('No tienes permiso para abrir esta caja.');
+                const id = `apertura_${crypto.randomUUID()}`;
+                const record = { ...aperturaRecord, id, operationId: id, schemaVersion: 3, sedeId: storageContext.sedeId, accountId: storageContext.accountId,
+                    huella: movementStamp('APERTURA_CAJA', id, storageContext, actor, openedAt.toISOString()) };
+                return { writes: { sales: [...current.sales, record],
+                    queue: [...current.queue, pendingOperation(id, 'OPEN_CASH', record, storageContext, actor, openedAt.toISOString())],
+                    audit: [ledgerAudit(id, 'APERTURA_CAJA', storageContext, actor, openedAt.toISOString(), { openingUsd: data.openingUsd, openingBs: data.openingBs }), ...current.audit] }, result: record };
+            });
+            storageService.assertActive();
+            setTodayAperturaData(opening);
             setIsAperturaOpen(false);
             showToast('Caja abierta exitosamente', 'success');
             if (triggerHaptic) triggerHaptic();
 
         } catch (error) {
             console.error('Error al guardar apertura:', error);
-            showToast('Error al abrir la caja', 'error');
+            showToast(error.message || 'Error al abrir la caja', 'error');
             if (playError) playError();
-        }
+        } finally { release?.(); }
     };
 
     // ── Render ─────────────────────────────────────
@@ -760,20 +750,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 />
             ) : (
                 <>
-                    {/* ── APERTURA DE CAJA BANNER ── */}
-                    <div className="shrink-0 mb-2 lg:mb-1">
-                        <div className="w-full bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-2.5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
-                                    <CheckCircle2 size={18} className="text-emerald-500" />
-                                </div>
-                                <div>
-                                    <p className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-400">Turno Abierto</p>
-                                    <p className="text-[10px] sm:text-xs text-emerald-500/70">{getSaleBusinessDate(todayAperturaData)} · ${todayAperturaData.openingUsd?.toFixed(2)} · Bs {formatBs(todayAperturaData.openingBs || 0)}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    {/* ── APERTURA DE CAJA BANNER (Ocultado a petición del usuario) ── */}
 
                     {/* ── Split Layout: Products (left) + Cart Sidebar (right) on tablet+ ── */}
                     <div className="flex-1 min-h-0 flex flex-col md:flex-row md:gap-4">
@@ -906,6 +883,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     paymentMethods={paymentMethods}
                     onConfirmSale={handleCheckout} onCreateCustomer={handleCreateCustomer}
                     isProcessingSale={isProcessingSale}
+                    requiresPrescription={cart.some(item => { const p = products.find(product => product.id === (item.productId || item._originalId || item.id)); return p?.requiresPrescription || p?.isControlled; })}
                     triggerHaptic={triggerHaptic}
                     copEnabled={copEnabled}
                     tasaCop={tasaCop}
@@ -948,6 +926,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             {showDiscountModal && (
                 <DiscountModal
                     currentDiscount={discount}
+                    cart={cart}
                     onApply={(newDiscount) => {
                         setDiscount(newDiscount);
                         setShowDiscountModal(false);

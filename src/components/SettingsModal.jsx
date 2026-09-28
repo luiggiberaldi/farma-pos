@@ -1,26 +1,26 @@
+import { sanitizeBackup } from '../utils/backupSafety.js';
 import React, { useState, useRef } from 'react';
 import { Upload, Download, AlertTriangle, Check, X, Database, Share2, Fingerprint, Copy, Store } from 'lucide-react';
-import { storageService } from '../utils/storageService';
-import localforage from 'localforage';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from './Settings/PaymentMethodsManager';
 
 import { useSecurity } from '../hooks/useSecurity';
-import { useProductContext } from '../context/ProductContext';
-import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey } from '../config/storageScope';
+import { collectBranchBackup } from '../services/dataBackupService.js';
 
 export default function SettingsModal({ isOpen, onClose, products, onImport, triggerHaptic }) {
-    const { 
-        copEnabled, setCopEnabled,
-        autoCopEnabled, setAutoCopEnabled, 
-        tasaCopManual, setTasaCopManual, 
-        tasaCop: calculatedTasaCop 
-    } = useProductContext();
+    const { forceHeartbeat } = useSecurity();
+    const copEnabled = false;
+    const setCopEnabled = () => {};
+    const autoCopEnabled = false;
+    const setAutoCopEnabled = () => {};
+    const calculatedTasaCop = 0;
+    const tasaCopManual = '';
+    const setTasaCopManual = () => {};
 
     const [importStatus, setImportStatus] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const fileInputRef = useRef(null);
-    const { deviceId, forceHeartbeat } = useSecurity();
+    const { deviceId } = useSecurity();
     const [idCopied, setIdCopied] = useState(false);
     const [allowNegativeStock, setAllowNegativeStock] = useState(() => localStorage.getItem('allow_negative_stock') === 'true');
     // Used from context instead.
@@ -55,33 +55,13 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
             setImportStatus('loading');
             setStatusMessage('Generando backup...');
 
-            const allProducts = await storageService.getItem('bodega_products_v1', []);
-            const accounts = await storageService.getItem('bodega_accounts_v2', []);
-            const categories = await storageService.getItem('my_categories_v1', []);
+            const backupData = await collectBranchBackup();
 
-            const backupData = {
-                timestamp: new Date().toISOString(),
-                version: '1.0',
-                data: {
-                    bodega_products_v1: JSON.stringify(allProducts),
-                    bodega_accounts_v2: JSON.stringify(accounts),
-                    my_categories_v1: JSON.stringify(categories),
-                    premium_token: localStorage.getItem('premium_token'),
-                    street_rate_bs: localStorage.getItem('street_rate_bs'),
-                    catalog_use_auto_usdt: localStorage.getItem('catalog_use_auto_usdt'),
-                    catalog_custom_usdt_price: localStorage.getItem('catalog_custom_usdt_price'),
-                    catalog_show_cash_price: localStorage.getItem('catalog_show_cash_price'),
-                    monitor_rates_v12: localStorage.getItem('monitor_rates_v12'),
-                    business_name: localStorage.getItem('business_name'),
-                    business_rif: localStorage.getItem('business_rif')
-                }
-            };
-
-            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const blob = new Blob([JSON.stringify(sanitizeBackup(backupData), null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `backup_listo_pos_${new Date().toISOString().slice(0, 10)}.json`;
+            a.download = `backup_farma_pos_${new Date().toISOString().slice(0, 10)}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -98,72 +78,10 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
     };
 
     // --- IMPORTAR BACKUP ---
-    const handleImportClick = () => fileInputRef.current?.click();
+    const handleImportClick = () => showToast('Restaura desde Configuración de esta sede con un respaldo de origen verificado.', 'warning');
 
-    const handleFileChange = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                setImportStatus('loading');
-                setStatusMessage('Restaurando datos...');
-                const json = JSON.parse(e.target.result);
-
-                if (!json.data || (!json.data.bodega_products_v1 && !json.data.bodega_accounts_v2 && !json.data.idb)) {
-                    throw new Error('Formato de archivo inválido.');
-                }
-
-                // Bypass storageService completely to prevent app_storage_update events from firing.
-                // If events fire, ProductContext updates state and triggers its auto-save, which might overwrite our imported data before reload finishes.
-                const lf = localforage.createInstance({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
-
-                // ── v2.0 format: { data: { idb: {...}, ls: {...} } } ──
-                if (json.version === '2.0' && json.data.idb) {
-                    for (const [key, value] of Object.entries(json.data.idb)) {
-                        await lf.setItem(getScopedStorageKey(key), value);
-                    }
-                    if (json.data.ls) {
-                        for (const [key, value] of Object.entries(json.data.ls)) {
-                            localStorage.setItem(key, value);
-                        }
-                    }
-                } else {
-                // ── v1 legacy format: flat keys directly under data ──
-
-                if (json.data.bodega_products_v1) {
-                    await lf.setItem(getScopedStorageKey('bodega_products_v1'), typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
-                }
-                if (json.data.bodega_accounts_v2) {
-                    await lf.setItem(getScopedStorageKey('bodega_accounts_v2'), typeof json.data.bodega_accounts_v2 === 'string' ? JSON.parse(json.data.bodega_accounts_v2) : json.data.bodega_accounts_v2);
-                }
-
-                if (json.data.street_rate_bs) localStorage.setItem('street_rate_bs', json.data.street_rate_bs);
-                if (json.data.catalog_use_auto_usdt) localStorage.setItem('catalog_use_auto_usdt', json.data.catalog_use_auto_usdt);
-                if (json.data.catalog_custom_usdt_price) localStorage.setItem('catalog_custom_usdt_price', json.data.catalog_custom_usdt_price);
-                if (json.data.catalog_show_cash_price) localStorage.setItem('catalog_show_cash_price', json.data.catalog_show_cash_price);
-                if (json.data.monitor_rates_v12) localStorage.setItem('monitor_rates_v12', json.data.monitor_rates_v12);
-                if (json.data.business_name) localStorage.setItem('business_name', json.data.business_name);
-                if (json.data.business_rif) localStorage.setItem('business_rif', json.data.business_rif);
-
-                if (json.data.my_categories_v1) {
-                    const cats = typeof json.data.my_categories_v1 === 'string' ? JSON.parse(json.data.my_categories_v1) : json.data.my_categories_v1;
-                    await lf.setItem('my_categories_v1', cats);
-                }
-                } // end legacy format
-
-                setImportStatus('success');
-                setStatusMessage('Datos restaurados. Recargando...');
-                setTimeout(() => window.location.reload(), 1200);
-
-            } catch (error) {
-                console.error(error);
-                setImportStatus('error');
-                setStatusMessage('Error: El archivo no es válido.');
-            }
-        };
-        reader.readAsText(file);
+    const handleFileChange = () => {
+        showToast('Importación legada bloqueada. Usa Configuración y un respaldo con cuenta y sede verificadas.', 'warning');
     };
 
     return (
@@ -265,8 +183,8 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                         </button>
                     </div>
 
-                    {/* Configuración Peso Colombiano (COP) */}
-                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/50 space-y-3">
+                    {/* COP permanece oculto temporalmente por decisión operativa. */}
+                    <div className="hidden">
                         <div className="flex items-center justify-between">
                             <div>
                                 <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200">Peso Colombiano (COP)</h4>

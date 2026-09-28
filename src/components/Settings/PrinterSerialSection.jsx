@@ -25,51 +25,42 @@ export default function PrinterSerialSection({ showToast, triggerHaptic }) {
         return () => clearInterval(id);
     }, []);
 
-    // No mostrar nada si el navegador no soporta Web Serial
-    if (!PrinterSerial.isSupported()) return null;
-
     const handleConnect = useCallback(async () => {
-        if (connected) {
-            await PrinterSerial.disconnect();
-            setConnected(false);
-            showToast?.('Impresora desconectada', 'info');
-            triggerHaptic?.();
-            return;
-        }
         setConnecting(true);
-        const result = await PrinterSerial.connect();
-        setConnecting(false);
-        if (result.ok) {
-            setConnected(true);
-            showToast?.('Impresora conectada', 'success');
-        } else {
-            showToast?.(result.error || 'No se pudo conectar', 'error');
-        }
-        triggerHaptic?.();
+        try {
+            if (connected) {
+                await PrinterSerial.disconnect();
+                setConnected(false);
+                showToast?.('Impresora desconectada', 'info');
+                triggerHaptic?.();
+                return;
+            }
+            const result = await PrinterSerial.connect();
+            if (result.ok) { setConnected(true); showToast?.('Impresora conectada', 'success'); }
+            else showToast?.(result.error || 'No se pudo conectar', 'error');
+            triggerHaptic?.();
+        } catch (error) { showToast?.(error.message || 'No se pudo conectar', 'error'); }
+        finally { setConnecting(false); }
     }, [connected, showToast, triggerHaptic]);
 
     const handleTestPrint = useCallback(async () => {
         setTesting(true);
-        const result = await PrinterSerial.testPrint();
-        setTesting(false);
-        if (result.ok) {
-            showToast?.('Test enviado a la impresora', 'success');
-        } else {
-            showToast?.(result.error || 'Error al imprimir', 'error');
-        }
-        triggerHaptic?.();
+        try {
+            const result = await PrinterSerial.testPrint();
+            showToast?.(result.ok ? 'Test enviado a la impresora' : result.error || 'Error al imprimir', result.ok ? 'success' : 'error');
+            triggerHaptic?.();
+        } catch (error) { showToast?.(error.message || 'Error al imprimir', 'error'); }
+        finally { setTesting(false); }
     }, [showToast, triggerHaptic]);
 
     const handleOpenDrawer = useCallback(async () => {
         setOpeningDrawer(true);
-        const result = await PrinterSerial.openDrawer();
-        setOpeningDrawer(false);
-        if (result.ok) {
-            showToast?.('Pulso enviado al cajón', 'success');
-        } else {
-            showToast?.(result.error || 'Error al abrir cajón', 'error');
-        }
-        triggerHaptic?.();
+        try {
+            const result = await PrinterSerial.openDrawer();
+            showToast?.(result.ok ? 'Pulso enviado al cajón' : result.error || 'Error al abrir cajón', result.ok ? 'success' : 'error');
+            triggerHaptic?.();
+        } catch (error) { showToast?.(error.message || 'Error al abrir cajón', 'error'); }
+        finally { setOpeningDrawer(false); }
     }, [showToast, triggerHaptic]);
 
     const handleAutoDrawerToggle = useCallback(() => {
@@ -80,6 +71,7 @@ export default function PrinterSerialSection({ showToast, triggerHaptic }) {
         triggerHaptic?.();
     }, [autoDrawer, showToast, triggerHaptic]);
 
+    if (!PrinterSerial.isSupported()) return null;
     return (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
             {/* Header */}

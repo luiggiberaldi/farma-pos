@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { storageService } from '../utils/storageService';
 import { supabaseCloud as supabase } from '../config/supabaseCloud';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
+import { captureStorageContext, assertStorageContextActive } from '../config/storageScope.js';
+import { sanitizeBackup } from '../utils/backupSafety.js';
 
 const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
-const BACKUP_KEY = 'bodega_autobackup_v1';
+const BACKUP_KEY = 'bodega_autobackup_v2';
 
 // Claves criticas que se respaldan
 const CRITICAL_KEYS = [
@@ -18,26 +21,29 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
     const intervalRef = useRef(null);
 
     useEffect(() => {
+        if (!deviceId) return;
+        let active = true;
         const performBackup = async () => {
+            const context = captureStorageContext();
             try {
                 const snapshot = {};
                 let hasData = false;
 
                 for (const key of CRITICAL_KEYS) {
-                    const val = await storageService.getItem(key, null);
+                    const val = await storageService.getItem(key, null, context);
                     if (val !== null) {
                         snapshot[key] = val;
                         hasData = true;
                     }
                 }
 
-                if (!hasData) return;
-
+                if (!active || !hasData) return;
+                assertStorageContextActive(context);
                 await storageService.setItem(BACKUP_KEY, {
-                    data: snapshot,
+                    data: sanitizeBackup(snapshot), context,
                     timestamp: Date.now(),
                     device: navigator.userAgent?.substring(0, 80),
-                });
+                }, context);
 
                 // Cloud backup deshabilitado: el auto-backup cada 5 min generaba
                 // ~170MB/día de egreso en Supabase (288 uploads × ~500KB snapshot).
@@ -56,6 +62,7 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
         intervalRef.current = setInterval(performBackup, BACKUP_INTERVAL_MS);
 
         return () => {
+            active = false;
             clearTimeout(initialTimer);
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
@@ -64,11 +71,14 @@ export function useAutoBackup(isPremium, isDemo, deviceId) {
 
 // Restaurar desde backup (para emergencias)
 export async function restoreFromBackup() {
-    const backup = await storageService.getItem('bodega_autobackup_v1', null);
+    if (REMOTE_OPERATIONS_PAUSED) throw new Error('Restauración pausada para proteger los datos y pendientes de cada sede.');
+    const context = captureStorageContext();
+    const backup = await storageService.getItem(BACKUP_KEY, null, context);
     if (!backup?.data) return null;
-
-    for (const [key, val] of Object.entries(backup.data)) {
-        await storageService.setItem(key, val);
+    if (backup.context?.accountId !== context.accountId || backup.context?.sedeId !== context.sedeId) throw new Error('El respaldo no corresponde a esta cuenta y sede.');
+    for (const [key, val] of Object.entries(sanitizeBackup(backup.data))) {
+        assertStorageContextActive(context);
+        await storageService.setItem(key, val, context);
     }
 
     return {
@@ -82,6 +92,10 @@ export async function restoreFromBackup() {
  * Usar desde la UI cuando el usuario lo solicite, o al cerrar sesión.
  */
 export async function exportCloudBackup(deviceId) {
+    if (REMOTE_OPERATIONS_PAUSED) {
+        console.warn(CLOUD_PAUSE_MESSAGE);
+        return false;
+    }
     if (!deviceId) return false;
     try {
         const backup = await storageService.getItem(BACKUP_KEY, null);
@@ -90,7 +104,7 @@ export async function exportCloudBackup(deviceId) {
         await supabase.from('device_backups').upsert({
             device_id: deviceId,
             product_id: 'bodega',
-            backup_data: backup.data,
+            backup_data: sanitizeBackup(backup.data),
             updated_at: new Date().toISOString()
         }, { onConflict: 'device_id' });
 

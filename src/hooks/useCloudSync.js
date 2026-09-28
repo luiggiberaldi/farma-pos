@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
-import { storageService } from '../utils/storageService';
 import { useAuthStore } from './store/useAuthStore';
-import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId } from '../config/storageScope';
+import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId, captureStorageContext, getActiveSedeId } from '../config/storageScope';
+import { buildCloudDocumentId, parseCloudDocumentId, isCloudDocumentForContext } from '../config/cloudDocumentScope.js';
+import { recordSyncMetric } from '../utils/syncMetrics';
+import { REMOTE_OPERATIONS_PAUSED, pausedCloudOperation } from '../config/operationSafety.js';
+import { sanitizeBackup } from '../utils/backupSafety.js';
+import { SUPABASE_FREE_PROFILE, inspectSyncPayload, fingerprintSyncPayload } from '../config/supabaseFreeTier.js';
 
 // Exportado para que SettingsView pueda enviar el broadcast antes de hacer signOut
 export const broadcastFactoryReset = async (userId) => {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     try {
         const ch = supabaseCloud.channel(`factory-reset-${userId}`);
         await ch.subscribe();
@@ -21,6 +26,7 @@ export const broadcastFactoryReset = async (userId) => {
 
 // Exportado para forzar la recarga remota de todos los dispositivos
 export const broadcastForceReload = async (userId) => {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     try {
         const ch = supabaseCloud.channel(`factory-reset-${userId}`);
         await ch.subscribe();
@@ -40,6 +46,11 @@ const SYNC_KEYS = [
     'bodega_cierres_v1',
     'bodega_payment_methods_v1',
     'bodega_accounts_v2',
+    'farmacia_lotes_v1',
+    'farmacia_controlados_v1',
+    'farmacia_correlativos_v1',
+    'farmacia_caja_v1',
+    'farmacia_transferencias_v1',
     // 'abasto_audit_log_v1' eliminado: el audit va incremental a la tabla
     // audit_log (auditService.syncAuditToCloud). Subir el array completo
     // (~2-4 MB) en cada logEvent agotaba el Disk IO Budget de Supabase.
@@ -92,7 +103,7 @@ const LOCAL_KEYS = [
 
 // ─── Realtime selectivo ────────────────────────────────────────────────────
 // Solo llaves pequeñas (<1KB) van por Realtime para multi-dispositivo instantáneo.
-// Datos pesados (productos, ventas, clientes) siguen con polling cada 5 min.
+// Free keeps Realtime disabled. Future polling uses the central 60-minute profile.
 const REALTIME_KEYS = [
     'monitor_rates_v12',
     'bodega_custom_rate',
@@ -114,7 +125,8 @@ const REALTIME_KEYS = [
 ];
 
 // Llaves pesadas — solo polling (evita egreso masivo por Realtime)
-const POLLING_ONLY_KEYS = SYNC_KEYS.filter(k => !REALTIME_KEYS.includes(k));
+const POLLING_ONLY_KEYS = SUPABASE_FREE_PROFILE.realtimeEnabled
+    ? SYNC_KEYS.filter(k => !REALTIME_KEYS.includes(k)) : SYNC_KEYS;
 
 // ─── Llaves que contienen arrays con campo `id` y requieren merge inteligente ──
 // Cuando llegan datos de la nube, en vez de sobreescribir el array completo,
@@ -130,6 +142,8 @@ const MERGEABLE_KEYS = [
     'my_categories_v1',
     'bodega_suppliers_v1',
     'bodega_supplier_invoices_v1',
+    'farmacia_transferencias_v1',
+    'farmacia_controlados_v1',
 ];
 
 // Llaves legadas que dispositivos con versiones viejas aún pueden subir a
@@ -199,18 +213,9 @@ function _trimSalesForSync(arr) {
  * espeja el backup de login a sync_documents.
  */
 export function sanitizeForPush(key, value) {
-    let sanitizedValue = value;
+    let sanitizedValue = sanitizeBackup(value, key);
 
-    // Seguridad: eliminar adminPassword antes de sincronizar auth-storage a la nube
-    if (key === 'abasto-auth-storage') {
-        try {
-            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-            if (parsed?.state?.adminPassword) {
-                sanitizedValue = JSON.parse(JSON.stringify(parsed));
-                delete sanitizedValue.state.adminPassword;
-            }
-        } catch { }
-    }
+    // Sensitive fields/session selectors are removed centrally before any push.
 
     // Egress: eliminar imágenes base64 de productos antes de subir a la nube.
     // Las imágenes (204 KB de 218 KB por usuario) son el mayor driver de egreso.
@@ -222,7 +227,9 @@ export function sanitizeForPush(key, value) {
             if (Array.isArray(arr)) {
                 sanitizedValue = arr.map(({ image, ...rest }) => rest);
             }
-        } catch { }
+        } catch {
+            // Payload no parseable: preserve original value.
+        }
     }
 
     // Disk I/O: subir solo las ventas recientes; el documento completo crecía
@@ -237,11 +244,8 @@ export function sanitizeForPush(key, value) {
     return sanitizedValue;
 }
 
-function _computePushHash(serialized) {
-    // Hash includes length + start + middle + end to catch changes anywhere in payload
-    const mid = Math.floor(serialized.length / 2);
-    return serialized.length + ':' + serialized.slice(0, 100) + serialized.slice(mid, mid + 100) + serialized.slice(-100);
-}
+// Hash the complete UTF-8 payload: sampling slices can miss an interior edit.
+const _computePushHash = fingerprintSyncPayload;
 
 // ─── Estado Global del Motor ───────────────────────────────────────────────
 let pollIntervalId = null;
@@ -275,17 +279,20 @@ const HEAVY_KEYS = [
     'bodega_customers_v1',
     'bodega_supplier_invoices_v1',
 ];
-const DEBOUNCE_MS = 3000;
-const DEBOUNCE_MS_HEAVY = 30000;
+const DEBOUNCE_MS = SUPABASE_FREE_PROFILE.lightDebounceMs;
+const DEBOUNCE_MS_HEAVY = SUPABASE_FREE_PROFILE.heavyDebounceMs;
 
 /**
  * Empuja una llave al sincronizador de Supabase.
  * Llamado desde storageService (colección 'store') y el interceptor localStorage (colección 'local').
  * Soporta un parámetro bypassDebounce para subidas iniciales o forzadas inmediatas.
  */
-export const pushCloudSync = async (key, value, bypassDebounce = false) => {
-    if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
+export const pushCloudSync = async (key, value, bypassDebounce = false, storageContext = captureStorageContext()) => {
+    const context = Object.freeze({ ...storageContext });
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
+    // Salir antes de cualquier trabajo de debounce/serialización para claves no sincronizables.
     if (!SYNC_KEYS.includes(key)) return;
+    if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
     // Nunca enviar datos locales antes de terminar el pull inicial de la cuenta.
     // Esto evita que otro sistema o la cuenta anterior contamine la nube activa.
     if (!initialSyncReady) return;
@@ -294,37 +301,50 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
         try {
             const sanitizedValue = sanitizeForPush(key, value);
 
-            // Deduplicación: generar hash rápido del payload para no resubir datos idénticos.
-            const serialized = typeof sanitizedValue === 'string' ? sanitizedValue : JSON.stringify(sanitizedValue);
-            const hash = _computePushHash(serialized);
-            if (_lastPushHash[key] === hash) return; // Sin cambios reales → skip
+            const { serialized, bytes, allowed, warning } = inspectSyncPayload(sanitizedValue);
+            if (!allowed) {
+                recordSyncMetric(key, 'oversized');
+                _pendingPushValues[key] = { value, context };
+                console.warn(`[CloudSync] ${key} supera el límite local de 1 MiB; datos conservados sin marcar envío.`);
+                return { status: 'deferred', code: 'FREE_TIER_PAYLOAD_LIMIT', bytes };
+            }
+            if (warning) console.warn(`[CloudSync] ${key} supera 250 KiB; conviene usar deltas antes de ampliar.`);
+            const hash = await _computePushHash(serialized);
+            if (_lastPushHash[key] === hash) {
+                recordSyncMetric(key, 'skipHash');
+                return;
+            } // Sin cambios reales → skip
             // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
 
             const { data: { session } } = await supabaseCloud.auth.getSession();
-            if (!session?.user?.id) return;
+            if (!session?.user?.id || session.user.id !== context.accountId) return;
 
             const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
+            const docId = buildCloudDocumentId(key, context);
 
-            await supabaseCloud.from('sync_documents').upsert({
+            const { error } = await supabaseCloud.from('sync_documents').upsert({
                 user_id: session.user.id,
                 collection: collectionType,
-                doc_id: key,
-                data: { payload: sanitizedValue },
+                doc_id: docId,
+                data: { payload: sanitizedValue, sourceKey: key, sedeId: context.sedeId },
                 updated_at: new Date().toISOString()
             }, { onConflict: 'user_id,collection,doc_id' });
+            if (error) throw error;
 
             // Solo marcar como enviado si el push fue exitoso
             _lastPushHash[key] = hash;
+            recordSyncMetric(key, 'push');
+            recordSyncMetric(key, 'uploadBytes', bytes);
 
             // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
             // Usa canal Broadcast en vez de postgres_changes para NO activar
             // la decodificación lógica de WAL en la base de datos.
-            if (REALTIME_KEYS.includes(key) && realtimeChannel) {
+            if (SUPABASE_FREE_PROFILE.realtimeEnabled && REALTIME_KEYS.includes(key) && realtimeChannel) {
                 try {
                     await realtimeChannel.send({
                         type: 'broadcast',
                         event: 'sync_update',
-                        payload: { doc_id: key, collection: collectionType, data: sanitizedValue }
+                        payload: { doc_id: docId, collection: collectionType, data: sanitizedValue }
                     });
                 } catch (bcastErr) {
                     // No crítico: el otro dispositivo lo verá en el próximo pull
@@ -333,7 +353,10 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             }
 
         } catch (e) {
+            _pendingPushValues[key] = { value, context };
+            recordSyncMetric(key, 'error');
             console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
+            return { status: 'deferred', code: 'SYNC_SEND_FAILED' };
         }
     };
 
@@ -343,15 +366,16 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
             delete _pushDebounceTimers[key];
         }
         delete _pendingPushValues[key];
-        await performUpsert();
+        return await performUpsert();
     } else {
-        _pendingPushValues[key] = value;
+        _pendingPushValues[key] = { value, context };
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
         const delay = HEAVY_KEYS.includes(key) ? DEBOUNCE_MS_HEAVY : DEBOUNCE_MS;
         _pushDebounceTimers[key] = setTimeout(() => {
             delete _pushDebounceTimers[key];
+            const pending = _pendingPushValues[key];
             delete _pendingPushValues[key];
-            performUpsert().catch(() => {});
+            if (pending) pushCloudSync(key, pending.value, true, pending.context).catch(() => {});
         }, delay);
     }
 };
@@ -362,12 +386,13 @@ export const pushCloudSync = async (key, value, bypassDebounce = false) => {
  * el catch-up push del próximo arranque y la cola offline de ventas cubren el hueco.
  */
 export const flushPendingPushes = () => {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     for (const key of Object.keys(_pushDebounceTimers)) {
         clearTimeout(_pushDebounceTimers[key]);
         delete _pushDebounceTimers[key];
         const pending = _pendingPushValues[key];
         delete _pendingPushValues[key];
-        if (pending !== undefined) pushCloudSync(key, pending, true).catch(() => {});
+        if (pending) pushCloudSync(key, pending.value, true, pending.context).catch(() => {});
     }
 };
 
@@ -378,9 +403,19 @@ export const flushPendingPushes = () => {
  * para evitar sobreescribir cambios locales con datos desactualizados de la nube.
  */
 async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     // Llaves legadas subidas por versiones viejas de la app: ignorar para no
     // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
     if (PULL_IGNORE_KEYS.includes(docId)) return;
+
+    const context = captureStorageContext();
+    const parsedDoc = parseCloudDocumentId(docId);
+    if (!parsedDoc || !isCloudDocumentForContext(docId, parsedDoc.key, context)) {
+        // Documentos legacy o de otra cuenta/sede nunca se depositan en el store activo.
+        console.warn(`[CloudSync] Documento rechazado por contexto: ${docId}`);
+        return;
+    }
+    docId = parsedDoc.key;
 
     // El inventario de la cuenta activa es autoritativo: no se mezcla ni se
     // bloquea por timestamps locales heredados de otro sistema.
@@ -411,22 +446,18 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
         if (collection === 'local') {
             let finalPayload = payload;
 
-            // abasto-auth-storage: the cloud copy has adminPassword stripped for security.
-            // Preserve the local credentials so isCloudConfigured stays true.
+            // Preserve only non-secret account display metadata. Never restore a password.
             if (docId === 'abasto-auth-storage') {
                 try {
                     const incoming = typeof payload === 'string' ? JSON.parse(payload) : JSON.parse(JSON.stringify(payload));
                     const existingRaw = localStorage.getItem('abasto-auth-storage');
                     if (existingRaw) {
                         const existing = JSON.parse(existingRaw);
-                        if (existing?.state?.adminPassword && !incoming?.state?.adminPassword) {
-                            incoming.state.adminPassword = existing.state.adminPassword;
-                        }
                         if (existing?.state?.adminEmail && !incoming?.state?.adminEmail) {
                             incoming.state.adminEmail = existing.state.adminEmail;
                         }
                     }
-                    finalPayload = incoming;
+                    finalPayload = sanitizeBackup(incoming);
                 } catch { /* keep original payload on parse error */ }
             }
 
@@ -473,6 +504,9 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             }
 
             await localforage.setItem(getScopedStorageKey(docId), finalData);
+            const serializedPayload = typeof finalData === 'string' ? finalData : JSON.stringify(finalData);
+            recordSyncMetric(docId, 'pull');
+            recordSyncMetric(docId, 'downloadBytes', new TextEncoder().encode(serializedPayload).byteLength);
 
             // Notificar a los componentes React que lean este store
             window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'cloud' } }));
@@ -488,6 +522,7 @@ export function useCloudSync() {
     // El sincronizador debe reaccionar al cambio real de sesión, aunque el
     // auth-storage local todavía no tenga adminEmail.
     useEffect(() => {
+        if (REMOTE_OPERATIONS_PAUSED) return;
         const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event) => {
             if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
                 setAuthEpoch(value => value + 1);
@@ -503,6 +538,7 @@ export function useCloudSync() {
     useEffect(() => {
         // Esta ejecución del efecto es la autoridad actual: cualquier initSync
         // de una ejecución anterior (todavía en vuelo tras un await) se aborta.
+        if (REMOTE_OPERATIONS_PAUSED) return;
         const myGen = ++syncGeneration;
         const isCurrent = () => syncGeneration === myGen;
 
@@ -588,7 +624,8 @@ export function useCloudSync() {
                         .from('sync_documents')
                         .select('collection, doc_id, data, updated_at')
                         .eq('user_id', userId)
-                        .in('collection', ['store', 'local']);
+                        .in('collection', ['store', 'local'])
+                        .in('doc_id', SYNC_KEYS.map(key => buildCloudDocumentId(key, { accountId: userId, sedeId: getActiveSedeId() })));
                     if (error) throw error;
                     docs = data;
 
@@ -601,7 +638,8 @@ export function useCloudSync() {
                             try {
                                 const p = doc.data.payload;
                                 const serialized = typeof p === 'string' ? p : JSON.stringify(p);
-                                _lastPushHash[doc.doc_id] = _computePushHash(serialized);
+                                const parsed = parseCloudDocumentId(doc.doc_id);
+                                if (parsed) _lastPushHash[parsed.key] = await _computePushHash(serialized);
                             } catch { /* sin seed → push normal, como antes */ }
                         }
                         console.log(`[CloudSync] Pull inicial: ${docs.length} documentos procesados.`);
@@ -619,15 +657,19 @@ export function useCloudSync() {
                 // dispositivo desde que se activó el sync.
                 // El hash deduplication evita resubir lo que ya está igual en la nube.
                 // Set de doc_ids que la nube ya tiene (del pull inicial)
-                const cloudDocIds = new Set(docs?.map(d => d.doc_id) || []);
+                const cloudDocIds = new Set(docs?.map(d => parseCloudDocumentId(d.doc_id)?.key).filter(Boolean) || []);
 
                 (async () => {
                     const { default: lf } = await import('localforage');
                     lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
                     for (const key of SYNC_KEYS) {
+                        if (!isCurrent() || !navigator.onLine || document.visibilityState !== 'visible') return;
                         if (LOCAL_KEYS.includes(key)) {
                             const val = localStorage.getItem(key);
-                            if (val != null) pushCloudSync(key, val, true).catch(() => {});
+                            if (val != null) {
+                                const result = await pushCloudSync(key, val, true);
+                                if (result?.code === 'SYNC_SEND_FAILED') return;
+                            }
                         } else {
                             const val = await lf.getItem(getScopedStorageKey(key));
                             // No subir arrays vacíos si la nube ya tiene datos para esta llave.
@@ -640,11 +682,13 @@ export function useCloudSync() {
                                     console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
                                     continue;
                                 }
-                                pushCloudSync(key, val, true).catch(() => {});
+                                if (!isCurrent()) return;
+                                const result = await pushCloudSync(key, val, true);
+                                if (result?.code === 'SYNC_SEND_FAILED') return;
                             }
                         }
                         // Pausa entre keys para no saturar Supabase con burst
-                        await new Promise(r => setTimeout(r, 120));
+                        await new Promise(r => setTimeout(r, SUPABASE_FREE_PROFILE.catchUpSpacingMs));
                     }
                 })().catch(() => {});
                 }
@@ -654,7 +698,7 @@ export function useCloudSync() {
                 // ── Listener de Factory Reset remoto ─────────────────────────
                 // Si otro dispositivo con la misma cuenta hace factory reset,
                 // este equipo también limpia y recarga.
-                if (!factoryResetChannel) {
+                if (SUPABASE_FREE_PROFILE.realtimeEnabled && !factoryResetChannel) {
                     factoryResetChannel = supabaseCloud.channel(`factory-reset-${userId}`)
                         .on('broadcast', { event: 'factory_reset' }, async () => {
                         console.log('[CloudSync] Factory reset remoto recibido — limpiando...');
@@ -684,7 +728,7 @@ export function useCloudSync() {
                 // ── Realtime: solo tasas y config (payloads <1KB) ─────────────
                 // Esto permite que 2 dispositivos con la misma cuenta vean
                 // cambios de tasa instantáneamente sin egreso significativo.
-                if (!realtimeChannel) {
+                if (SUPABASE_FREE_PROFILE.realtimeEnabled && !realtimeChannel) {
                     // Canal Broadcast privado por usuario.
                     // NO usa postgres_changes → no activa decodificación lógica de WAL.
                     // Los mensajes viajan cliente→cliente a través de los servidores de
@@ -699,8 +743,10 @@ export function useCloudSync() {
                             async ({ payload }) => {
                                 if (isSyncingFromCloud) return;
                                 const { doc_id, collection, data } = payload;
-                                // Solo procesar llaves ligeras (tasas/config)
-                                if (!REALTIME_KEYS.includes(doc_id)) return;
+                                const parsed = parseCloudDocumentId(doc_id);
+                                // Solo procesar llaves ligeras (tasas/config) y el documento de esta cuenta/sede.
+                                if (!parsed || !REALTIME_KEYS.includes(parsed.key)
+                                    || !isCloudDocumentForContext(doc_id, parsed.key, captureStorageContext())) return;
                                 console.log(`[CloudSync] Realtime Broadcast: ${doc_id} actualizado`);
                                 await _applyFromCloud(doc_id, collection, data);
                             }
@@ -714,10 +760,11 @@ export function useCloudSync() {
                 // Productos, ventas, clientes, cuentas — payloads grandes que
                 // no necesitan ser instantáneos. 60 min optimiza egress para 5GB/mes.
                 if (!pollIntervalId) {
-                    const POLL_INTERVAL = 60 * 60 * 1000; // 60 minutos — optimizado para egress
-
+                    const POLL_INTERVAL = SUPABASE_FREE_PROFILE.pollIntervalMs;
+                    let pollInFlight = false;
                     const pollForChanges = async () => {
-                        if (isSyncingFromCloud) return;
+                        if (!isCurrent() || pollInFlight || isSyncingFromCloud || document.visibilityState !== 'visible' || !navigator.onLine) return;
+                        pollInFlight = true;
                         try {
                             const currentSession = (await supabaseCloud.auth.getSession()).data.session;
                             if (!currentSession?.user?.id) return;
@@ -728,22 +775,28 @@ export function useCloudSync() {
                                 .from('sync_documents')
                                 .select('doc_id, collection, updated_at')
                                 .eq('user_id', currentSession.user.id)
-                                .in('doc_id', POLLING_ONLY_KEYS);
+                                .in('doc_id', POLLING_ONLY_KEYS.map(key => buildCloudDocumentId(key, {
+                                    accountId: currentSession.user.id,
+                                    sedeId: getActiveSedeId(),
+                                })));
 
                             if (lastSyncTime) {
                                 metaQuery = metaQuery.gt('updated_at', lastSyncTime);
-                            }
+                            }                            const { data: changedMeta, error: metadataError } = await metaQuery;
 
-                            const { data: changedMeta } = await metaQuery;
+                            if (metadataError) throw metadataError;
+                            if (!isCurrent()) return;
 
                             // ── Fase 2: bajar solo los docs que realmente cambiaron ───
                             if (changedMeta?.length > 0) {
                                 const changedIds = changedMeta.map(d => d.doc_id);
-                                const { data: changed } = await supabaseCloud
+                                const { data: changed, error: payloadError } = await supabaseCloud
                                     .from('sync_documents')
                                     .select('collection, doc_id, data, updated_at')
                                     .eq('user_id', currentSession.user.id)
                                     .in('doc_id', changedIds);
+                                if (payloadError) throw payloadError;
+                                if (!isCurrent()) return;
 
                                 if (changed?.length > 0) {
                                     for (const doc of changed) {
@@ -756,17 +809,17 @@ export function useCloudSync() {
                             lastSyncTime = new Date().toISOString();
                         } catch (err) {
                             console.warn('[CloudSync] Error en polling:', err.message ?? err);
-                        }
+                        } finally { pollInFlight = false; }
                     };
 
-                    pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL);
-                    console.log('[CloudSync] Híbrido iniciado: Realtime (config) + Polling 60min (datos)');
+                    if (document.visibilityState === 'visible') pollIntervalId = setInterval(pollForChanges, POLL_INTERVAL);
+                    console.log('[CloudSync] Perfil Free: polling visible de 60 min; Realtime desactivado.');
 
                     // ── Pausar polling con pestaña oculta — ahorra egress ────────
                     // Si la pestaña no está visible, pausamos el interval.
                     // Al volver visible, hacemos un poll inmediato (con cooldown) y reiniciamos el interval.
                     let lastVisibilityPoll = 0;
-                    const VISIBILITY_COOLDOWN_MS = 10 * 60 * 1000; // mínimo 10 min entre polls por visibilidad
+                    const VISIBILITY_COOLDOWN_MS = SUPABASE_FREE_PROFILE.visibilityCooldownMs;
 
                     const onVisible = () => {
                         if (document.visibilityState === 'visible') {

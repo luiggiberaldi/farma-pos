@@ -4,7 +4,8 @@ import { Copy, Share2, Check, Smartphone, Building2, Wallet } from 'lucide-react
 import { formatBs, formatUsd, smartCashRounding } from '../utils/calculatorUtils';
 
 export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, streetRate }) => {
-    const [selectedAccountId, setSelectedAccountId] = useState('');
+    const [accountChoice, setSelectedAccountId] = useState('');
+    const selectedAccountId = accounts.some(account => account.id === accountChoice) ? accountChoice : accounts[0]?.id || '';
     const [config, setConfig] = useState({
         showUsdt: true,
         showEfectivo: true,
@@ -13,12 +14,7 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
         showRefEuro: false
     });
 
-    // Auto-seleccionar primera cuenta al abrir
-    useEffect(() => {
-        if (isOpen && accounts.length > 0 && !selectedAccountId) {
-            setSelectedAccountId(accounts[0].id);
-        }
-    }, [isOpen, accounts]);
+    // The first valid account is derived; no state-reset effect is required.
 
     if (!product) return null;
 

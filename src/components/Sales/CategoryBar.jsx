@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState } from 'react';
 import { Package, Calculator, ChevronDown } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS } from '../../config/categories';
 
@@ -15,11 +15,13 @@ export default function CategoryBar({
     products = [],
 }) {
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+    const [lastCategory, setLastCategory] = useState(selectedCategory);
 
-    // Reset pagination when category changes
-    useEffect(() => {
+    // Reset pagination cuando cambia la categoria (ajuste en render, sin effect)
+    if (lastCategory !== selectedCategory) {
+        setLastCategory(selectedCategory);
         setVisibleCount(PAGE_SIZE);
-    }, [selectedCategory]);
+    }
 
     const visibleProducts = filteredByCategory.slice(0, visibleCount);
     const hasMore = filteredByCategory.length > visibleCount;
@@ -33,7 +35,7 @@ export default function CategoryBar({
                     {/* Monto Libre Button */}
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); onOpenCustomAmount && onOpenCustomAmount(); }}
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black transition-all active:scale-95 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 shadow-sm"
+                    className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-4 py-2 rounded-full text-[11px] font-black transition-all active:scale-95 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 shadow-sm"
                 >
                     <Calculator size={14} />
                     Monto Libre
@@ -50,7 +52,7 @@ export default function CategoryBar({
                         <button
                             key={cat.id}
                             onClick={() => { triggerHaptic && triggerHaptic(); setSelectedCategory(isActive && cat.id !== 'todos' ? 'todos' : cat.id); }}
-                            className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all active:scale-95 ${isActive
+                            className={`shrink-0 flex items-center gap-1 min-h-[44px] px-4 py-2 rounded-full text-[11px] font-bold transition-all active:scale-95 ${isActive
                                 ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
                                 : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:border-emerald-300'
                                 }`}
@@ -98,7 +100,7 @@ export default function CategoryBar({
                         <div className="flex justify-center mt-3">
                             <button
                                 onClick={() => { triggerHaptic && triggerHaptic(); setVisibleCount(prev => prev + PAGE_SIZE); }}
-                                className="flex items-center gap-1.5 px-5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:border-emerald-400 hover:text-emerald-600 transition-all active:scale-95 shadow-sm"
+                                className="flex items-center gap-1.5 min-h-[44px] px-5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:border-emerald-400 hover:text-emerald-600 transition-all active:scale-95 shadow-sm"
                             >
                                 <ChevronDown size={14} />
                                 Cargar Mas ({filteredByCategory.length - visibleCount} restantes)

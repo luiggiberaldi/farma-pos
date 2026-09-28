@@ -23,9 +23,8 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
     const handlePrintPDF = (e) => {
         e.stopPropagation();
         
-        // Filtrar ANULACION_VENTA para top-productos y profit:
-        // tienen items con qty negativa que distorsionarían el ranking y el margen.
-        const netSalesForStats = cierre.salesForStats.filter(s => s.tipo !== 'ANULACION_VENTA');
+        // Los reversos firmados deben descontar productos y ganancia del cierre.
+        const netSalesForStats = cierre.salesForStats;
 
         const todayProductMap = {};
         netSalesForStats.forEach(s => {
@@ -59,7 +58,7 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
     const handleDownloadLetterPDF = (e) => {
         e.stopPropagation();
         
-        const netSalesForStats = cierre.salesForStats.filter(s => s.tipo !== 'ANULACION_VENTA');
+        const netSalesForStats = cierre.salesForStats;
 
         const todayProductMap = {};
         netSalesForStats.forEach(s => {
@@ -113,7 +112,7 @@ export default function CierreHistoryCard({ cierre, bcvRate, products }) {
                     <div>
                         <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${cierre.totalUsd.toFixed(2)}</p>
                         <p className="text-[10px] text-slate-400 font-medium">{formatBs(cierre.totalBs)} Bs</p>
-                        <p className="text-[9px] text-indigo-400 font-bold">Tasa {closureRate.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} Bs/$</p>
+                        <p className="text-xs text-indigo-700 dark:text-indigo-300 font-semibold">{cierre.rateSnapshotMissing ? 'Referencia actual; falta tasa histórica' : 'Tasa del cierre'} {closureRate.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} Bs/$</p>
                     </div>
                     {isExpanded ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
                 </div>

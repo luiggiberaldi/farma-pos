@@ -1,4 +1,5 @@
 import { storageService } from '../utils/storageService';
+import { captureStorageContext } from './storageScope.js';
 import { Banknote, Smartphone, CreditCard, DollarSign, Store, ShoppingCart, Package, Coins, Key, Fingerprint } from 'lucide-react';
 
 const PM_KEY = 'bodega_payment_methods_v1';
@@ -22,8 +23,8 @@ export const DEFAULT_PAYMENT_METHODS = FACTORY_PAYMENT_METHODS;
 // ── PERSISTENCIA ──
 
 /** Obtener TODOS los métodos (activos e inactivos) */
-export async function getAllPaymentMethods() {
-    const saved = await storageService.getItem(PM_KEY, null) || [];
+export async function getAllPaymentMethods(context = captureStorageContext()) {
+    const saved = await storageService.getItem(PM_KEY, null, context) || [];
 
     // Si no hay nada guardado aún, devolver los de fábrica activos
     if (saved.length === 0) {
@@ -50,8 +51,8 @@ export async function getAllPaymentMethods() {
 }
 
 /** Obtener métodos activos (fábrica + custom) para el Checkout */
-export async function getActivePaymentMethods() {
-    const all = await getAllPaymentMethods();
+export async function getActivePaymentMethods(context = captureStorageContext()) {
+    const all = await getAllPaymentMethods(context);
     return all.filter(m => m.isEnabled !== false);
 }
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import ProfessionalSelect from './ProfessionalSelect';
 
 export default function CalculatorInput({ label, amount, currency, currencies, onAmountChange, onCurrencyChange, onClear, onFocus, onBlur, compact, children }) {
 
@@ -37,20 +38,13 @@ export default function CalculatorInput({ label, amount, currency, currencies, o
       <div className="flex items-center gap-4 relative">
 
         {/* Selector de Moneda */}
-        <div className="relative shrink-0 z-10">
-          <div className="flex items-center gap-1 bg-white dark:bg-slate-700 py-2 px-3 rounded-xl shadow-sm border border-slate-100 dark:border-slate-600">
-            <span className="font-black text-slate-700 dark:text-white text-sm">
-              {displayCurrency}
-            </span>
-            <span className="text-[8px] text-slate-400">▼</span>
-          </div>
-          <select
+        <div className="relative z-10 w-[112px] shrink-0">
+          <ProfessionalSelect
             value={currency}
-            onChange={(e) => onCurrencyChange(e.target.value)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          >
-            {currencies.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
+            onChange={onCurrencyChange}
+            options={currencies.map(c => ({ value: c.id, label: c.id === currency ? displayCurrency : c.label }))}
+            ariaLabel={`Moneda de ${label}`}
+          />
         </div>
 
         {/* Input Numérico con Tracking Tighter (Letras más pegadas) */}

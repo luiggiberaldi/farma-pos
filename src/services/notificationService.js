@@ -21,6 +21,8 @@
  * ═══════════════════════════════════════════════════════
  */
 
+import { REMOTE_OPERATIONS_PAUSED, pausedCloudOperation } from '../config/operationSafety.js';
+
 const NOTIF_KEY = 'abasto_admin_notifications_v1';
 const MAX_NOTIFS = 200;
 
@@ -122,6 +124,7 @@ export function clearNotifications() {
  * Pushea notificaciones no sincronizadas a Supabase.
  */
 export async function syncNotificationsToCloud(adminEmail, deviceId) {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     if (!adminEmail) return;
     try {
         const { supabaseCloud } = await import('../config/supabaseCloud');

@@ -205,10 +205,9 @@ export default function TransactionModal({
                                 className="w-full form-select bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500/50 transition-all"
                             >
                                 {filteredMethods.map(method => {
-                                    const emoji = typeof method.icon === 'string' && method.icon.length <= 2 ? method.icon : '';
                                     return (
                                     <option key={method.id} value={method.id}>
-                                        {emoji ? `${emoji} ${method.label}` : method.label}
+                                        {method.label}
                                     </option>
                                     );
                                 })}

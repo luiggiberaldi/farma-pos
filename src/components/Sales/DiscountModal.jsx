@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ProfessionalSelect from '../ProfessionalSelect';
+import { discountAuthorizationDetails } from '../../utils/discountAuthorization.js';
 import { X, Percent, DollarSign, Calculator, ShieldAlert, KeyRound } from 'lucide-react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 
@@ -7,29 +9,35 @@ export default function DiscountModal({
     onApply,
     onClose,
     cartSubtotalUsd,
+    cart = [],
     effectiveRate,
     tasaCop,
     copEnabled
 }) {
-    const { usuarioActivo, login } = useAuthStore();
+    const { usuarioActivo, usuarios, issueApproval, checkApproval } = useAuthStore();
     const isCajero = usuarioActivo?.rol === 'CAJERO';
-    const maxCajeroDiscount = parseInt(localStorage.getItem('cajero_max_descuento') ?? '100', 10) || 100;
+    const approvers = usuarios.filter(user => ['DUENO', 'ADMIN'].includes(user.rol) && user.pin);
+    const [approverId, setApproverId] = useState(() => approvers[0]?.id ?? null);
 
     const [type, setType] = useState(currentDiscount?.type || 'percentage');
     const [value, setValue] = useState(currentDiscount?.value ? currentDiscount.value.toString() : '');
     const [adminPin, setAdminPin] = useState('');
     const [pinError, setPinError] = useState(false);
     const [pinChecking, setPinChecking] = useState(false);
-    const [overrideGranted, setOverrideGranted] = useState(false);
+    const [approval, setApproval] = useState(null);
     const inputRef = useRef(null);
     const pinRef = useRef(null);
 
     useEffect(() => {
-        setTimeout(() => inputRef.current?.focus(), 150);
+        const timer = setTimeout(() => inputRef.current?.focus(), 150);
+        return () => { clearTimeout(timer); };
     }, []);
 
     const numValue = parseFloat(value) || 0;
 
+    let approvalDetails = null;
+    try { approvalDetails = discountAuthorizationDetails({ type, value: numValue, cartSubtotalUsd, cart }); } catch { /* Invalid amount stays disabled. */ }
+    const overrideGranted = Boolean(approval && approvalDetails && checkApproval(approval.id, 'DISCOUNT', approvalDetails));
     const needsOverride = isCajero && !overrideGranted && numValue > 0;
 
     let discountAmountUsd = 0;
@@ -51,40 +59,30 @@ export default function DiscountModal({
             pinRef.current?.focus();
             return;
         }
-        onApply({ type, value: numValue });
+        if (!approvalDetails || !usuarioActivo) return;
+        onApply({ type, value: numValue, approvalId: overrideGranted ? approval.id : null });
     };
 
     const handleClear = () => {
         onApply({ type: 'percentage', value: 0 });
     };
 
-    const handleAdminOverride = async () => {
-        if (adminPin.length < 6 || pinChecking) return;
+    const handleAdminOverride = async enteredPin => {
+        if (enteredPin.length !== 6 || pinChecking || !approvalDetails) return;
+        const approver = approvers.find(user => String(user.id) === String(approverId));
+        if (!approver) return;
         setPinChecking(true);
-        // Find admin user IDs
-        const { usuarios } = useAuthStore.getState();
-        const admins = usuarios.filter(u => u.rol === 'ADMIN');
-        let granted = false;
-        for (const admin of admins) {
-            const ok = await login(adminPin, admin.id);
-            if (ok) { granted = true; break; }
-        }
-        setPinChecking(false);
-        if (granted) {
-            setOverrideGranted(true);
-            setPinError(false);
-            setAdminPin('');
-        } else {
+        try {
+            const proof = await issueApproval(enteredPin, approver.id, { action: 'DISCOUNT', details: approvalDetails });
+            setApproval(proof);
+            setPinError(!proof);
+        } catch {
             setPinError(true);
+        } finally {
             setAdminPin('');
-            setTimeout(() => setPinError(false), 800);
+            setPinChecking(false);
         }
     };
-
-    // Auto-submit pin when 6 digits entered
-    useEffect(() => {
-        if (adminPin.length === 6) handleAdminOverride();
-    }, [adminPin]);
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
@@ -110,14 +108,14 @@ export default function DiscountModal({
                     <div className="flex bg-slate-100 dark:bg-slate-950 p-1.5 rounded-2xl shadow-inner">
                         <button
                             type="button"
-                            onClick={() => { setType('percentage'); setValue(''); setOverrideGranted(false); inputRef.current?.focus(); }}
+                            onClick={() => { setType('percentage'); setValue(''); setApproval(null); inputRef.current?.focus(); }}
                             className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${type === 'percentage' ? 'bg-white dark:bg-slate-900 shadow-sm text-blue-600 dark:text-blue-400 scale-100 ring-1 ring-slate-900/5 dark:ring-white/10' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 hover:scale-100'}`}
                         >
                             <Percent size={16} /> Porcentaje
                         </button>
                         <button
                             type="button"
-                            onClick={() => { setType('fixed'); setValue(''); setOverrideGranted(false); inputRef.current?.focus(); }}
+                            onClick={() => { setType('fixed'); setValue(''); setApproval(null); inputRef.current?.focus(); }}
                             className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 ${type === 'fixed' ? 'bg-white dark:bg-slate-900 shadow-sm text-emerald-600 dark:text-emerald-400 scale-100 ring-1 ring-slate-900/5 dark:ring-white/10' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 hover:scale-100'}`}
                         >
                             <DollarSign size={16} /> Monto ($)
@@ -137,6 +135,7 @@ export default function DiscountModal({
                             <input
                                 ref={inputRef}
                                 type="number"
+                                aria-label="Valor del descuento"
                                 inputMode="decimal"
                                 step="any"
                                 min="0"
@@ -145,7 +144,7 @@ export default function DiscountModal({
                                     let val = e.target.value;
                                     if (type === 'percentage' && parseFloat(val) > 100) val = '100';
                                     setValue(val);
-                                    setOverrideGranted(false);
+                                    setApproval(null);
                                 }}
                                 className="w-full bg-white dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-700 focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-center"
                                 placeholder={type === 'percentage' ? "0%" : "0.00"}
@@ -168,6 +167,10 @@ export default function DiscountModal({
                                     Se requiere PIN de Administrador para autorizar este descuento.
                                 </p>
                             </div>
+                            <ProfessionalSelect ariaLabel="Aprobador del descuento" value={String(approverId ?? '')}
+                                options={approvers.map(user => ({ value: String(user.id), label: user.nombre }))}
+                                onChange={id => { setApproverId(id); setApproval(null); setAdminPin(''); }} />
+                            {pinError && <p role="alert" className="text-xs font-bold text-red-700">PIN inválido, bloqueado o autorización vencida.</p>}
                             <div className="relative">
                                 <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" />
                                 <input
@@ -176,7 +179,12 @@ export default function DiscountModal({
                                     inputMode="numeric"
                                     maxLength={6}
                                     value={adminPin}
-                                    onChange={e => setAdminPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                    aria-label="PIN administrativo para descuento"
+                                    onChange={e => {
+                                        const entered = e.target.value.replace(/\D/g, '').slice(0, 6);
+                                        setAdminPin(entered);
+                                        if (entered.length === 6) void handleAdminOverride(entered);
+                                    }}
                                     placeholder="PIN Admin (6 dígitos)"
                                     className={`w-full pl-9 pr-4 py-2.5 text-sm font-bold rounded-xl border-2 bg-white dark:bg-slate-900 focus:outline-none transition-all text-center tracking-widest ${pinError
                                         ? 'border-red-400 text-red-600 animate-shake'
@@ -192,7 +200,7 @@ export default function DiscountModal({
                     {overrideGranted && (
                         <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
                             <ShieldAlert size={13} className="text-emerald-500 shrink-0" />
-                            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">Autorizado por Administrador</p>
+                            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">Autorizado por {approval?.approver?.nombre} para esta cesta</p>
                         </div>
                     )}
 
@@ -231,7 +239,8 @@ export default function DiscountModal({
                         </button>
                         <button
                             type="submit"
-                            className="py-3.5 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition-all outline-none shadow-lg shadow-blue-500/30"
+                            disabled={pinChecking || !approvalDetails || !usuarioActivo}
+                            className="py-3.5 disabled:opacity-50 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition-all outline-none shadow-lg shadow-blue-500/30"
                         >
                             Aplicar
                         </button>

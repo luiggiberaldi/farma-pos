@@ -1,0 +1,42 @@
+import { captureStorageContext, isStorageContextActive } from '../config/storageScope.js';
+
+export const OPERATOR_SESSION_KEY = 'abasto-device-session';
+
+// Device-local identity only: never a credential for a remote API.
+export function publicOperator(user) {
+    if (!user) return null;
+    return {
+        id: user.id, nombre: user.nombre, rol: user.rol,
+        sedeId: user.rol === 'CAJERO' ? user.sedeId : null,
+        sinPin: user.sinPin === true && !user.pin,
+        credentialVersion: user.credentialVersion || 0,
+    };
+}
+
+export function canUsePinlessAccess(user, context = captureStorageContext(), requireLogin = false) {
+    return !context.accountId && !requireLogin && user?.rol === 'CAJERO'
+        && user.sinPin === true && !user.pin && user.sedeId === context.sedeId;
+}
+
+export function readOperatorSession(users, context = captureStorageContext(), requireLogin = false) {
+    try {
+        if (sessionStorage.getItem('farmapos_select_user') === '1') return null;
+        const saved = JSON.parse(localStorage.getItem(OPERATOR_SESSION_KEY) || 'null');
+        if (saved?.version !== 2 || typeof saved.sessionId !== 'string' || !saved.sessionId
+            || saved.accountId !== context.accountId || saved.sedeId !== context.sedeId) return null;
+        const user = users.find(u => u.id === saved.user?.id);
+        if (!user || !['DUENO', 'ADMIN', 'CAJERO'].includes(user.rol)
+            || user.rol !== saved.user.rol || (user.credentialVersion || 0) !== saved.user.credentialVersion) return null;
+        if (user.rol === 'CAJERO' && user.sedeId !== context.sedeId) return null;
+        if (saved.pinVerified !== true && !canUsePinlessAccess(user, context, requireLogin)) return null;
+        if (saved.pinVerified !== true && saved.pinVerified !== false) return null;
+        return { ...saved, user: publicOperator(user) };
+    } catch { return null; }
+}
+
+export function saveOperatorSession(user, { context = captureStorageContext(), pinVerified = true, sessionId = crypto.randomUUID() } = {}) {
+    if (!isStorageContextActive(context)) throw new Error('La cuenta o sede cambió durante el acceso.');
+    const envelope = { version: 2, sessionId, accountId: context.accountId, sedeId: context.sedeId, pinVerified, user: publicOperator(user) };
+    localStorage.setItem(OPERATOR_SESSION_KEY, JSON.stringify(envelope));
+    return envelope;
+}

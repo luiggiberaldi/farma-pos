@@ -6,6 +6,8 @@ import { formatBs } from '../../utils/calculatorUtils';
 import { formatOfficialRate } from '../../utils/rateResolver';
 import { PAYMENT_ICONS, ICON_COMPONENTS } from '../../config/paymentMethods';
 import { round2, mulR, divR, subR, sumR } from '../../utils/dinero';
+import { validateChangeInBs } from '../../utils/tenderMath.js';
+import { customerCredit } from '../../utils/salePlan.js';
 
 /**
  * CheckoutModal — Zona de Cobro con Barras de Pago (Estilo Listo POS)
@@ -25,7 +27,7 @@ export default function CheckoutModal({
     paymentMethods,
     onConfirmSale,
     isProcessingSale = false,
-    onUseSaldoFavor,
+    requiresPrescription = false,
     triggerHaptic,
     onCreateCustomer,
     copEnabled,
@@ -46,6 +48,37 @@ export default function CheckoutModal({
     const CASHEA_PERCENTS = [10, 20, 30, 40, 50, 60, 70, 80];
     const CASHEA_LEVEL_MAP = { 1: 60, 2: 50, 3: 40, 4: 30, 5: 20, 6: 10 };
 
+    // -- Modo de cobro: Contado vs Fiado (interruptor del encabezado) --
+    const [payMode, setPayMode] = useState('contado');
+
+    // -- Chips rápidos táctiles: suman al restante con un toque --
+    const USD_QUICK = [1, 5, 10, 20, 50, 100];
+    const BS_QUICK = [100, 500, 1000, 5000];
+    const addQuick = (methodId, amount) => {
+        triggerHaptic && triggerHaptic();
+        const cur = parseFloat(barValues[methodId]) || 0;
+        setChangeSelection(null);
+        setBarValues(prev => ({ ...prev, [methodId]: round2(cur + amount).toString() }));
+    };
+
+    // -- Interruptor Contado/Fiado --
+    const renderModePills = () => (
+        <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+            <button
+                onClick={() => { setPayMode('contado'); setCasheaActive(false); triggerHaptic && triggerHaptic(); }}
+                className={`px-4 py-2 min-h-[44px] rounded-full text-xs font-black transition-all active:scale-95 flex items-center gap-1.5 ${payMode === 'contado' ? 'bg-white dark:bg-slate-700 shadow text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
+            >
+                <UsdIcon size={13} /> Contado
+            </button>
+            <button
+                onClick={() => { setPayMode('fiado'); setCasheaActive(false); triggerHaptic && triggerHaptic(); if (!selectedCustomerId) setShowCustomerSheet(true); }}
+                className={`px-4 py-2 min-h-[44px] rounded-full text-xs font-black transition-all active:scale-95 flex items-center gap-1.5 ${payMode === 'fiado' ? 'bg-amber-100 dark:bg-amber-900/40 shadow text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}
+            >
+                <Users size={13} /> Fiado
+            </button>
+        </div>
+    );
+
     const [showCustomerPicker, setShowCustomerPicker] = useState(false);
     const [showCustomerSheet, setShowCustomerSheet] = useState(false);
     const [customerSearch, setCustomerSearch] = useState('');
@@ -54,11 +87,15 @@ export default function CheckoutModal({
     const [newClientDocument, setNewClientDocument] = useState('');
     const [newClientPhone, setNewClientPhone] = useState('');
     const [savingClient, setSavingClient] = useState(false);
-    const [changeUsdGiven, setChangeUsdGiven] = useState('');
-    const [changeBsGiven, setChangeBsGiven] = useState('');
+    const [changeSelection, setChangeSelection] = useState(null);
     const [confirmFiar, setConfirmFiar] = useState(false);
-
+    const [prescription, setPrescription] = useState({ reference: '', prescriber: '', confirmed: false });
+    const [favorAmount, setFavorAmount] = useState(0);
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+    let availableFavor = 0;
+    try { availableFavor = selectedCustomer ? customerCredit(selectedCustomer) : 0; } catch { /* Invalid balances fail in processor. */ }
+    const usableFavor = Math.min(favorAmount, availableFavor);
+    const prescriptionReady = !requiresPrescription || (Boolean(selectedCustomer?.documentId?.trim()) && prescription.reference.trim().length > 0 && prescription.prescriber.trim().length > 0 && prescription.confirmed);
 
     const filteredCustomers = useMemo(() => {
         if (!customerSearch.trim()) return customers;
@@ -93,7 +130,7 @@ export default function CheckoutModal({
     }, [casheaActive, casheaPercent, cartTotalUsd]);
 
     // Total efectivo pagado + porción Cashea
-    const totalPaidWithCasheaUsd = round2(totalPaidUsd + casheaAmountUsd);
+    const totalPaidWithCasheaUsd = round2(totalPaidUsd + casheaAmountUsd + usableFavor);
 
     const totalPaidBs = useMemo(() => {
         const amounts = paymentMethods.map(m => {
@@ -106,13 +143,13 @@ export default function CheckoutModal({
         return sumR(amounts);
     }, [barValues, paymentMethods, effectiveRate, tasaCop]);
 
-    const remainingUsd = round2(Math.max(0, subR(cartTotalUsd, totalPaidWithCasheaUsd)));
-    const remainingBs = round2(Math.max(0, subR(cartTotalBs, totalPaidBs + mulR(casheaAmountUsd, effectiveRate))));
-
-    const changeUsd = round2(Math.max(0, subR(totalPaidWithCasheaUsd, cartTotalUsd)));
-    const changeBs = round2(Math.max(0, subR(totalPaidBs + mulR(casheaAmountUsd, effectiveRate), cartTotalBs)));
+    const netTenderBs = sumR(totalPaidBs, mulR(casheaAmountUsd + usableFavor, effectiveRate));
+    const remainingBs = round2(Math.max(0, subR(cartTotalBs, netTenderBs)));
+    const remainingUsd = divR(remainingBs, effectiveRate);
+    const changeBs = round2(Math.max(0, subR(netTenderBs, cartTotalBs)));
+    const changeUsd = divR(changeBs, effectiveRate);
     const PAYMENT_TOLERANCE = 0.01;
-    const isPaid = remainingUsd < PAYMENT_TOLERANCE;
+    const isPaid = remainingBs === 0;
     // Cashea: el cajero debe haber ingresado el monto del cliente antes de poder registrar.
     // casheaConfirmReady = true cuando el pago manual cubre la porción del cliente (totalPaidUsd >= cartTotal - casheaAmount).
     const casheaConfirmReady = !casheaActive || isPaid || totalPaidUsd >= round2(cartTotalUsd - casheaAmountUsd) - PAYMENT_TOLERANCE;
@@ -124,12 +161,13 @@ export default function CheckoutModal({
         if (!/^[0-9.]*$/.test(v)) return;
         const dots = v.match(/\./g);
         if (dots && dots.length > 1) return;
+        setChangeSelection(null);
         setBarValues(prev => ({ ...prev, [methodId]: v }));
     }, []);
 
     const fillBar = useCallback((methodId, currency) => {
         triggerHaptic && triggerHaptic();
-        if (remainingUsd <= 0) return;
+        if (remainingBs <= 0) return;
 
         const currentVal = parseFloat(barValues[methodId]) || 0;
         let newVal;
@@ -141,11 +179,23 @@ export default function CheckoutModal({
             newVal = round2(currentVal + remainingBs);
         }
 
+        setChangeSelection(null);
         setBarValues(prev => ({ ...prev, [methodId]: newVal.toString() }));
     }, [barValues, remainingUsd, remainingBs, triggerHaptic, tasaCop]);
 
+    // A choice belongs to this amount and rate. Editing the payment or rate
+    // invalidates the old allocation without silently choosing a currency.
+    const hasCurrentChange = changeSelection?.due === changeBs && changeSelection?.rate === effectiveRate;
+    const changeUsdGiven = hasCurrentChange ? changeSelection.usd : '';
+    const changeBsGiven = hasCurrentChange ? changeSelection.bs : '';
+    const selectChange = (usd, bs) => setChangeSelection({ due: changeBs, rate: effectiveRate, usd, bs });
+    const changeCheck = (casheaActive || usableFavor > 0) && changeBs > 0
+        ? { valid: false, error: 'Ajusta Cashea y saldo a favor al total exacto, sin retiro de efectivo.' }
+        : validateChangeInBs(changeBs, { changeUsdGiven, changeBsGiven }, effectiveRate);
+
     // Construir payments[] desde barValues al confirmar
     const handleConfirm = useCallback(() => {
+        if (isProcessingSale || !changeCheck.valid || !prescriptionReady) return;
         triggerHaptic && triggerHaptic();
         const payments = paymentMethods
             .filter(m => parseFloat(barValues[m.id]) > 0)
@@ -179,20 +229,19 @@ export default function CheckoutModal({
             });
         }
 
-        const defaultUsdChange = (!changeUsdGiven && !changeBsGiven) ? changeUsd : round2(parseFloat(changeUsdGiven) || 0);
-        const defaultBsChange = (!changeUsdGiven && !changeBsGiven) ? round2(mulR(changeUsd, effectiveRate)) : round2(parseFloat(changeBsGiven) || 0);
-
+        if (usableFavor > 0) payments.push({ id: crypto.randomUUID(), methodId: 'saldo_favor', methodLabel: 'Saldo a favor', currency: 'USD', amountInput: usableFavor, amountUsd: usableFavor, amountBs: mulR(usableFavor, effectiveRate) });
         onConfirmSale(payments, {
-            changeUsdGiven: round2(Math.min(defaultUsdChange, changeUsd)),
-            changeBsGiven: round2(Math.min(defaultBsChange, mulR(changeUsd, effectiveRate))),
-        });
-    }, [barValues, paymentMethods, effectiveRate, onConfirmSale, triggerHaptic, changeUsdGiven, changeBsGiven, changeUsd, casheaActive, casheaAmountUsd, casheaPercent, tasaCop]);
+            changeUsdGiven: changeCheck.changeUsdGiven,
+            changeBsGiven: changeCheck.changeBsGiven,
+        }, requiresPrescription ? prescription : null);
+    }, [barValues, paymentMethods, effectiveRate, onConfirmSale, triggerHaptic, changeCheck.valid, changeCheck.changeUsdGiven, changeCheck.changeBsGiven, isProcessingSale, casheaActive, casheaAmountUsd, casheaPercent, tasaCop, usableFavor, requiresPrescription, prescription, prescriptionReady]);
 
     // Saldo a favor
     const handleSaldoFavor = useCallback(() => {
         triggerHaptic && triggerHaptic();
-        if (onUseSaldoFavor) onUseSaldoFavor();
-    }, [onUseSaldoFavor, triggerHaptic]);
+        setFavorAmount(Math.min(availableFavor, round2(remainingUsd + usableFavor)));
+        setChangeSelection(null);
+    }, [availableFavor, remainingUsd, usableFavor, triggerHaptic]);
 
     // Crear cliente inline
     const handleCreateClient = async () => {
@@ -211,6 +260,8 @@ export default function CheckoutModal({
     };
 
     const handleSelectCustomer = (customerId) => {
+        setFavorAmount(0);
+        setPrescription({ reference: '', prescriber: '', confirmed: false });
         setSelectedCustomerId(customerId);
         if (customerId && casheaEnabled) {
             const c = customers.find(x => x.id === customerId);
@@ -274,7 +325,7 @@ export default function CheckoutModal({
             <div key={method.id} className="mb-3 last:mb-0">
                 <div className="flex items-center gap-2 mb-1 ml-0.5">
                     {(() => { const MIcon = method.Icon || PAYMENT_ICONS[method.id] || ICON_COMPONENTS[method.icon]; return MIcon ? <MIcon size={16} className={hasValue ? '' : 'text-slate-400'} /> : <span className="text-base">{method.icon}</span>; })()}
-                    <span className={`text-[11px] font-bold uppercase tracking-wide ${hasValue ? styles.title : 'text-slate-400 dark:text-slate-500'}`}>
+                    <span className={`text-xs font-bold uppercase tracking-wide ${hasValue ? styles.title : 'text-slate-600 dark:text-slate-300'}`}>
                         {method.label}
                     </span>
                 </div>
@@ -284,12 +335,13 @@ export default function CheckoutModal({
                             type="text"
                             inputMode="decimal"
                             value={val}
+                            aria-label={`Pago ${method.label}`}
                             onChange={e => handleBarChange(method.id, e.target.value)}
                             placeholder="0.00"
                             className={`w-full py-3 px-4 pr-14 rounded-xl border-2 text-lg font-bold outline-none transition-all ${hasValue
                                 ? styles.inputActive
                                 : `bg-white dark:bg-slate-900 ${styles.inputBorder}`
-                                } text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-700 focus:ring-4`}
+                                } text-slate-800 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:ring-4`}
                         />
                         <span className="absolute right-2 top-1/2 -translate-y-1/2">
                             {method.currency === 'USD' ? <UsdIcon size={22} /> : method.currency === 'COP' ? <span className="text-xs font-black px-2 py-0.5 rounded-md border bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700">COP</span> : <BsIcon size={22} />}
@@ -297,7 +349,7 @@ export default function CheckoutModal({
                     </div>
                     <button
                         onClick={() => fillBar(method.id, method.currency)}
-                        className={`shrink-0 py-3 px-3.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1 ${styles.btnBg}`}
+                        className={`shrink-0 min-h-[44px] py-3 px-3.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1 ${styles.btnBg}`}
                     >
                         <Zap size={14} fill="currentColor" /> Total
                     </button>
@@ -315,18 +367,22 @@ export default function CheckoutModal({
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
 
             {/* --- HEADER --- */}
-            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950">
-                <button onClick={onClose} className="p-2 -ml-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                    <X size={22} />
-                </button>
-                <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide font-sans">COBRAR</h2>
-                <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 rounded-lg">
-                    {formatOfficialRate(effectiveRate)} Bs/$
-                </span>
+            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 gap-2">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <button type="button" aria-label="Cerrar cobro" disabled={isProcessingSale} onClick={onClose} className="p-2 -ml-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0">
+                        <X size={22} />
+                    </button>
+                    <div className="min-w-0">
+                        <h2 className="text-base font-black text-slate-800 dark:text-white tracking-wide font-sans leading-tight">PROCESAR PAGO</h2>
+                        <p className="text-[10px] font-bold text-slate-400 leading-tight">Tasa: {formatOfficialRate(effectiveRate)} Bs/$</p>
+                    </div>
+                </div>
+                <div className="shrink-0">{renderModePills()}</div>
+                <div className="hidden lg:block flex-1" />
             </div>
 
             {/* --- TOTAL BIMONEDA (FIJO) --- */}
-            <div className="shrink-0 px-4 py-2.5 bg-gradient-to-b from-slate-50 to-slate-100/50 dark:from-slate-900 dark:to-slate-950/80 border-b border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center">
+            <div className="shrink-0 px-4 py-2.5 bg-gradient-to-b from-slate-50 to-slate-100/50 dark:from-slate-900 dark:to-slate-950/80 border-b border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center lg:hidden">
                 {discountData?.active && (
                     <div className="flex items-center gap-2 mb-1 text-xs">
                         <span className="font-bold text-slate-400 dark:text-slate-500">Subtotal: ${cartSubtotalUsd.toFixed(2)} / Bs {formatBs(cartSubtotalBs)}</span>
@@ -354,7 +410,9 @@ export default function CheckoutModal({
             </div>
 
             {/* --- SCROLLABLE BODY --- */}
-            <div className="flex-1 overflow-y-auto overscroll-contain pb-28">
+            <div className="flex-1 overflow-y-auto overscroll-contain pb-8 lg:pb-4 lg:px-5">
+                <div className="lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:gap-5 lg:mx-auto lg:max-w-6xl">
+                <div className="lg:min-w-0 lg:order-2">
 
                 {/* -- SECCION DOLARES ($) -- */}
                 {methodsUsd.length > 0 && (
@@ -364,6 +422,19 @@ export default function CheckoutModal({
                             Dólares ($)
                         </h3>
                         {methodsUsd.map(m => renderPaymentBar(m, sectionStyles.USD))}
+                        {methodsUsd[0] && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {USD_QUICK.map(v => (
+                                    <button
+                                        key={v}
+                                        onClick={() => addQuick(methodsUsd[0].id, v)}
+                                        className="min-h-[44px] min-w-[52px] px-2.5 rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900 text-xs font-black text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 active:scale-95 transition-all"
+                                    >
+                                        ${v}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -380,6 +451,19 @@ export default function CheckoutModal({
                             </span>
                         </div>
                         {methodsBs.map(m => renderPaymentBar(m, sectionStyles.BS))}
+                        {methodsBs[0] && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {BS_QUICK.map(v => (
+                                    <button
+                                        key={v}
+                                        onClick={() => addQuick(methodsBs[0].id, v)}
+                                        className="min-h-[44px] min-w-[52px] px-2.5 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-900 text-xs font-black text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30 active:scale-95 transition-all"
+                                    >
+                                        {v}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -455,7 +539,7 @@ export default function CheckoutModal({
                                             <button
                                                 key={p}
                                                 onClick={() => { setCasheaPercent(p); triggerHaptic?.(); }}
-                                                className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all active:scale-95 ${casheaPercent === p
+                                                className={`min-h-[44px] px-3 py-2 rounded-lg text-xs font-black transition-all active:scale-95 ${casheaPercent === p
                                                     ? 'bg-purple-500 text-white shadow-md shadow-purple-500/30'
                                                     : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200'}`}
                                             >
@@ -502,6 +586,32 @@ export default function CheckoutModal({
 
 
 
+                </div>
+
+                <div className="lg:min-w-0 lg:order-1">
+                {/* -- TOTAL PILL (SOLO PC) -- */}
+                <div className="hidden lg:block px-3 pb-3">
+                    <div className="rounded-2xl bg-slate-900 dark:bg-black px-5 py-4 shadow-lg">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            {discountData?.active ? 'Total Final' : 'Total a Pagar'}
+                        </p>
+                        <div className="flex items-baseline gap-2 mt-0.5">
+                            <span className="text-3xl font-black text-white">${cartTotalUsd.toFixed(2)}</span>
+                            <span className="text-sm font-extrabold text-emerald-400">Bs {formatBs(cartTotalBs)}</span>
+                        </div>
+                        {discountData?.active && (
+                            <p className="text-[10px] font-bold text-amber-400 mt-1">
+                                Subtotal ${cartSubtotalUsd.toFixed(2)} · Descuento -${discountData.amountUsd.toFixed(2)}
+                            </p>
+                        )}
+                        {copEnabled && (
+                            <p className="text-[10px] font-bold text-amber-400 mt-1">
+                                COP {mulR(cartTotalUsd, tasaCop).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
                 {/* -- CLIENTE -- */}
                 <div className="px-3 py-2">
                     <button
@@ -529,9 +639,9 @@ export default function CheckoutModal({
                                         Debe ${selectedCustomer.deuda.toFixed(2)}
                                     </span>
                                 )}
-                                {selectedCustomer.deuda < -0.01 && (
+                                {availableFavor > 0.01 && (
                                     <span className="text-[11px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 shrink-0">
-                                        Favor ${Math.abs(selectedCustomer.deuda).toFixed(2)}
+                                        Favor ${availableFavor.toFixed(2)}
                                     </span>
                                 )}
                                 <ChevronDown size={15} className="text-indigo-400 shrink-0" />
@@ -551,23 +661,56 @@ export default function CheckoutModal({
                     </button>
                 </div>
 
+                {requiresPrescription && <fieldset className="mx-3 my-2 space-y-2 rounded-xl border border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-950/30 p-3">
+                    <legend className="px-1 text-sm font-bold text-teal-900 dark:text-teal-100">Verificación de receta</legend>
+                    <p className="text-xs text-slate-700 dark:text-slate-200">Selecciona un cliente con documento y registra la evidencia de dispensación.</p>
+                    <label className="block text-xs font-semibold">Referencia de receta<input aria-label="Referencia de receta" maxLength={120} value={prescription.reference} onChange={e => setPrescription(p => ({ ...p, reference: e.target.value, confirmed: false }))} className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-2 text-slate-900 dark:text-white" /></label>
+                    <label className="block text-xs font-semibold">Profesional prescriptor<input aria-label="Profesional prescriptor" maxLength={120} value={prescription.prescriber} onChange={e => setPrescription(p => ({ ...p, prescriber: e.target.value, confirmed: false }))} className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-2 text-slate-900 dark:text-white" /></label>
+                    <label className="flex items-start gap-2 text-xs text-slate-800 dark:text-slate-100"><input type="checkbox" checked={prescription.confirmed} onChange={e => setPrescription(p => ({ ...p, confirmed: e.target.checked }))} />He comprobado la receta y el documento del cliente</label>
+                    {!prescriptionReady && <p role="status" className="text-xs font-semibold text-amber-800 dark:text-amber-200">La evidencia y el documento son obligatorios.</p>}
+                </fieldset>}
+                {/* -- MONTO PAGADO / FALTA (SOLO PC) -- */}
+                <div className="hidden lg:block px-3 pb-2">
+                    <div className="flex items-center justify-between px-1 pb-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Monto Pagado</span>
+                        <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">${totalPaidWithCasheaUsd.toFixed(2)}</span>
+                    </div>
+                    <div className={`p-4 rounded-2xl border-2 ${isPaid
+                        ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800'
+                        : 'bg-slate-50 border-slate-200 dark:bg-slate-900/40 dark:border-slate-700'}`}>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${isPaid ? 'text-emerald-500' : 'text-orange-500'}`}>
+                            {isPaid ? 'Vuelto' : 'Falta por Pagar'}
+                        </p>
+                        <div className="flex items-baseline gap-2 mt-1">
+                            <span className={`text-2xl font-black ${isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                                ${(isPaid ? changeUsd : remainingUsd).toFixed(2)}
+                            </span>
+                            <span className="text-xs font-bold text-slate-400">
+                                Bs {formatBs(isPaid ? changeBs : remainingBs)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Saldo a Favor */}
-                {selectedCustomer?.deuda < -0.01 && remainingUsd > 0.01 && (
+                {availableFavor > 0.01 && (remainingUsd > 0.01 || usableFavor > 0) && (
                     <div className="px-3 py-1">
                         <button
                             onClick={handleSaldoFavor}
-                            className="w-full py-2.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2"
+                            className="w-full min-h-[44px] py-2.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2"
                         >
-                            <Wallet size={16} /> Usar Saldo a Favor (${Math.abs(selectedCustomer.deuda).toFixed(2)})
+                            <Wallet size={16} /> Usar Saldo a Favor (${availableFavor.toFixed(2)})
                         </button>
                     </div>
                 )}
+                </div>
+                </div>
             </div>
 
             {/* --- BOTON CTA FIJO --- */}
-            <div className="shrink-0 px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-3">
+            <div className="shrink-0 px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-3 lg:flex lg:items-stretch lg:gap-4 lg:space-y-0">
                 {/* -- BANNER VUELTO / RESTANTE -- */}
-                <div className={`p-3 rounded-xl border-2 transition-all ${isPaid
+                <div className={`p-3 rounded-xl border-2 transition-all lg:flex-1 ${isPaid
                     ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800'
                     : 'bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800'
                     }`}>
@@ -593,12 +736,17 @@ export default function CheckoutModal({
                     </div>
 
                     {/* DESGLOSE DE VUELTO — solo visible cuando hay vuelto */}
-                    {isPaid && changeUsd > 0.009 && (
+                    {isPaid && changeBs > 0 && (
                         <div className="mt-2.5 pt-2.5 border-t border-emerald-200 dark:border-emerald-800 space-y-2">
                             <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-1">
                                 <ArrowLeftRight size={10} />
                                 Desglosar vuelto
                             </p>
+                            {!changeCheck.valid && (
+                                <p role="alert" className="text-xs font-bold text-amber-800 dark:text-amber-200">
+                                    {changeCheck.error}
+                                </p>
+                            )}
 
                             {/* Fila: input USD + input Bs */}
                             <div className="flex items-center gap-2">
@@ -608,14 +756,16 @@ export default function CheckoutModal({
                                         type="number"
                                         inputMode="decimal"
                                         placeholder="0.00"
+                                        aria-label="Vuelto entregado en USD"
+                                        min="0"
+                                        step="0.01"
                                         value={changeUsdGiven}
                                         onChange={e => {
                                             const v = e.target.value;
                                             const usd = Math.min(Math.max(0, parseFloat(v) || 0), changeUsd);
-                                            setChangeUsdGiven(v);
-                                            setChangeBsGiven(Math.max(0, mulR(subR(changeUsd, usd), effectiveRate)).toFixed(0));
+                                            selectChange(v, Math.max(0, subR(changeBs, mulR(usd, effectiveRate))).toFixed(2));
                                         }}
-                                        className="w-full py-1.5 px-2.5 pr-10 rounded-lg border-2 border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                        className="w-full py-3 px-3 pr-12 rounded-lg border-2 border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
                                     />
                                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-1 py-0.5 rounded">USD</span>
                                 </div>
@@ -627,16 +777,17 @@ export default function CheckoutModal({
                                     <input
                                         type="number"
                                         inputMode="decimal"
-                                        placeholder="0"
+                                        placeholder="0.00"
+                                        aria-label="Vuelto entregado en Bs"
+                                        min="0"
+                                        step="0.01"
                                         value={changeBsGiven}
                                         onChange={e => {
                                             const v = e.target.value;
-                                            const bsTotal = changeUsd * effectiveRate;
-                                            const bs = Math.min(Math.max(0, parseFloat(v) || 0), bsTotal);
-                                            setChangeBsGiven(v);
-                                            setChangeUsdGiven(Math.max(0, changeUsd - bs / effectiveRate).toFixed(2));
+                                            const bs = Math.min(Math.max(0, parseFloat(v) || 0), changeBs);
+                                            selectChange(Math.max(0, divR(subR(changeBs, bs), effectiveRate)).toFixed(2), v);
                                         }}
-                                        className="w-full py-1.5 px-2.5 pr-8 rounded-lg border-2 border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
+                                        className="w-full py-3 px-3 pr-10 rounded-lg border-2 border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-900 font-black text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                                     />
                                     <span className="absolute right-2 top-1/2 -translate-y-1/2"><BsIcon size={20} /></span>
                                 </div>
@@ -644,14 +795,15 @@ export default function CheckoutModal({
 
                             <div className="flex gap-2">
                                 <button
-                                    onClick={() => { setChangeUsdGiven(changeUsd.toFixed(2)); setChangeBsGiven('0'); }}
-                                    className="flex-1 py-1 rounded-lg text-[8px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 active:scale-95 transition-all border border-emerald-200 dark:border-emerald-800"
+                                    onClick={() => selectChange(changeUsd.toFixed(2), '0')}
+                                    className="flex-1 min-h-[44px] py-2.5 rounded-lg text-[10px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 active:scale-95 transition-all border border-emerald-200 dark:border-emerald-800"
                                 >
                                     Todo $
                                 </button>
                                 <button
-                                    onClick={() => { setChangeUsdGiven('0'); setChangeBsGiven((changeUsd * effectiveRate).toFixed(0)); }}
-                                    className="flex-1 py-1 rounded-lg text-[8px] font-black bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 active:scale-95 transition-all border border-blue-200 dark:border-blue-800"
+                                    onClick={() => selectChange('0', changeBs.toFixed(2))}
+                                    disabled={!Number.isFinite(effectiveRate) || effectiveRate <= 0}
+                                    className="flex-1 min-h-[44px] py-2.5 rounded-lg text-[10px] font-black bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 active:scale-95 transition-all border border-blue-200 dark:border-blue-800"
                                 >
                                     Todo Bs
                                 </button>
@@ -674,37 +826,51 @@ export default function CheckoutModal({
 
                 <button
                     onClick={() => {
-                        if (!isPaid && selectedCustomerId && remainingUsd > 0.01 && casheaConfirmReady) {
+                        if (isPaid) {
+                            triggerHaptic && triggerHaptic();
+                            handleConfirm();
+                        } else if (casheaActive && casheaConfirmReady && selectedCustomerId) {
                             triggerHaptic && triggerHaptic();
                             setConfirmFiar(true);
-                        } else if (casheaConfirmReady || isPaid) {
-                            handleConfirm();
+                        } else if (payMode === 'fiado' && selectedCustomerId && casheaConfirmReady) {
+                            triggerHaptic && triggerHaptic();
+                            setConfirmFiar(true);
                         }
                     }}
-                    disabled={isProcessingSale || (!selectedCustomerId && remainingUsd > 0.01) || (casheaActive && !isPaid && !casheaConfirmReady)}
-                    className={`w-full py-3.5 font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 ${isProcessingSale
+                    disabled={isProcessingSale || !changeCheck.valid || !prescriptionReady
+                        ? true
+                        : isPaid
+                            ? false
+                            : casheaActive
+                                ? (!selectedCustomerId || !casheaConfirmReady)
+                                : payMode === 'fiado'
+                                    ? (!selectedCustomerId || !casheaConfirmReady)
+                                    : true}
+                    className={`w-full py-3.5 font-black text-base rounded-2xl shadow-lg transition-all tracking-wide flex items-center justify-center gap-2 lg:w-80 lg:shrink-0 ${isProcessingSale
                         ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed opacity-70'
                         : isPaid
                         ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25 active:scale-[0.98] text-white'
-                        : selectedCustomerId
-                            ? casheaActive
-                                ? casheaConfirmReady
-                                    ? 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/25 active:scale-[0.98] text-white'
-                                    : 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 shadow-none cursor-not-allowed'
-                                : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25 active:scale-[0.98] text-white'
-                            : 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed'
+                        : casheaActive
+                            ? casheaConfirmReady
+                                ? 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/25 active:scale-[0.98] text-white'
+                                : 'bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 shadow-none cursor-not-allowed'
+                            : payMode === 'fiado' && selectedCustomerId
+                                ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25 active:scale-[0.98] text-white'
+                                : 'bg-slate-300 dark:bg-slate-800 text-slate-500 shadow-none cursor-not-allowed'
                         }`}
                 >
                     {isProcessingSale ? (
                         <><Receipt size={18} className="animate-pulse" /> PROCESANDO...</>
                     ) : isPaid ? (
-                        <><Receipt size={18} /> CONFIRMAR VENTA</>
-                    ) : selectedCustomerId ? (
-                        casheaActive
-                            ? casheaConfirmReady
-                                ? <><CasheaIcon size={18} /> REGISTRAR CON CASHEA · PAGA AHORA ${remainingUsd.toFixed(2)}</>
-                                : <><Lock size={16} /> CASHEA — INGRESA ${remainingUsd.toFixed(2)} DEL CLIENTE</>
-                            : <><Users size={18} /> FIAR RESTANTE (${remainingUsd.toFixed(2)})</>
+                        <><Check size={18} /> CONFIRMAR VENTA</>
+                    ) : casheaActive ? (
+                        casheaConfirmReady
+                            ? <><CasheaIcon size={18} /> REGISTRAR CON CASHEA · PAGA AHORA ${remainingUsd.toFixed(2)}</>
+                            : <><Lock size={16} /> CASHEA — INGRESA ${remainingUsd.toFixed(2)} DEL CLIENTE</>
+                    ) : payMode === 'fiado' ? (
+                        selectedCustomerId
+                            ? <><Users size={18} /> FIAR RESTANTE (${remainingUsd.toFixed(2)})</>
+                            : <><Users size={18} /> SELECCIONA CLIENTE PARA FIAR</>
                     ) : (
                         <><Receipt size={18} /> INGRESA LOS PAGOS</>
                     )}

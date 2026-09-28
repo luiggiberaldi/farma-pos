@@ -1,134 +1,124 @@
 import { FinancialEngine } from '../core/FinancialEngine';
-import { getLocalISODate } from './dateHelpers';
-import {
-    getClosureDate,
-    getClosureRate,
-    getSaleBusinessDate,
-} from './closureLogic';
+import { round2, sumR, mulR } from './dinero';
+import { getClosureDate, getClosureRate, getSaleBusinessDate } from './closureLogic';
+
+const SALE_TYPES = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA'];
+const STATS_TYPES = [...SALE_TYPES, 'ANULACION_VENTA'];
+const CASH_TYPES = [...STATS_TYPES, 'COBRO_DEUDA', 'AJUSTE_CREDITO', 'PAGO_PROVEEDOR'];
+const saleType = sale => sale.tipo || 'VENTA';
+const isStatsEntry = sale => STATS_TYPES.includes(saleType(sale))
+    && !(saleType(sale) === 'ANULACION_VENTA' && sale.originSaleType && !SALE_TYPES.includes(sale.originSaleType));
+const isCancelled = sale => sale.status === 'ANULADA' || sale.estado === 'ANULADA' || Boolean(sale.anuladaEn);
+// Linked originals remain in the ledger; their signed reversals cancel their amounts.
+const isLedgerEntry = sale => !isCancelled(sale) || Boolean(sale.relatedVoidId);
+const isCountedSale = sale => SALE_TYPES.includes(saleType(sale)) && !isCancelled(sale) && !sale.relatedVoidId;
+const branchOf = entity => entity.sedeId || entity.sede_id || entity.huella?.sedeId || null;
+const closureKey = (sedeId, cierreId) => JSON.stringify([sedeId, String(cierreId)]);
+
+function totalsFor(salesForStats) {
+    return {
+        totalUsd: sumR(salesForStats.map(sale => Number(sale.totalUsd) || 0)),
+        totalBs: sumR(salesForStats.map(sale => Number(sale.totalBs) || 0)),
+        totalItems: salesForStats.reduce((sum, sale) => sum + (sale.items || []).reduce((items, item) => items + (Number(item.qty) || 0), 0), 0),
+        salesCount: salesForStats.filter(isCountedSale).length,
+    };
+}
 
 export function calculateReportsData(allSales, from, to, bcvRate, products) {
-    // Ventas de Mercancía (para Totales, Profit, Top Productos)
-    const salesForStats = allSales.filter(s => {
-        if (s.status === 'ANULADA') return false;
-        if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'ANULACION_VENTA') return false;
-        const dateStr = getSaleBusinessDate(s);
-        return dateStr >= from && dateStr <= to;
+    const inRange = allSales.filter(sale => {
+        const date = getSaleBusinessDate(sale);
+        return date >= from && date <= to;
     });
-
-    // Flujo de Dinero (para Desglose de Pagos, incluye pagos de deudas)
-    const salesForCashFlow = allSales.filter(s => {
-        if (s.status === 'ANULADA') return false;
-        if (s.tipo !== 'VENTA' && s.tipo !== 'VENTA_FIADA' && s.tipo !== 'VENTA_CASHEA' && s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'PAGO_PROVEEDOR' && s.tipo !== 'ANULACION_VENTA') return false;
-        const dateStr = getSaleBusinessDate(s);
-        return dateStr >= from && dateStr <= to;
-    });
-
-    const historySales = allSales.filter(s => {
-        if (s.tipo === 'AJUSTE_ENTRADA' || s.tipo === 'AJUSTE_SALIDA') return false;
-        const dateStr = getSaleBusinessDate(s);
-        return dateStr >= from && dateStr <= to;
-    });
-
-    const totalUsd = salesForStats.reduce((s, sale) => s + (sale.totalUsd || 0), 0);
-    const totalBs = salesForStats.reduce((s, sale) => s + (sale.totalBs || 0), 0);
-    const totalItems = salesForStats.reduce((s, sale) => s + (sale.items ? sale.items.reduce((is, i) => is + i.qty, 0) : 0), 0);
+    const ledger = inRange.filter(isLedgerEntry);
+    const salesForStats = ledger.filter(isStatsEntry);
+    const salesForCashFlow = ledger.filter(sale => CASH_TYPES.includes(saleType(sale)));
+    const historySales = inRange.filter(sale => sale.tipo !== 'AJUSTE_ENTRADA' && sale.tipo !== 'AJUSTE_SALIDA');
     const profit = FinancialEngine.calculateAggregateProfit(salesForStats, bcvRate, products);
     const paymentBreakdown = FinancialEngine.calculatePaymentBreakdown(salesForCashFlow);
+    const missingRateSaleIds = salesForStats.filter(sale => !(Number(sale.fechaComercialTasa || sale.rate) > 0)).map(sale => sale.id);
 
-    // Top productos
-    const productMap = {};
-    salesForStats.forEach(s => {
-        s.items?.forEach(item => {
-            if (!productMap[item.name]) productMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
-            productMap[item.name].qty += item.qty;
-            productMap[item.name].revenue += item.priceUsd * item.qty;
+    const productMap = new Map();
+    salesForStats.forEach(sale => {
+        (sale.items || []).forEach(item => {
+            const name = item.name || item.id || 'Product';
+            const product = productMap.get(name) || { name, qty: 0, revenue: 0 };
+            product.qty += Number(item.qty) || 0;
+            product.revenue = round2(product.revenue + mulR(item.priceUsd || 0, item.qty || 0));
+            productMap.set(name, product);
         });
     });
-    const topProducts = Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+    const topProducts = [...productMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 8);
 
-    // Ventas por día para mini gráfica
-    const map = {};
-    salesForStats.forEach(s => {
-        const day = getSaleBusinessDate(s, getLocalISODate(new Date()));
-        if (!map[day]) map[day] = { date: day, total: 0, count: 0 };
-        map[day].total += s.totalUsd || 0;
-        map[day].count++;
+    const dayMap = new Map();
+    salesForStats.forEach(sale => {
+        const date = getSaleBusinessDate(sale);
+        const day = dayMap.get(date) || { date, total: 0, count: 0 };
+        day.total = round2(day.total + (Number(sale.totalUsd) || 0));
+        if (isCountedSale(sale)) day.count++;
+        dayMap.set(date, day);
     });
-    const salesByDay = Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
+    const salesByDay = [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date));
 
     return {
-        salesForStats,
-        salesForCashFlow,
-        historySales,
-        totalUsd,
-        totalBs,
-        totalItems,
-        profit,
-        paymentBreakdown,
-        topProducts,
-        salesByDay
+        salesForStats, salesForCashFlow, historySales,
+        ...totalsFor(salesForStats), profit, paymentBreakdown, topProducts, salesByDay,
+        missingRateSaleIds,
+        rateFallbackUsed: missingRateSaleIds.length > 0 && Number(bcvRate) > 0,
     };
 }
 
 export function groupSalesByCierreId(allSales, from, to, closures = []) {
-    const closureById = new Map((Array.isArray(closures) ? closures : []).map(closure => [String(closure.cierreId), closure]));
-
-    // Encontrar ventas/aperturas que caen en el rango comercial y tienen cierreId.
-    const entitiesInDateRange = allSales.filter(s => {
-        const dateStr = getSaleBusinessDate(s);
-        return dateStr >= from && dateStr <= to && s.cierreId;
+    const metadata = Array.isArray(closures) ? closures : [];
+    const entities = allSales.filter(sale => {
+        const date = getSaleBusinessDate(sale);
+        return date >= from && date <= to && sale.cierreId != null;
     });
-
-    const cMap = {};
-    entitiesInDateRange.forEach(entity => {
+    const branchesByClosure = new Map();
+    allSales.filter(sale => sale.cierreId != null).forEach(sale => {
+        const id = String(sale.cierreId);
+        if (!branchesByClosure.has(id)) branchesByClosure.set(id, new Set());
+        branchesByClosure.get(id).add(branchOf(sale));
+    });
+    const groups = new Map();
+    entities.forEach(entity => {
+        const sedeId = branchOf(entity);
         const cId = entity.cierreId;
-        const closureMeta = closureById.get(String(cId)) || null;
-        if (!cMap[cId]) {
-            const commercialDate = closureMeta ? getClosureDate(closureMeta, getSaleBusinessDate(entity)) : getSaleBusinessDate(entity);
-            cMap[cId] = {
-                cierreId: cId,
-                timestamp: cId,
-                businessDate: commercialDate,
-                closureMeta,
-                apertura: null,
-                sales: [],
-            };
+        const key = closureKey(sedeId, cId);
+        if (!groups.has(key)) {
+            const candidates = metadata.filter(closure => String(closure.cierreId) === String(cId));
+            const exact = candidates.filter(closure => branchOf(closure) === sedeId);
+            const legacy = candidates.filter(closure => !branchOf(closure));
+            const closureMeta = exact.length === 1 ? exact[0]
+                : exact.length === 0 && candidates.length === 1 && legacy.length === 1 && branchesByClosure.get(String(cId)).size === 1 ? legacy[0] : null;
+            groups.set(key, {
+                cierreId: cId, timestamp: cId, sedeId, groupKey: key,
+                businessDate: closureMeta ? getClosureDate(closureMeta, getSaleBusinessDate(entity)) : getSaleBusinessDate(entity),
+                closureMeta, apertura: null, sales: [],
+            });
         }
+        const group = groups.get(key);
         if (entity.tipo === 'APERTURA_CAJA') {
-            cMap[cId].apertura = entity;
+            if (isLedgerEntry(entity)) group.apertura = entity;
         } else {
-            cMap[cId].sales.push(entity);
+            group.sales.push(entity);
         }
     });
 
-    return Object.values(cMap)
-        .filter(c => c.sales.length > 0)
-        .map(c => {
-            const dateObj = c.businessDate
-                ? new Date(`${c.businessDate}T12:00:00`)
-                : new Date(c.cierreId);
-
-            const salesForStats = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'ANULACION_VENTA');
-            const salesForCashFlow = c.sales.filter(s => s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'ANULACION_VENTA');
-
-            const totalUsd = salesForStats.reduce((acc, s) => acc + (s.totalUsd || 0), 0);
-            const totalBs = salesForStats.reduce((acc, s) => acc + (s.totalBs || 0), 0);
-            const totalItems = salesForStats.reduce((acc, s) => acc + (s.items ? s.items.reduce((is, it) => is + it.qty, 0) : 0), 0);
-            const paymentBreakdown = FinancialEngine.calculatePaymentBreakdown(salesForCashFlow);
-            const rateSnapshot = getClosureRate(c.closureMeta, 0);
-
+    return [...groups.values()]
+        .filter(group => group.sales.length > 0)
+        .map(group => {
+            const ledger = group.sales.filter(isLedgerEntry);
+            const salesForStats = ledger.filter(isStatsEntry);
+            const salesForCashFlow = ledger.filter(sale => CASH_TYPES.includes(saleType(sale)));
+            const rateSnapshot = getClosureRate(group.closureMeta, 0);
             return {
-                ...c,
-                dateObj,
-                rateSnapshot,
-                salesForStats,
-                salesForCashFlow,
-                totalUsd,
-                totalBs,
-                totalItems,
-                paymentBreakdown,
-                salesCount: c.sales.length,
+                ...group,
+                dateObj: group.businessDate ? new Date(`${group.businessDate}T12:00:00`) : new Date(group.cierreId),
+                rateSnapshot, rateSnapshotMissing: rateSnapshot <= 0,
+                salesForStats, salesForCashFlow,
+                ...totalsFor(salesForStats),
+                paymentBreakdown: FinancialEngine.calculatePaymentBreakdown(salesForCashFlow),
             };
         })
-        .sort((a, b) => b.cierreId - a.cierreId);
+        .sort((a, b) => Number(b.cierreId) - Number(a.cierreId) || String(a.sedeId || '').localeCompare(String(b.sedeId || '')));
 }

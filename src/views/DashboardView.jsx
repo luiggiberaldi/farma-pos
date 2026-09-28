@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
-import { storageService } from '../utils/storageService';
+import { bindStorageContext } from '../utils/scopedStorage.js';
 import { showToast } from '../components/Toast';
-import { BarChart3, TrendingUp, Package, AlertTriangle, DollarSign, ShoppingBag, Clock, ArrowUpRight, Trash2, ShoppingCart, Store, Users, Send, Ban, ChevronDown, ChevronUp, UserPlus, Phone, FileText, Recycle, Key, Settings, LockIcon, CheckCircle2, LogOut, Bell, Download } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, AlertTriangle, DollarSign, ShoppingBag, Clock, ArrowUpRight, Trash2, ShoppingCart, Store, Users, Send, Ban, ChevronDown, ChevronUp, UserPlus, Phone, FileText, Recycle, Key, Settings, LockIcon, CheckCircle2, LogOut, Bell, Download, Search } from 'lucide-react';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
 import { formatOfficialRate } from '../utils/rateResolver';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, getPaymentIcon, toTitleCase } from '../config/paymentMethods';
@@ -13,6 +13,8 @@ import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF, generateDailyCloseLetterPDF } from '../utils/dailyCloseGenerator';
 import { processVoidSale } from '../utils/voidSaleProcessor';
+import { logEvent } from '../services/auditService';
+import BranchPinModal from '../components/security/BranchPinModal';
 import { shareSaleWhatsApp } from '../utils/dashboardActions';
 import { useNotifications } from '../hooks/useNotifications';
 import { createNotification, NOTIF_TYPES } from '../services/notificationService';
@@ -24,8 +26,12 @@ import { useCart } from '../context/CartContext';
 import { useSecurity } from '../hooks/useSecurity';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { useAudit } from '../hooks/useAudit';
+import { SEDES } from '../config/sedes';
+import { canSeeAllSedes } from '../config/permissionsFarmacia';
 import { supabaseCloud } from '../config/supabaseCloud';
-import { useConfirm } from '../hooks/useConfirm.jsx';
+import { signOutCloudAccount } from '../services/cloudSessionLifecycle.js';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
+import { useConfirm } from '../hooks/confirmState.js';
 import {
     buildClosureRecord,
     getCashSessionMovements,
@@ -33,12 +39,17 @@ import {
     getSaleBusinessDate,
 } from '../utils/closureLogic';
 import { commitNormalClosure, finalizeHistoricalBatchInOpenSession } from '../utils/closureService';
+import { calculateReportsData } from '../utils/reportsProcessor.js';
 
 import Skeleton from '../components/Skeleton';
 import CasheaIcon from '../components/CasheaIcon';
+import BrandLogo from '../components/BrandLogo.jsx';
+import HuellaAuditor from '../components/Dashboard/HuellaAuditor.jsx';
+import { useSedeStore } from '../hooks/store/useSedeStore';
 
 const SALES_KEY = 'bodega_sales_v1';
 export default function DashboardView({ rates, triggerHaptic, onNavigate, theme, toggleTheme, isActive, installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
+    const [storageService] = useState(bindStorageContext);
     const { notifyCierrePendiente, requestPermission } = useNotifications();
     const { unreadCount: alertCount, notifications: adminAlerts, markAllRead: markAlertsRead, clearAll: clearAlerts } = useAdminAlerts();
     const [showAlerts, setShowAlerts] = useState(false);
@@ -54,18 +65,17 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     }, [showAlerts]);
     const { deviceId } = useSecurity();
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
-    const isAdmin = !usuarioActivo || usuarioActivo.rol === 'ADMIN';
+    const isAdmin = usuarioActivo?.rol === 'ADMIN' || usuarioActivo?.rol === 'DUENO';
     const isCashierBlindClose = !isAdmin && localStorage.getItem('cajero_puede_cerrar_caja') === 'true';
     const canCloseCash = isAdmin || isCashierBlindClose;
     const authLogout = useAuthStore(s => s.logout);
     const requireLogin = useAuthStore(s => s.requireLogin ?? false);
     const adminEmail = useAuthStore(s => s.adminEmail);
-    const adminPassword = useAuthStore(s => s.adminPassword);
     const isCloudConfigured = Boolean(adminEmail);
     const { log: auditLog } = useAudit();
     const confirm = useConfirm();
     const [sales, setSales] = useState([]);
-    const { products, setProducts, isLoadingProducts, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
+    const { products, adoptCommittedProducts: setProducts, isLoadingProducts, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
     const { loadCart } = useCart();
     const [customers, setCustomers] = useState([]);
     const [isLoadingLocal, setIsLoadingLocal] = useState(true);
@@ -75,18 +85,68 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [voidSaleTarget, setVoidSaleTarget] = useState(null);
     const [isCashReconOpen, setIsCashReconOpen] = useState(false);
+    const closeRequest = useRef(null);
     const [isFinalizingHistoricalBatch, setIsFinalizingHistoricalBatch] = useState(false);
     const [ticketPendingSale, setTicketPendingSale] = useState(null);
     const [ticketClientName, setTicketClientName] = useState('');
     const [ticketClientPhone, setTicketClientPhone] = useState('');
     const [ticketClientDocument, setTicketClientDocument] = useState('');
     const [recycleOffer, setRecycleOffer] = useState(null);
+    const [sedePinTarget, setSedePinTarget] = useState(null);
     const [pullDistance, setPullDistance] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedChartDate, setSelectedChartDate] = useState(null);
     const [showTopDeudas, setShowTopDeudas] = useState(false);
     const [openPaySections, setOpenPaySections] = useState({});
     const touchStartY = useRef(0);
+
+    // ── F3.9: Consolidado multi-sede (solo DUENO) ──
+    const isDueno = canSeeAllSedes(usuarioActivo);
+    const [sedeStats, setSedeStats] = useState([]);
+    const [isAuditorOpen, setIsAuditorOpen] = useState(false);
+    const sedeActivaId = useSedeStore(s => s.sedeActivaId);
+
+    useEffect(() => {
+        if (!isActive || !isDueno) return;
+        let mounted = true;
+        const loadSedeStats = async () => {
+            const todayStr = getLocalISODate(new Date());
+            const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 6);
+            const weekStartStr = getLocalISODate(weekStart);
+            // Transferencias pendientes por sede destino (colección global)
+            const transferencias = await storageService.getItem('farmacia_transferencias_v1', []);
+            const stats = await Promise.all(SEDES.map(async (sede) => {
+                const sedeSales = await storageService.getItemForSede(SALES_KEY, sede.id, []);
+                const sedeProducts = await storageService.getItemForSede('bodega_products_v1', sede.id, []);
+                const validas = sedeSales.filter(s =>
+                    s.status !== 'ANULADA' &&
+                    !s.relatedVoidId && // la anulación no cambia el status: marca con relatedVoidId
+                    (s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA')
+                );
+                const hoy = validas.filter(s => getSaleBusinessDate(s) === todayStr);
+                const semana = validas.filter(s => getSaleBusinessDate(s) >= weekStartStr);
+                const vencidos = sedeProducts.filter(p => p.vencimiento && p.vencimiento <= todayStr).length;
+                const criticos = sedeProducts.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0).length;
+                const pendientes = transferencias.filter(t => t.estado === 'ENVIADA' && t.destinoId === sede.id).length;
+                return {
+                    id: sede.id,
+                    nombre: sede.nombre,
+                    color: sede.color,
+                    count: hoy.length,
+                    totalUsd: hoy.reduce((sum, s) => sum + (s.totalUsd || 0), 0),
+                    semanaUsd: semana.reduce((sum, s) => sum + (s.totalUsd || 0), 0),
+                    semanaCount: semana.length,
+                    gananciaHoy: FinancialEngine.calculateAggregateProfit(hoy, bcvRate, sedeProducts),
+                    vencidos,
+                    criticos,
+                    pendientes,
+                };
+            }));
+            if (mounted) setSedeStats(stats);
+        };
+        loadSedeStats();
+        return () => { mounted = false; };
+    }, [isActive, isDueno, bcvRate, sales]);
     const scrollRef = useRef(null);
 
     useEffect(() => {
@@ -231,7 +291,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
     const todaySales = useMemo(() =>
         pendingSessionMovements.filter(s => {
-            if (s.status === 'ANULADA') return false;
+            if ((s.status === 'ANULADA' || s.estado === 'ANULADA' || s.anuladaEn) && !s.relatedVoidId) return false;
             return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'ANULACION_VENTA';
         }),
         [pendingSessionMovements]
@@ -240,7 +300,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     // Movimientos reales de caja para el cuadre (Ventas + Abonos + Egresos + Apertura)
     const todayCashFlow = useMemo(() =>
         pendingSessionMovements.filter(s => {
-            if (s.status === 'ANULADA') return false;
+            if ((s.status === 'ANULADA' || s.estado === 'ANULADA' || s.anuladaEn) && !s.relatedVoidId) return false;
             return s.tipo === 'VENTA' || s.tipo === 'VENTA_FIADA' || s.tipo === 'VENTA_CASHEA' || s.tipo === 'COBRO_DEUDA' || s.tipo === 'PAGO_PROVEEDOR' || s.tipo === 'APERTURA_CAJA' || s.tipo === 'ANULACION_VENTA';
         }),
         [pendingSessionMovements]
@@ -289,11 +349,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
         const dateStr = getLocalISODate(d);
-        const daySales = sales.filter(s => {
-            if (s.tipo === 'COBRO_DEUDA' || s.tipo === 'AJUSTE_ENTRADA' || s.tipo === 'AJUSTE_SALIDA' || s.tipo === 'VENTA_FIADA' || s.status === 'ANULADA') return false;
-            return getSaleBusinessDate(s) === dateStr;
-        });
-        return { date: dateStr, total: daySales.reduce((sum, s) => sum + (s.totalUsd || 0), 0), count: daySales.length };
+        const report = calculateReportsData(sales, dateStr, dateStr, bcvRate, products);
+        return { date: dateStr, total: report.totalUsd, count: report.salesCount };
     }), [sales]);
 
     // Productos bajo stock
@@ -322,7 +379,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     // Top productos vendidos (todas las ventas netas)
     const topProducts = useMemo(() => {
         const productSalesMap = {};
-        sales.filter(s => s.tipo !== 'COBRO_DEUDA' && s.tipo !== 'AJUSTE_ENTRADA' && s.tipo !== 'AJUSTE_SALIDA' && s.tipo !== 'VENTA_FIADA' && s.status !== 'ANULADA').forEach(s => {
+        calculateReportsData(sales, '0000-01-01', '9999-12-31', bcvRate, products).salesForStats.forEach(s => {
             if (s.items) {
                 s.items.forEach(item => {
                     if (!productSalesMap[item.name]) productSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
@@ -389,6 +446,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             showToast('No hay movimientos pendientes para cerrar caja', 'error');
             return;
         }
+        closeRequest.current = { cashSessionId: activeCashSession?.apertura?.id, businessDate: operatingDate, rate: bcvRate };
         setIsCashReconOpen(true);
     };
 
@@ -404,12 +462,16 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             // El cierre normal consume el turno abierto completo, aunque haya
             // cruzado la medianoche. Nunca se ejecuta automáticamente.
             const operator = usuarioActivo || { nombre: 'Administrador' };
+            const request = closeRequest.current;
+            if (!request?.cashSessionId) throw new Error('Vuelve a abrir el formulario de cierre para identificar el turno.');
             const result = await commitNormalClosure({
-                fechaComercial: operatingDate,
-                tasaBcv: bcvRate,
-                operator,
+                fechaComercial: request.businessDate,
+                tasaBcv: request.rate,
+                cashSessionId: request.cashSessionId,
+                context: storageService.context,
                 reconData,
             });
+            storageService.assertActive();
 
             const closedSales = result.closedSales || [];
             const allTodayForReport = closedSales.filter(s => s.tipo !== 'APERTURA_CAJA');
@@ -548,7 +610,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             )}
 
             {/* ── HEADER ── */}
-            <div className="flex items-center justify-between px-3 sm:px-5 pt-2 sm:pt-3 lg:pt-2 pb-1 sm:pb-3 lg:pb-1 transition-all z-10 relative min-h-[70px] sm:min-h-[100px] lg:min-h-[70px]">
+            <div className="flex items-center justify-between px-3 sm:px-6 pt-3 sm:pt-4 lg:pt-3 pb-2 sm:pb-3 lg:pb-2 transition-all z-10 relative min-h-[96px] sm:min-h-[135px] lg:min-h-[130px]">
                 
                 {/* ====== LATERAL IZQUIERDO: Píldoras (PC/Móvil) ====== */}
                 <div className="flex items-center justify-start gap-2 sm:gap-3 z-20">
@@ -573,8 +635,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 </div>
 
                 {/* ====== LOGO CENTRADO ====== */}
-                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center pointer-events-none z-0">
-                    <img src="/logo.png" alt="Listo POS Lite" style={{ height: '65px' }} className="sm:h-[99px] lg:h-[65px] w-auto object-contain select-none drop-shadow-sm pointer-events-auto transition-transform hover:scale-105 duration-200" draggable={false} />
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none z-0">
+                    <BrandLogo className="h-20 sm:h-28 lg:h-32 max-h-[95%] w-auto drop-shadow-md pointer-events-auto transition-transform hover:scale-105 duration-200 object-contain" />
                 </div>
 
                 {/* ====== LATERAL DERECHO: Notificaciones + Botones de Salir ====== */}
@@ -623,19 +685,32 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         </div>
                     )}
 
-                    {/* Cloud Logout */}
+                    {/* Cambiar usuario / salir */}
+                    <button
+                        onClick={() => { triggerHaptic?.(); authLogout(); }}
+                        className="p-2 sm:px-4 sm:py-2 flex items-center gap-1.5 bg-slate-100 border border-slate-200 text-slate-500 rounded-full shadow-sm hover:bg-slate-200 hover:text-slate-700 active:scale-95 transition-all"
+                        title="Cambiar usuario"
+                    >
+                        <LogOut size={16} strokeWidth={2.5} />
+                        <span className="hidden sm:block text-xs font-bold uppercase tracking-wider">Cambiar usuario</span>
+                    </button>
                     {isAdmin && (
                         <button
                             onClick={async () => {
                                 const ok = await confirm({ title: 'Cerrar sesión', message: 'Se cerrará tu acceso a la nube.', confirmText: 'Cerrar sesión', cancelText: 'Cancelar', variant: 'logout' });
                                 if (!ok) return;
-                                await supabaseCloud.auth.signOut();
-                                window.location.reload();
+                                try {
+                                    await signOutCloudAccount(supabaseCloud);
+                                } catch (error) {
+                                    showToast(error?.message || 'La sesión local se cerró; no se pudo confirmar la salida cloud.', 'warning');
+                                } finally {
+                                    window.location.reload();
+                                }
                             }}
                             className="p-2 sm:px-4 sm:py-2 flex items-center gap-1.5 bg-rose-50 border border-rose-100 text-rose-500 rounded-full shadow-sm hover:bg-rose-100 hover:text-rose-600 active:scale-95 transition-all"
+                            title="Cerrar sesión cloud"
                         >
-                            <LogOut size={16} strokeWidth={2.5} />
-                            <span className="hidden sm:block text-xs font-bold uppercase tracking-wider">Salir</span>
+                            <span className="hidden sm:block text-xs font-bold uppercase tracking-wider">Salir cloud</span>
                         </button>
                     )}
                 </div>
@@ -673,6 +748,100 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     </div>
                 </div>
             </div>
+
+            {/* ── MI TURNO (CAJERO): solo sus huellas ── */}
+            {usuarioActivo?.rol === 'CAJERO' && (() => {
+                const mias = todaySales.filter(s => s.huella?.usuarioId === usuarioActivo.id);
+                const miasUsd = mias.reduce((sum, s) => sum + (s.totalUsd || 0), 0);
+                return (
+                    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mi turno</p>
+                            <p className="text-lg font-black text-slate-700">${miasUsd.toFixed(2)} <span className="text-xs font-bold text-slate-400">· {mias.length} venta{mias.length !== 1 ? 's' : ''}</span></p>
+                        </div>
+                        <div className="w-9 h-9 bg-teal-100 rounded-xl flex items-center justify-center">
+                            <ShoppingBag size={18} className="text-teal-600" strokeWidth={2.5} />
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* ── TARJETA EJECUTIVA MULTI-SEDE (DUENO) ── */}
+            {isDueno && sedeStats.length > 0 && (() => {
+                const grupoHoyUsd = sedeStats.reduce((sum, s) => sum + s.totalUsd, 0);
+                const grupoHoyCount = sedeStats.reduce((sum, s) => sum + s.count, 0);
+                const grupoSemanaUsd = sedeStats.reduce((sum, s) => sum + s.semanaUsd, 0);
+                const gananciaHoy = sedeStats.reduce((sum, s) => sum + s.gananciaHoy, 0);
+                const ticketPromedio = grupoHoyCount > 0 ? grupoHoyUsd / grupoHoyCount : 0;
+                return (
+                    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                <BarChart3 size={14} className="text-emerald-600" /> Consolidado multi-sede
+                            </p>
+                            <button
+                                onClick={() => { triggerHaptic?.(); setIsAuditorOpen(true); }}
+                                className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1.5 rounded-full active:scale-95 transition-all">
+                                <Search size={12} strokeWidth={2.5} /> Auditoría
+                            </button>
+                        </div>
+                        {/* KPIs del grupo */}
+                        <div className="grid grid-cols-4 gap-2 mb-3">
+                            <div className="bg-slate-50 rounded-xl p-2 text-center">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">Hoy</p>
+                                <p className="text-sm font-black text-slate-700">${grupoHoyUsd.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-xl p-2 text-center">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">7 días</p>
+                                <p className="text-sm font-black text-slate-700">${grupoSemanaUsd.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-xl p-2 text-center">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">Ticket prom.</p>
+                                <p className="text-sm font-black text-slate-700">${ticketPromedio.toFixed(2)}</p>
+                            </div>
+                            <div className={`rounded-xl p-2 text-center ${gananciaHoy >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                                <p className="text-[8px] font-black text-slate-400 uppercase">Ganancia hoy</p>
+                                <p className={`text-sm font-black ${gananciaHoy >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                    ${bcvRate > 0 ? (gananciaHoy / bcvRate).toFixed(2) : '0.00'}
+                                </p>
+                            </div>
+                        </div>
+                        {/* Por sede + alertas consolidadas */}
+                        <div className="grid grid-cols-3 gap-2">
+                            {sedeStats.map(s => (
+                                <div key={s.id} className="rounded-xl p-2.5 text-left" style={{ background: `${s.color}15`, border: `1px solid ${s.color}30` }}>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[9px] font-black uppercase tracking-wider" style={{ color: s.color }}>{s.nombre}</p>
+                                        <button
+                                            onClick={() => {
+                                                triggerHaptic?.();
+                                                if (s.id === sedeActivaId) return;
+                                                setSedePinTarget(s.id);
+                                            }}
+                                            className="text-[8px] font-black text-slate-400 hover:text-slate-600 active:scale-90 transition-all"
+                                            title={`Abrir ${s.nombre}`}>
+                                            Abrir
+                                        </button>
+                                    </div>
+                                    <p className="text-sm font-black text-slate-700 mt-1">${s.totalUsd.toFixed(2)}</p>
+                                    <p className="text-[9px] text-slate-400 font-bold">{s.count} venta{s.count !== 1 ? 's' : ''} hoy · {s.semanaCount} en 7d</p>
+                                    <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                                        {s.vencidos > 0 && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Vencidos · {s.vencidos}</span>}
+                                        {s.criticos > 0 && <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded">Críticos · {s.criticos}</span>}
+                                        {s.pendientes > 0 && <span className="text-[8px] font-black bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded">Pendientes · {s.pendientes}</span>}
+                                        {s.vencidos === 0 && s.criticos === 0 && s.pendientes === 0 && (
+                                            <span className="text-[8px] font-bold text-slate-300">Todo en orden</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* ── AUDITORÍA CON HUELLA (modal dueño) ── */}
+            <HuellaAuditor isOpen={isAuditorOpen} onClose={() => setIsAuditorOpen(false)} />
 
             {/* ── KPIs ROW ── */}
             <div className={`grid gap-3 ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -714,7 +883,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                         <Download size={20} strokeWidth={2.5} />
                     </div>
                     <div className="flex-1 text-left">
-                        <p className="text-[13px] font-black">Instalar Listo POS</p>
+                        <p className="text-[13px] font-black">Instalar Farma POS</p>
                         <p className="text-[10px] text-white/80">Acceso rápido desde tu pantalla de inicio</p>
                     </div>
                     <ArrowUpRight size={18} className="text-white/60" />
@@ -1216,6 +1385,11 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             <p className="text-sm text-slate-500 mb-4 px-2">
                                 Esta acción borrará permanentemente <strong className="text-red-500">TODO el historial de ventas y reportes estadísticos</strong>. (No afectará tu inventario de productos).
                             </p>
+                            {REMOTE_OPERATIONS_PAUSED && (
+                                <p role="status" className="mb-3 text-sm font-bold text-amber-800 dark:text-amber-200">
+                                    Borrado bloqueado: se conservan el historial y las ventas pendientes durante la pausa de sincronización.
+                                </p>
+                            )}
                             <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-200 mb-2 mt-2">
                                 <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wide">Escribe "BORRAR" para confirmar:</p>
                                 <input
@@ -1236,6 +1410,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                             </button>
                             <button
                                 onClick={async () => {
+                                    if (REMOTE_OPERATIONS_PAUSED) {
+                                        showToast('Borrado bloqueado durante la pausa de sincronización para conservar ventas y pendientes.', 'warning');
+                                        return;
+                                    }
                                     if (deleteConfirmText.trim().toUpperCase() === 'BORRAR') {
                                         setSales([]);
                                         // 1. Borrar local
@@ -1256,7 +1434,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                                         setTimeout(() => window.location.reload(), 800);
                                     }
                                 }}
-                                disabled={deleteConfirmText.trim().toUpperCase() !== 'BORRAR'}
+                                disabled={REMOTE_OPERATIONS_PAUSED || deleteConfirmText.trim().toUpperCase() !== 'BORRAR'}
+                                title={REMOTE_OPERATIONS_PAUSED ? CLOUD_PAUSE_MESSAGE : undefined}
                                 className="flex-1 py-3.5 bg-red-500 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold rounded-xl active:scale-[0.98] transition-all flex justify-center items-center gap-2"
                             >
                                 <Trash2 size={18} /> Borrar Historial y Reportes
@@ -1334,6 +1513,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 confirmText="Sí, anular"
                 variant="danger"
             />
+
+            {/* La autorización local verifica PIN, sesión y operación en el servicio. */}
+            {sedePinTarget && <BranchPinModal targetSedeId={sedePinTarget} onClose={() => setSedePinTarget(null)} />}
             <CierreCajaWizard
                 isOpen={isCashReconOpen}
                 onClose={() => setIsCashReconOpen(false)}

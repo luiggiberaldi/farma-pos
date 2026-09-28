@@ -115,12 +115,12 @@ export default function SettingsTabUsuarios({
     autoLockMinutes, setAutoLockMinutes,
     setAdminCredentials, showToast, triggerHaptic,
 }) {
-    const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+    const effectiveUsersAccess = true;
 
     return (
         <div className="relative">
             {SHOW_COMING_SOON && <ComingSoonOverlay />}
-            {isCloudConfigured && (
+            {effectiveUsersAccess && (
                 <SectionCard icon={Users} title="Usuarios y Roles" subtitle="Gestiona quien opera la app" iconColor="text-indigo-500">
                     <UsersManager triggerHaptic={triggerHaptic} />
                 </SectionCard>
@@ -130,16 +130,18 @@ export default function SettingsTabUsuarios({
                 <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
                     <div>
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Pedir PIN al iniciar</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Si se desactiva, entrará directo como Administrador.</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">La cuenta cloud siempre exige PIN. Desactivar solo permite cajeros sin PIN en modo local; nunca inicia un administrador automáticamente.</p>
                     </div>
                     <Toggle
                         enabled={requireLogin}
                         color="rose"
                         onChange={() => {
                             const newVal = !requireLogin;
-                            if (setRequireLogin) setRequireLogin(newVal);
-                            triggerHaptic?.();
-                            showToast(newVal ? 'PIN activado para inicio' : 'Acceso directo activado', 'success');
+                            try {
+                                if (setRequireLogin) setRequireLogin(newVal);
+                                triggerHaptic?.();
+                                showToast(newVal ? 'PIN requerido para acceso local' : 'Solo cajeros locales configurados sin PIN pueden acceder directamente', 'success');
+                            } catch (error) { showToast(error.message || 'No tienes permiso para cambiar esta opción.', 'error'); }
                         }}
                     />
                 </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, ChevronRight, Package, Users, FileText, Settings, X } from 'lucide-react';
+import { Search, ChevronRight, Package, Users, FileText, X } from 'lucide-react';
+import { useAuthStore } from '../hooks/store/useAuthStore.js';
 
 export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }) {
     const [query, setQuery] = useState('');
@@ -13,13 +14,15 @@ export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }
         { id: 'nav-dashboard', title: 'Ir a Inicio', icon: Package, action: () => navigateTo('inicio') },
     ];
 
-    const filteredCommands = commands.filter(c => c.title.toLowerCase().includes(query.toLowerCase()));
+    const actor = useAuthStore(state => state.usuarioActivo);
+    const filteredCommands = commands.filter(c => actor && (actor.rol !== 'CAJERO' || ['nav-sales', 'nav-dashboard'].includes(c.id)) && c.title.toLowerCase().includes(query.toLowerCase()));
 
+    const [previousOpen, setPreviousOpen] = useState(isOpen);
+    if (previousOpen !== isOpen) { setPreviousOpen(isOpen); setQuery(''); }
     useEffect(() => {
-        if (isOpen) {
-            setQuery('');
-            setTimeout(() => inputRef.current?.focus(), 100);
-        }
+        if (!isOpen) return;
+        const timer = setTimeout(() => inputRef.current?.focus(), 100);
+        return () => clearTimeout(timer);
     }, [isOpen]);
 
     useEffect(() => {
@@ -31,13 +34,6 @@ export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }
             if (e.key === 'Escape') {
                 if (isOpen) {
                     onClose();
-                } else {
-                    // Abrir solo si no hay un input/textarea/modal enfocado
-                    const tag = document.activeElement?.tagName;
-                    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-                        e.preventDefault();
-                        onToggle && onToggle();
-                    }
                 }
             }
         };

@@ -4,21 +4,19 @@
 
 @layer base {
   :root {
-    /* ── LISTO POS LITE — DESIGN TOKENS ── */
-    /* Paleta extraída del gradiente del logo (sky-blue → teal) */
-
-    /* Primary (sky-500 → sky-600) */
-    --color-primary-50:  240 249 255;
-    --color-primary-100: 224 242 254;
-    --color-primary-200: 186 230 253;
-    --color-primary-300: 125 211 252;
-    --color-primary-400:  56 189 248;
-    --color-primary-500:  14 165 233;  /* #0B8D63 — color base */
-    --color-primary-600:   2 132 199;
-    --color-primary-700:   3 105 161;
-    --color-primary-800:   7  89 133;
-    --color-primary-900:  12  74 110;
-    --color-primary-950:   8  47  73;
+    /* ── FARMA POS — DESIGN TOKENS ── */
+    /* Pharmacy green; action shades meet white-text contrast requirements. */
+    --color-primary-50:  240 250 247;
+    --color-primary-100: 232 245 240;
+    --color-primary-200: 195 234 220;
+    --color-primary-300: 143 212 188;
+    --color-primary-400:  76 185 152;
+    --color-primary-500:   8 107  77;  /* #086B4D */
+    --color-primary-600:   6  87  63;  /* #06573F: hover */
+    --color-primary-700:   4  64  46;
+    --color-primary-800:   3  53  38;
+    --color-primary-900:   2  41  30;
+    --color-primary-950:   1  28  20;
 
     /* Surface (Slate — neutros de fondo) */
     --color-surface-50:  248 250 252;
@@ -61,8 +59,8 @@
     --color-bg-light: var(--color-surface-50);
     --color-bg-dark:  var(--color-surface-900);
 
-    /* Gradiente del logo (sky → teal) — disponible como var CSS */
-    --gradient-brand: linear-gradient(135deg, #8FD4BC 0%, #6FD9B8 100%);
+    /* Brand gradient keeps white labels accessible across both stops. */
+    --gradient-brand: linear-gradient(135deg, #086B4D 0%, #06573F 100%);
   }
 }
 
@@ -74,6 +72,22 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
   scroll-behavior: smooth;
+  color-scheme: light;
+}
+
+html.dark,
+html.dark body {
+  background-color: #0F172A;
+  color: #F8FAFC;
+  color-scheme: dark;
+}
+
+/* ── TOUCH: sin zoom por doble toque ni selección accidental en controles ── */
+button,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ── SCROLLBAR PERSONALIZADO ── */

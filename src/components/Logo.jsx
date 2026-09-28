@@ -1,63 +1,45 @@
-import React from 'react';
-
-/**
- * LogoIcon — Isotipo de Farmacia César
- * Cruz de farmacia verde (SVG inline, sin dependencias de imagen).
- * Úsalo en cabeceras, avatares y espacios compactos.
- */
 export const LogoIcon = ({ className = 'w-10 h-10' }) => {
   return (
     <svg
       viewBox="0 0 64 64"
-      alt="Farmacia César"
+      alt="Farma POS"
       className={`object-contain select-none ${className}`}
       draggable={false}
-      aria-label="Farmacia César"
+      aria-label="Farma POS"
     >
-      {/* Círculo de fondo */}
       <circle cx="32" cy="32" r="30" fill="#0B8D63" />
       <circle cx="32" cy="32" r="30" fill="none" stroke="#086B4D" strokeWidth="2" />
-      {/* Cruz de farmacia */}
       <rect x="26" y="12" width="12" height="40" rx="3.5" fill="#FFFFFF" />
       <rect x="12" y="26" width="40" height="12" rx="3.5" fill="#FFFFFF" />
     </svg>
   );
 };
 
-/**
- * LogoFull — Logo completo de Farmacia César (isotipo + nombre).
- * Para pantallas de login y splash screens.
- */
 export const LogoFull = ({ className = '', height = 56 }) => {
   return (
     <div className={`flex items-center justify-center gap-3 ${className}`}>
       <LogoIcon className="shrink-0" />
       <div className="flex flex-col leading-none">
         <span className="text-xl font-black tracking-tight text-[#334155]">
-          Farmacia <span className="text-[#0B8D63]">César</span>
+          Farma <span className="text-[#0B8D63]">POS</span>
         </span>
         <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-[#086B4D]">
-          POS Multi-Sede
+          Sistema Multi-Sede
         </span>
       </div>
     </div>
   );
 };
-
-/**
- * LogoWordmark — Texto "Farmacia César" en tipografía de la marca.
- * Para cabeceras donde no cabe el logo completo.
- */
 export const LogoWordmark = ({ className = '' }) => {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <LogoIcon className="w-8 h-8" />
       <div className="flex flex-col leading-none">
         <span className="text-base font-black tracking-tight text-[#334155]">
-          Farmacia <span className="text-[#0B8D63]">César</span>
+          Farma <span className="text-[#0B8D63]">POS</span>
         </span>
         <span className="text-[8px] font-bold uppercase tracking-[0.25em] text-[#086B4D]">
-          POS Multi-Sede
+          Sistema Multi-Sede
         </span>
       </div>
     </div>

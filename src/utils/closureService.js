@@ -1,5 +1,9 @@
 import { storageService } from './storageService';
+import { captureStorageContext, assertStorageContextActive } from '../config/storageScope.js';
+import { beginLocalOperation } from '../services/localOperationGuard.js';
+import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { logEvent } from '../services/auditService';
+import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
 import { parseSafeFloat } from './rateResolver.js';
 import {
     CLOSURE_BACKUP_KEY,
@@ -19,18 +23,18 @@ import {
 
 const SALES_KEY = 'bodega_sales_v1';
 
-function assertAdministrator(operator) {
-    if (operator && operator.rol !== 'ADMIN' && operator.role !== 'ADMIN') {
-        throw new Error('Solo un administrador puede ejecutar una corrección administrativa.');
-    }
+function assertAdministrator() {
+    // Legacy multi-key historical repair is not safe while branch/outbox
+    // reconciliation and atomic commits remain pending.
+    throw new Error('Corrección histórica pausada: requiere conciliación y transacciones atómicas antes de reactivarse.');
 }
 
-export async function loadClosures() {
-    return storageService.getItem(CLOSURE_STORAGE_KEY, []);
+export async function loadClosures(context = captureStorageContext()) {
+    return storageService.getItem(CLOSURE_STORAGE_KEY, [], context);
 }
 
-export async function loadSales() {
-    return storageService.getItem(SALES_KEY, []);
+export async function loadSales(context = captureStorageContext()) {
+    return storageService.getItem(SALES_KEY, [], context);
 }
 
 export async function createClosureBackup(correctionId) {
@@ -46,6 +50,7 @@ export async function createClosureBackup(correctionId) {
 }
 
 export async function rollbackClosureCorrection() {
+    assertAdministrator();
     const backup = await storageService.getItem(CLOSURE_BACKUP_KEY, null);
     if (!backup?.sales) throw new Error('No existe un respaldo de corrección disponible.');
 
@@ -424,32 +429,45 @@ export async function commitHistoricalCorrection({
     }
 }
 
-export async function commitNormalClosure({
-    fechaComercial,
-    tasaBcv,
-    operator = null,
-    reconData = null,
-}) {
-    const [sales, closures] = await Promise.all([loadSales(), loadClosures()]);
-    const result = closeBusinessDate({
-        sales,
-        existingClosures: closures,
-        fechaComercial,
-        tasaBcv,
-        operador: operator,
-        tipo: 'NORMAL',
-        reconData,
-    });
-
-    await storageService.setItem(SALES_KEY, result.updatedSales);
-    await storageService.setItem(CLOSURE_STORAGE_KEY, result.updatedClosures);
-    await logEvent(
-        'VENTA',
-        'CIERRE_CAJA',
-        `Cierre de caja ${fechaComercial} completado con ${result.closedSales.length} movimientos.`,
-        operator,
-        { cierreId: result.closure.cierreId, fechaComercial, totalUsd: result.closure.totalUsd }
-    );
-
-    return result;
+export async function commitNormalClosure({ fechaComercial, tasaBcv, reconData = null, cashSessionId, context = captureStorageContext() }) {
+    const operator = useAuthStore.getState().usuarioActivo;
+    const sessionId = useAuthStore.getState().operatorSession?.sessionId;
+    const mayClose = ['DUENO', 'ADMIN'].includes(operator?.rol)
+        || (operator?.rol === 'CAJERO' && operator.sedeId === context.sedeId && localStorage.getItem('cajero_puede_cerrar_caja') === 'true');
+    if (!mayClose) throw new Error('No tienes permiso para cerrar esta caja.');
+    const assertActor = () => {
+        assertStorageContextActive(context);
+        if (useAuthStore.getState().usuarioActivo?.id !== operator.id || useAuthStore.getState().operatorSession?.sessionId !== sessionId) throw new Error('El operador cambió durante el cierre.');
+    };
+    assertActor();
+    const release = beginLocalOperation('CLOSE_CASH', context);
+    try {
+        const timestamp = new Date().toISOString();
+        return await storageService.transaction(ledgerRecords(['sales', 'closures', 'queue', 'audit'], context), state => {
+            assertActor(); assertLedgerArrays(state);
+            if (typeof cashSessionId !== 'string' || !cashSessionId) throw new Error('Identifica la caja que estás cerrando. Vuelve a abrir el formulario de cierre.');
+            const id = `close_${cashSessionId}`;
+            const intent = JSON.stringify([cashSessionId, fechaComercial, tasaBcv, reconData]);
+            const queued = assertQueueOwnership(state.queue, id, 'CLOSE_CASH', context);
+            const prior = state.closures.find(item => item.operationId === id);
+            if (prior) {
+                if (prior.operationIntent !== intent) throw new Error('El cierre ya existe con otro conteo. Consulta su comprobante; no se cerró otra caja.');
+                return { writes: {}, result: { duplicate: true, closure: prior, updatedSales: state.sales, updatedClosures: state.closures,
+                    closedSales: state.sales.filter(item => prior.saleIds.includes(item.id)) } };
+            }
+            if (queued) throw new Error('El cierre tiene un comprobante pendiente sin historial. Requiere conciliación.');
+            const session = getOpenCashSession(state.sales);
+            if (!session || session.apertura.id !== cashSessionId) throw new Error('La caja cambió o se cerró. No se aplicó el conteo a otro turno.');
+            if (session.businessDate !== fechaComercial) throw new Error('La fecha no corresponde al turno abierto.');
+            if (!Number.isFinite(tasaBcv) || tasaBcv <= 0) throw new Error('La tasa del cierre no es válida.');
+            const result = closeBusinessDate({ sales: state.sales, existingClosures: state.closures, fechaComercial, tasaBcv, operador: operator, tipo: 'NORMAL', reconData });
+            const huella = movementStamp('CIERRE_CAJA', id, context, operator, timestamp);
+            const closure = { ...result.closure, operationId: id, operationIntent: intent, cashSessionId, sedeId: context.sedeId, accountId: context.accountId, huella };
+            const closures = result.updatedClosures.map(item => item.cierreId === result.closure.cierreId ? closure : item);
+            return { writes: { sales: result.updatedSales, closures,
+                queue: [...state.queue, pendingOperation(id, 'CLOSE_CASH', closure, context, operator, timestamp)],
+                audit: [ledgerAudit(id, 'CIERRE_CAJA', context, operator, timestamp, { cierreId: closure.cierreId }), ...state.audit] },
+                result: { ...result, closure, updatedClosures: closures } };
+        }, context);
+    } finally { release(); }
 }

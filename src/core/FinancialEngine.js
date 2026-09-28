@@ -3,8 +3,8 @@
  * 
  * Centralized, pure-function mathematical engine for POS calculations.
  * ALL financial logic across the app (profits, totals, discounts, breakdowns)
- * MUST route through these functions to guarantee 100% mathematical integrity
- * and shield against UI-side modifications.
+ * uses these shared rounding functions; regression tests verify the supported cases
+ * independently of the display layer. Authorization and persistence are separate controls.
  * 
  * v2.0 — Precision Overhaul: All arithmetic uses dinero.js round2/mulR/divR/sumR
  *         to eliminate IEEE 754 floating-point drift.
@@ -75,13 +75,13 @@ export class FinancialEngine {
         const itemProfits = sale.items.map(item => {
             let costBs = 0;
             
-            if (item.costUsd) {
+            if (item.costUsd != null) {
                 costBs = mulR(item.costUsd, saleRate);
-            } else if (item.costBs) {
+            } else if (item.costBs != null) {
                 costBs = round2(item.costBs);
             } else {
                 // Fallback: Resolve cost dynamically from the products dictionary
-                const p = products.find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
+                const p = (products || []).find(p => p.id === item.id || p.id === item._originalId || p.name === item.name);
                 if (p) {
                     costBs = p.costUsd ? mulR(p.costUsd, saleRate) : round2(p.costBs || 0);
                     if (item.id && typeof item.id === 'string' && item.id.endsWith('_unit')) {
@@ -91,7 +91,7 @@ export class FinancialEngine {
             }
             
             // Revenue = price * qty * rate (rounded at each step)
-            const itemRevenueBs = mulR(mulR(item.priceUsd, item.qty), saleRate);
+            const itemRevenueBs = item.exactBs != null ? mulR(item.exactBs, item.qty) : mulR(mulR(item.priceUsd, item.qty), saleRate);
             const itemCostBs = mulR(costBs, item.qty);
             return subR(itemRevenueBs, itemCostBs);
         });
@@ -136,25 +136,41 @@ export class FinancialEngine {
                 return; // Do NOT count opening as revenue
             }
 
-            // Fiado sales go to their own bucket — tracked in USD directly since debts hold value in $
-            if (sale.tipo === 'VENTA_FIADA') {
-                if (!breakdown['fiado']) {
-                    breakdown['fiado'] = { total: 0, currency: 'FIADO', label: 'Fiado (Por Cobrar)' };
-                }
-                breakdown['fiado'].total = round2(breakdown['fiado'].total + round2(sale.totalUsd || 0));
-                return; // Skip normal payment processing and change deduction
+            const payments = Array.isArray(sale.payments) ? sale.payments : [];
+            const paymentUsd = payment => {
+                if (payment.amountUsd != null) return round2(payment.amountUsd);
+                if (payment.currency === 'USD') return round2(payment.amount || 0);
+                const rate = payment.currency === 'COP' ? sale.tasaCop : sale.fechaComercialTasa || sale.rate;
+                return rate > 0 ? divR(payment.amount ?? payment.amountBs ?? 0, rate) : 0;
+            };
+            const fiadoPayments = sumR(payments.filter(p => p.methodId === 'fiado').map(paymentUsd));
+            const fiadoUsd = sale.fiadoUsd != null ? round2(sale.fiadoUsd)
+                : sale.tipo === 'VENTA_FIADA'
+                    ? round2(Math.max(0, subR(sale.totalUsd || 0, sumR(payments.filter(p => p.methodId !== 'fiado').map(paymentUsd)))))
+                    : fiadoPayments;
+            if (fiadoUsd !== 0) {
+                if (!breakdown.fiado) breakdown.fiado = { total: 0, currency: 'FIADO', label: _resolveMethodLabel('fiado') };
+                breakdown.fiado.total = round2(breakdown.fiado.total + fiadoUsd);
+            }
+            const casheaUsd = sale.casheaUsd != null ? round2(sale.casheaUsd)
+                : sumR(payments.filter(p => p.methodId === 'cashea').map(paymentUsd));
+            if (casheaUsd !== 0) {
+                if (!breakdown.cashea) breakdown.cashea = { total: 0, currency: 'FIADO', label: _resolveMethodLabel('cashea') };
+                breakdown.cashea.total = round2(breakdown.cashea.total + casheaUsd);
             }
 
-            // Debt collection reduces the outstanding fiado balance for the period (using USD to prevent exchange rate drift)
-            if (sale.tipo === 'COBRO_DEUDA') {
-                if (!breakdown['fiado']) {
-                    breakdown['fiado'] = { total: 0, currency: 'FIADO', label: 'Fiado (Por Cobrar)' };
-                }
-                breakdown['fiado'].total = round2(breakdown['fiado'].total - round2(sale.totalUsd || 0));
-                // Continue execution below to register the actual cash/transfer received
+            // Collections reduce only the debt actually paid, not an overpayment retained as credit.
+            const isCollection = sale.tipo === 'COBRO_DEUDA'
+                || (sale.tipo === 'ANULACION_VENTA' && sale.originSaleType === 'COBRO_DEUDA');
+            if (isCollection || sale.fiadoCollectedUsd != null) {
+                if (!breakdown.fiado) breakdown.fiado = { total: 0, currency: 'FIADO', label: _resolveMethodLabel('fiado') };
+                const collectedUsd = sale.fiadoCollectedUsd ?? sale.totalUsd ?? 0;
+                breakdown.fiado.total = subR(breakdown.fiado.total, collectedUsd);
             }
 
-            if (!sale.payments || sale.payments.length === 0) {
+            const residualUsd = subR(sale.totalUsd || 0, sumR([fiadoUsd, casheaUsd]));
+            const canUseLegacyPayment = Number(sale.schemaVersion || 0) < 3 && residualUsd !== 0;
+            if (payments.length === 0 && canUseLegacyPayment) {
                 // V1 Legacy Sales & Cobro Deudas
                 const method = sale.paymentMethod || 'efectivo_bs';
                 let currency = 'BS';
@@ -168,13 +184,19 @@ export class FinancialEngine {
                     valueToSum = round2(sale.totalCop || 0);
                 }
 
+                if (fiadoUsd !== 0 || casheaUsd !== 0) {
+                    valueToSum = currency === 'USD' ? residualUsd
+                        : currency === 'COP' ? mulR(residualUsd, sale.tasaCop || 0)
+                            : mulR(residualUsd, sale.fechaComercialTasa || sale.rate || 0);
+                }
                 if (!breakdown[method]) {
                     breakdown[method] = { total: 0, currency: currency, label: _resolveMethodLabel(method) };
                 }
                 breakdown[method].total = round2(breakdown[method].total + valueToSum);
             } else {
-                // Aggregate incoming payments (V2 sales)
-                sale.payments.forEach(p => {
+                // Native receipts remain on their original payment method; change is separate.
+                payments.forEach(p => {
+                    if (p.methodId === 'fiado' || p.methodId === 'cashea') return;
                     if (!breakdown[p.methodId]) {
                         // Resolver label de forma robusta:
                         // 1. methodLabel del objeto pago (nuevo formato)
@@ -191,24 +213,15 @@ export class FinancialEngine {
                         };
                     }
 
-                    // Use pre-computed amountUsd/amountBs; fallback with sale rate (NEVER hardcoded)
-                    const saleRate = sale.fechaComercialTasa || sale.rate || 1;
-                    const amountUsd = p.amountUsd !== undefined
-                        ? round2(p.amountUsd)
-                        : (p.currency === 'USD' ? round2(p.amount) : divR(p.amount, saleRate));
-                    const amountBs = p.amountBs !== undefined
-                        ? round2(p.amountBs)
-                        : (p.currency === 'BS' ? round2(p.amount) : mulR(p.amount, saleRate));
-
-                    if (p.currency === 'USD') {
-                        breakdown[p.methodId].total = round2(breakdown[p.methodId].total + amountUsd);
-                    } else if (p.currency === 'COP') {
-                        // Store native COP amount: convert back from USD using sale's tasaCop
-                        const copAmount = mulR(amountUsd, (sale.tasaCop || 1));
-                        breakdown[p.methodId].total = round2(breakdown[p.methodId].total + copAmount);
-                    } else {
-                        breakdown[p.methodId].total = round2(breakdown[p.methodId].total + amountBs);
+                    const currency = p.currency || 'BS';
+                    const saleRate = sale.fechaComercialTasa || sale.rate || 0;
+                    let nativeAmount = p.amount;
+                    if (nativeAmount == null) {
+                        nativeAmount = currency === 'USD' ? p.amountUsd
+                            : currency === 'COP' ? p.amountCop ?? mulR(p.amountUsd || 0, sale.tasaCop || 0)
+                                : p.amountBs ?? mulR(p.amountUsd || 0, saleRate);
                     }
+                    breakdown[p.methodId].total = round2(breakdown[p.methodId].total + round2(nativeAmount || 0));
                 });
             }
 
@@ -233,12 +246,6 @@ export class FinancialEngine {
                 }
             }
             
-            // If the sale was completely free/zero, any outgoing change is a glitch
-            if (round2(sale.totalUsd || 0) === 0 && round2(sale.totalBs || 0) === 0) {
-                safeChangeUsd = 0;
-                safeChangeBs = 0;
-            }
-
             if (safeChangeUsd !== 0) {
                 // Separate the USD change given back into its own positive/negative entry so the
                 // "Efectivo $" row never goes negative and the change is visible in the UI.

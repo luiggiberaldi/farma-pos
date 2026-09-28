@@ -236,7 +236,7 @@ class PrinterSerialService {
                 CMD.init,
                 CMD.alignCenter,
                 CMD.boldOn, CMD.sizeDouble,
-                encode('LISTO POS\n'),
+                encode('FARMA POS\n'),
                 CMD.sizeNormal, CMD.boldOff,
                 encode('Test de Impresion\n'),
                 encode('─────────────────────\n'),

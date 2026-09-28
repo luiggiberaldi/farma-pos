@@ -47,7 +47,7 @@ test('keeps an open cash session after midnight', () => {
   );
 });
 
-test('does not revive stale open sessions after the current shift is closed', () => {
+test('keeps an old shift open until it is manually closed', () => {
   const sales = [
     {
       id: 'stale-opening',
@@ -71,7 +71,12 @@ test('does not revive stale open sessions after the current shift is closed', ()
   const closed = sales.map(sale => sale.id === 'current-opening'
     ? { ...sale, cajaCerrada: true, cierreId: 123 }
     : sale);
-  assert.equal(getOpenCashSession(closed, now), null);
+  assert.equal(getOpenCashSession(closed, now).apertura.id, 'stale-opening');
+
+  const manuallyClosed = closed.map(sale => sale.id === 'stale-opening'
+    ? { ...sale, cajaCerrada: true, cierreId: 124 }
+    : sale);
+  assert.equal(getOpenCashSession(manuallyClosed, now), null);
 });
 
 test('excludes an accidental reopening and identifies orphaned historical movements', () => {

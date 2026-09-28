@@ -13,7 +13,12 @@ export function canManageInventory(usuario) {
 }
 
 export function canSeeAllSedes(usuario) {
-    return usuario?.rol === FARMACIA_ROLES.DUENO;
+    return canSeeCosts(usuario);
+}
+
+// Consultation does not authorize a branch switch; that requires a PIN action.
+export function canSeeConsolidatedReports(usuario) {
+    return canSeeCosts(usuario);
 }
 
 export function canManageUsers(usuario) {

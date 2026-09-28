@@ -1,8 +1,12 @@
 import React from 'react';
 
 const AVATAR_COLORS = {
+  DUENO: {
+    bg: 'bg-gradient-to-b from-indigo-500 to-violet-600 border-t-2 border-indigo-300 shadow-[0_6px_0_#4338ca,_0_12px_25px_rgba(79,70,229,0.4)]',
+    text: 'text-white font-black'
+  },
   ADMIN: { 
-    bg: 'bg-gradient-to-b from-sky-400 to-sky-500 border-t-2 border-sky-300 shadow-[0_6px_0_#0284c7,_0_12px_25px_rgba(14,165,233,0.4)]', 
+    bg: 'bg-gradient-to-b from-indigo-500 to-violet-600 border-t-2 border-indigo-300 shadow-[0_6px_0_#4338ca,_0_12px_25px_rgba(79,70,229,0.4)]',
     text: 'text-white font-black' 
   },
   CAJERO: { 

@@ -6,12 +6,21 @@ export function useProductFiltering(products, searchTerm, activeCategory, sortFi
     const filteredProducts = useMemo(() => {
         let result = products.filter(p => {
             const term = deferredSearchTerm.toLowerCase();
-            const matchesSearch = (p.name || '').toLowerCase().includes(term) || (p.barcode && p.barcode.toLowerCase().includes(term));
+            // Busca por nombre, código de barras y datos farmacéuticos
+            const haystack = [
+                p.name, p.barcode, p.genericName, p.laboratorio,
+                p.concentracion, p.presentacion
+            ].filter(Boolean).join(' ').toLowerCase();
+            const matchesSearch = haystack.includes(term);
+            const today = new Date().toISOString().slice(0, 10);
             if (activeCategory === 'bajo-stock') {
                 return matchesSearch && (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
             }
             if (activeCategory === 'duplicados') {
                 return matchesSearch && duplicateNames && duplicateNames.has((p.name || '').trim().toLowerCase());
+            }
+            if (activeCategory === 'vencidos') {
+                return matchesSearch && p.vencimiento && p.vencimiento <= today;
             }
             const matchesCategory = activeCategory === 'todos' || p.category === activeCategory;
             return matchesSearch && matchesCategory;

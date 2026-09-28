@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import ResetPasswordView from './views/ResetPasswordView.jsx'
-import EmailConfirmedView from './views/EmailConfirmedView.jsx'
+import AppRouter from './AppRouter.jsx'
 import { ToastProvider } from './components/Toast.jsx'
-import { supabaseCloud } from './config/supabaseCloud.js'
 import './index.css'
 
 // ── Capturar el prompt de instalación PWA lo antes posible ──
@@ -37,51 +34,6 @@ document.addEventListener('wheel', (e) => {
     e.preventDefault();
   }
 }, { passive: false });
-
-// Detectar token de recuperación en la URL al cargar (antes de React)
-function detectRecovery() {
-  const hash = window.location.hash;
-  const params = new URLSearchParams(window.location.search);
-  return hash.includes('type=recovery') || params.has('code');
-}
-
-// Detectar confirmación de email (type=signup en el hash de Supabase)
-function detectEmailConfirmed() {
-  return window.location.hash.includes('type=signup');
-}
-
-function AppRouter() {
-  const [isRecovery, setIsRecovery] = useState(detectRecovery);
-  const [isEmailConfirmed, setIsEmailConfirmed] = useState(detectEmailConfirmed);
-
-  useEffect(() => {
-    const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setIsRecovery(true);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (isEmailConfirmed) {
-    return (
-      <EmailConfirmedView
-        onDone={() => setIsEmailConfirmed(false)}
-      />
-    );
-  }
-
-  if (isRecovery) {
-    return (
-      <ResetPasswordView
-        onDone={() => {
-          window.history.replaceState({}, document.title, window.location.pathname);
-          setIsRecovery(false);
-        }}
-      />
-    );
-  }
-
-  return <App />;
-}
 
 import { ConfirmProvider } from './hooks/useConfirm.jsx'
 

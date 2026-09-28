@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Users, Plus, Search, User, X, Trash2, Pencil, Phone, RefreshCw, Save, ArrowDownRight, ArrowUpRight, Clock, CheckCircle2, CreditCard, ShoppingBag, Truck, Check, ArrowRightLeft, Ban } from 'lucide-react';
 import CasheaIcon from '../components/CasheaIcon';
-import { storageService } from '../utils/storageService';
+import { bindStorageContext } from '../utils/scopedStorage.js';
+import { customerCredit } from '../utils/salePlan.js';
 import { showToast } from '../components/Toast';
 import { formatBs, formatUsd } from '../utils/calculatorUtils';
 import { procesarImpactoCliente } from '../utils/financialLogic';
 import { round2, mulR, divR, subR } from '../utils/dinero';
 import TransactionModal from '../components/Customers/TransactionModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
+import { processLocalAdminOperation } from '../utils/localAdminOperations.js';
 import ConfirmModal from '../components/ConfirmModal';
 import EmptyState from '../components/EmptyState';
 import SwipeableItem from '../components/SwipeableItem';
@@ -23,13 +25,14 @@ import { AddSupplierModal, AddInvoiceModal, PayInvoiceModal, SupplierDetailsShee
 import { getActivePaymentMethods } from '../config/paymentMethods';
 
 export default function CustomersView({ triggerHaptic, rates, isActive }) {
+    const [storageService] = useState(bindStorageContext);
     const [customers, setCustomers] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all'); // 'all' | 'deuda' | 'favor'
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
     const usuarioActivo = useAuthStore(state => state.usuarioActivo);
-    const isAdmin = !usuarioActivo || usuarioActivo.rol === 'ADMIN';
+    const isAdmin = ['DUENO', 'ADMIN'].includes(usuarioActivo?.rol);
 
     // Modal de Abono / Crédito
     const [transactionModal, setTransactionModal] = useState({ isOpen: false, type: null, customer: null }); // type: 'ABONO' | 'CREDITO'
@@ -50,7 +53,9 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     // Guard: evita eliminar clientes con deuda o saldo a favor pendiente
     const handleDeleteCustomerRequest = (customer) => {
         const deuda = customer.deuda || 0;
-        const saldo = customer.saldoFavor || 0;
+        let saldo;
+        try { saldo = customerCredit(customer); } catch (error) { showToast(error.message, 'error'); return; }
+        if ((customer.casheaDeuda || 0) > 0) { showToast('El cliente tiene Cashea pendiente; no se puede eliminar.', 'error'); return; }
         if (deuda > 0.005) {
             showToast(`No se puede eliminar: ${customer.name} tiene una deuda de $${deuda.toFixed(2)} pendiente.`, 'error');
             return;
@@ -76,42 +81,64 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [deleteSupplierTarget, setDeleteSupplierTarget] = useState(null);
     const [supplierHistoryData, setSupplierHistoryData] = useState([]);
 
-    const loadData = async () => {
+    const loadSequence = useRef(0);
+    const loadData = useCallback(async () => {
+        const sequence = ++loadSequence.current;
         const [savedCustomers, savedSuppliers, savedInvoices, savedMethods] = await Promise.all([
             storageService.getItem('bodega_customers_v1', []),
             storageService.getItem('bodega_suppliers_v1', []),
             storageService.getItem('bodega_supplier_invoices_v1', []),
-            getActivePaymentMethods(),
+            getActivePaymentMethods(storageService.context),
         ]);
+        storageService.assertActive();
+        if (sequence !== loadSequence.current) return;
         setCustomers(savedCustomers);
         setSuppliers(savedSuppliers);
         setInvoices(savedInvoices);
-        setActivePaymentMethods(savedMethods);
-    };
+        setActivePaymentMethods(savedMethods.filter(method => method.currency !== 'COP'));
+    }, [storageService]);
 
     useEffect(() => {
-        loadData();
-    }, []);
-
-    // Re-sincronizar cuando el usuario navega a esta tab para reflejar cambios
-    // realizados por otras vistas (e.g. ventas fiadas, abonos desde el ticket)
-    useEffect(() => {
-        if (isActive) loadData();
-    }, [isActive]);
+        if (isActive === false) return;
+        const refresh = () => { void loadData().catch(error => showToast(error.message, 'error')); };
+        const timer = setTimeout(refresh, 0);
+        const onUpdate = event => {
+            if (['bodega_customers_v1', 'bodega_suppliers_v1', 'bodega_supplier_invoices_v1'].includes(event.detail?.key)) refresh();
+        };
+        window.addEventListener('app_storage_update', onUpdate);
+        return () => { clearTimeout(timer); loadSequence.current++; window.removeEventListener('app_storage_update', onUpdate); };
+    }, [isActive, loadData]);
 
     const saveCustomers = async (updatedCustomers) => {
-        setCustomers(updatedCustomers);
-        await storageService.setItem('bodega_customers_v1', updatedCustomers);
+        const expected = JSON.stringify(customers);
+        const saved = await storageService.transaction([{ name: 'customers', key: 'bodega_customers_v1', fallback: [] }], state => {
+            if (!isAdmin) throw new Error('No tienes permiso para editar clientes.');
+            if (JSON.stringify(state.customers) !== expected) throw new Error('Los clientes cambiaron. Recarga antes de guardar; no se sobrescribieron sus saldos.');
+            for (const current of state.customers) {
+                const next = updatedCustomers.find(item => item.id === current.id);
+                const balances = item => [Number(item.deuda || 0), customerCredit(item), Number(item.casheaDeuda || 0)];
+                if (!next && balances(current).some(value => value !== 0)) throw new Error('No se puede eliminar un cliente con saldo pendiente.');
+                if (next && JSON.stringify(balances(next)) !== JSON.stringify(balances(current))) throw new Error('Modifica saldos mediante un movimiento de cartera, no editando el perfil.');
+            }
+            return { writes: { customers: updatedCustomers }, result: updatedCustomers };
+        });
+        storageService.assertActive();
+        loadSequence.current++;
+        setCustomers(saved);
     };
 
     const saveSuppliers = async (updatedSuppliers) => {
-        setSuppliers(updatedSuppliers);
-        await storageService.setItem('bodega_suppliers_v1', updatedSuppliers);
-    };
-
-    const saveInvoices = async (updatedInvoices) => {
-        setInvoices(updatedInvoices);
-        await storageService.setItem('bodega_supplier_invoices_v1', updatedInvoices);
+        const expected = JSON.stringify(suppliers);
+        const result = await storageService.transaction([{ name: 'suppliers', key: 'bodega_suppliers_v1', fallback: [] }], state => {
+            if (!isAdmin || JSON.stringify(state.suppliers) !== expected) throw new Error('Los proveedores cambiaron o no tienes permiso. Recarga antes de guardar.');
+            for (const current of state.suppliers) {
+                const next = updatedSuppliers.find(item => item.id === current.id);
+                if (!next && Number(current.deuda || 0) !== 0) throw new Error('No se puede eliminar un proveedor con deuda.');
+                if (next && Number(next.deuda || 0) !== Number(current.deuda || 0)) throw new Error('Registra una factura o pago para modificar la deuda.');
+            }
+            return { writes: { suppliers: updatedSuppliers }, result: updatedSuppliers };
+        });
+        storageService.assertActive(); loadSequence.current++; setSuppliers(result);
     };
 
     // ── LOGICA DE PROVEEDORES ──
@@ -120,14 +147,15 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         let updated;
         if (editingSupplier) {
             updated = suppliers.map(s => s.id === supplierData.id ? supplierData : s);
-            showToast('Proveedor actualizado', 'success');
+            // Success is shown only after persistence.
             auditLog('PROVEEDOR', 'PROVEEDOR_EDITADO', `Proveedor "${supplierData.name}" actualizado`);
         } else {
             updated = [...suppliers, supplierData];
-            showToast('Proveedor agregado', 'success');
+            // Success is shown only after persistence.
             auditLog('PROVEEDOR', 'PROVEEDOR_CREADO', `Proveedor "${supplierData.name}" creado`);
         }
         await saveSuppliers(updated);
+        showToast('Proveedor guardado', 'success');
         setIsAddSupplierModalOpen(false);
         setEditingSupplier(null);
         if (selectedSupplier && selectedSupplier.id === supplierData.id) setSelectedSupplier(supplierData);
@@ -141,6 +169,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         const combined = [...supplierInvoices, ...supplierPayments]
             .sort((a, b) => new Date(b.date || b.timestamp) - new Date(a.date || a.timestamp));
             
+        storageService.assertActive();
         setSupplierHistoryData(combined);
     };
 
@@ -150,82 +179,41 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         refreshSupplierHistory(supplier.id);
     };
 
-    const handleAddInvoice = async (invoiceData) => {
-        triggerHaptic && triggerHaptic();
-        const updatedInvoices = [...invoices, invoiceData];
-        await saveInvoices(updatedInvoices);
-
-        // Actualizar deuda del proveedor
-        const supplier = suppliers.find(s => s.id === invoiceData.supplierId);
-        if (supplier) {
-            const updatedSupplier = { ...supplier, deuda: round2((supplier.deuda || 0) + invoiceData.amountUsd) };
-            const updatedSuppliers = suppliers.map(s => s.id === supplier.id ? updatedSupplier : s);
-            await saveSuppliers(updatedSuppliers);
-            setSelectedSupplier(updatedSupplier);
-        }
-        setIsAddInvoiceModalOpen(false);
-        showToast('Factura registrada', 'success');
-        auditLog('PROVEEDOR', 'FACTURA_REGISTRADA', `Factura $${invoiceData.amountUsd?.toFixed(2)} - ${suppliers.find(s => s.id === invoiceData.supplierId)?.name || '?'}`);
-        refreshSupplierHistory(invoiceData.supplierId);
+    const handleAddInvoice = async invoice => {
+        try {
+            const result = await processLocalAdminOperation('SUPPLIER_INVOICE', { invoice, operationId: `invoice_${invoice.id}`, storageContext: storageService.context });
+            storageService.assertActive(); loadSequence.current++;
+            setInvoices(result.invoices); setSuppliers(result.suppliers);
+            setSelectedSupplier(result.suppliers.find(item => item.id === invoice.supplierId));
+            setIsAddInvoiceModalOpen(false); showToast('Factura y deuda guardadas juntas', 'success'); triggerHaptic?.();
+        } catch (error) { showToast(error.message, 'error'); }
     };
 
+    const supplierRequest = useRef({ busy: false, intent: null, id: null });
     const handlePayInvoice = async (amountUsd, amountBs, methodId, currency) => {
-        triggerHaptic && triggerHaptic();
-        const supplier = selectedSupplier;
-        if (!supplier) return;
-
-        // 1. Descontar deuda
-        const updatedSupplier = { ...supplier, deuda: Math.max(0, round2((supplier.deuda || 0) - amountUsd)) };
-        const updatedSuppliers = suppliers.map(s => s.id === supplier.id ? updatedSupplier : s);
-        await saveSuppliers(updatedSuppliers);
-        setSelectedSupplier(updatedSupplier);
-
-        // 2. Registrar en Caja como Egreso
-        const sales = await storageService.getItem('bodega_sales_v1', []);
-        const openSession = getOpenCashSession(sales);
-        const movementNow = new Date();
-        const fechaComercial = openSession?.businessDate || getLocalISODate(movementNow);
-        const horaComercial = getLocalISOTime(movementNow);
-        const totalEnBs = currency === 'BS' ? amountBs : mulR(amountUsd, bcvRate);
-        const totalEnUsd = currency === 'USD' ? amountUsd : (bcvRate > 0 ? divR(amountBs, bcvRate) : 0);
-        const totalEnCop = currency === 'COP' ? amountBs : mulR(amountUsd, tasaCop);
-
-        const pagoRecord = {
-            id: crypto.randomUUID(),
-            timestamp: movementNow.toISOString(),
-            fechaComercial,
-            horaComercial,
-            tipo: 'PAGO_PROVEEDOR',
-            supplierId: supplier.id,
-            supplierName: supplier.name,
-            totalBs: -totalEnBs,
-            totalUsd: -totalEnUsd,
-            ...(copEnabled && { totalCop: -totalEnCop }),
-            paymentMethod: methodId,
-            payments: [{
-                methodId: methodId,
-                amountUsd: currency === 'USD' ? -totalEnUsd : 0,
-                amountBs: currency === 'BS' ? -totalEnBs : 0,
-                ...(copEnabled && { amountCop: currency === 'COP' ? -totalEnCop : 0 }),
-                currency: currency,
-                methodLabel: 'Pago a Proveedor'
-            }],
-            items: [{ name: `Pago a proveedor: ${supplier.name}`, qty: 1, priceUsd: -totalEnUsd, costBs: 0 }]
-        };
-        sales.push(pagoRecord);
-        await storageService.setItem('bodega_sales_v1', sales);
-
-        setIsPayInvoiceModalOpen(false);
-        showToast('Pago registrado correctamente', 'success');
-        auditLog('PROVEEDOR', 'PAGO_PROVEEDOR', `Pago $${amountUsd.toFixed(2)} a ${supplier.name}`);
-        refreshSupplierHistory(supplier.id);
+        if (!selectedSupplier || supplierRequest.current.busy) return;
+        const intent = JSON.stringify([selectedSupplier.id, amountUsd, amountBs, methodId, currency, bcvRate]);
+        if (supplierRequest.current.intent !== intent) supplierRequest.current = { busy: false, intent, id: crypto.randomUUID() };
+        supplierRequest.current.busy = true;
+        try {
+            const result = await processLocalAdminOperation('SUPPLIER_PAYMENT', {
+                supplierId: selectedSupplier.id, payment: { currency, methodId, amountInput: currency === 'USD' ? amountUsd : amountBs }, rate: bcvRate,
+                operationId: supplierRequest.current.id, storageContext: storageService.context,
+            });
+            storageService.assertActive(); loadSequence.current++;
+            setSuppliers(result.suppliers); setSelectedSupplier(result.suppliers.find(item => item.id === selectedSupplier.id));
+            setIsPayInvoiceModalOpen(false); showToast('Pago y deuda guardados juntos', 'success'); triggerHaptic?.();
+            supplierRequest.current = { busy: false, intent: null, id: null };
+            await refreshSupplierHistory(selectedSupplier.id);
+        } catch (error) { showToast(error.message, 'error'); }
+        finally { supplierRequest.current.busy = false; }
     };
 
     const filteredCustomers = customers.filter(c => {
         const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm));
         if (!matchesSearch) return false;
         if (filterType === 'deuda') return c.deuda > 0.01;
-        if (filterType === 'favor') return c.deuda < -0.01;
+        if (filterType === 'favor') { try { return customerCredit(c) > 0.01; } catch { return false; } }
         return true;
     });
 
@@ -245,70 +233,42 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
         setResetBalanceCustomer(customer);
     };
 
-    const confirmResetBalance = async () => {
-        const customer = resetBalanceCustomer;
+    const adjustCustomer = async (customer, action) => {
         if (!customer) return;
-
-        const updatedCustomer = { ...customer, deuda: 0, favor: 0 };
-        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
-        await saveCustomers(newCustomers);
-        showToast(`Saldo reiniciado a cero para ${customer.name}`, 'success');
-        auditLog('CLIENTE', 'DEUDA_CONDONADA', `Saldo reiniciado a $0 para ${customer.name}`);
-        setResetBalanceCustomer(null);
+        try {
+            const result = await processLocalAdminOperation('CUSTOMER_ADJUSTMENT', { customerId: customer.id, action,
+                expectedBalances: [Number(customer.deuda || 0), customerCredit(customer), Number(customer.casheaDeuda || 0)], storageContext: storageService.context });
+            storageService.assertActive(); loadSequence.current++; setCustomers(result.customers);
+            setSelectedCustomer(result.customers.find(item => item.id === customer.id));
+            showToast('Conciliación manual guardada con huella; no representa un cobro externo.', 'success');
+            setResetBalanceCustomer(null); triggerHaptic?.();
+        } catch (error) { showToast(error.message, 'error'); }
     };
+    const confirmResetBalance = () => adjustCustomer(resetBalanceCustomer, 'FORGIVE');
+    const convertDeudaToCashea = customer => adjustCustomer(customer, 'TO_CASHEA');
+    const clearCasheaDeuda = customer => adjustCustomer(customer, 'SETTLE_CASHEA');
 
-    const convertDeudaToCashea = async (customer) => {
-        if (!customer || customer.deuda <= 0) return;
-        const amount = round2(customer.deuda);
-        const updatedCustomer = {
-            ...customer,
-            deuda: 0,
-            casheaDeuda: round2((customer.casheaDeuda || 0) + amount)
-        };
-        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
-        await saveCustomers(newCustomers);
-        setSelectedCustomer(updatedCustomer);
-        showToast(`$${formatUsd(amount)} convertido de Fiado a Cashea para ${customer.name}`, 'success');
-        auditLog('CLIENTE', 'DEUDA_A_CASHEA', `Deuda $${formatUsd(amount)} convertida a Cashea para ${customer.name}`);
-        triggerHaptic && triggerHaptic();
-    };
-
-    const clearCasheaDeuda = async (customer) => {
-        if (!customer || (customer.casheaDeuda || 0) <= 0) return;
-        const amount = round2(customer.casheaDeuda);
-        const updatedCustomer = { ...customer, casheaDeuda: 0 };
-        const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
-        await saveCustomers(newCustomers);
-        setSelectedCustomer(updatedCustomer);
-        showToast(`Deuda Cashea de $${formatUsd(amount)} saldada para ${customer.name}`, 'success');
-        auditLog('CLIENTE', 'CASHEA_SALDADA', `Deuda Cashea $${formatUsd(amount)} puesta en 0 para ${customer.name}`);
-        triggerHaptic && triggerHaptic();
-    };
-
+    const transactionRequest = useRef({ busy: false, intent: null, id: null });
     const handleTransaction = async () => {
-        if (!transactionAmount || isNaN(transactionAmount) || parseFloat(transactionAmount) <= 0) return;
-        triggerHaptic();
-
-        const { newCustomers } = await processCustomerTransaction({
-            transactionAmount,
-            currencyMode,
-            type: transactionModal.type,
-            customer: transactionModal.customer,
-            paymentMethod,
-            bcvRate,
-            tasaCop,
-            copEnabled
-        });
-
-        await saveCustomers(newCustomers);
-        showToast(`Operación de ${transactionModal.type} exitosa`, 'success');
-        auditLog('CLIENTE', transactionModal.type === 'ABONO' ? 'ABONO_REGISTRADO' : 'CREDITO_REGISTRADO', `${transactionModal.type} de ${transactionAmount} ${currencyMode} para ${transactionModal.customer?.name}`);
-
-        // Cerrar modal
-        setTransactionModal({ isOpen: false, type: null, customer: null });
-        setTransactionAmount('');
-        setCurrencyMode('BS');
-        setPaymentMethod('efectivo_bs');
+        if (transactionRequest.current.busy || !transactionAmount || !Number.isFinite(Number(transactionAmount)) || Number(transactionAmount) <= 0) return;
+        const intent = JSON.stringify([transactionModal.type, transactionModal.customer?.id, transactionAmount, currencyMode, paymentMethod, bcvRate]);
+        if (intent !== transactionRequest.current.intent) transactionRequest.current = { busy: false, intent, id: crypto.randomUUID() };
+        transactionRequest.current.busy = true;
+        try {
+            triggerHaptic?.();
+            const { newCustomers } = await processCustomerTransaction({
+                transactionAmount, currencyMode, type: transactionModal.type, customer: transactionModal.customer,
+                paymentMethod, bcvRate, tasaCop, copEnabled, operationId: transactionRequest.current.id, storageContext: storageService.context,
+            });
+            storageService.assertActive();
+            loadSequence.current++;
+            setCustomers(newCustomers);
+            showToast(`Operación de ${transactionModal.type} guardada`, 'success');
+            setTransactionModal({ isOpen: false, type: null, customer: null });
+            setTransactionAmount(''); setCurrencyMode('BS'); setPaymentMethod('efectivo_bs');
+            transactionRequest.current = { busy: false, intent: null, id: null };
+        } catch (error) { showToast(error.message || 'No se confirmó la operación.', 'error'); }
+        finally { transactionRequest.current.busy = false; }
     };
 
     if (activeTab === 'proveedores') {

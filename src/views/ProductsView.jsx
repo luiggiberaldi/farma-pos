@@ -1,20 +1,20 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { storageService } from '../utils/storageService';
+import { bindStorageContext } from '../utils/scopedStorage.js';
 import { showToast } from '../components/Toast';
-import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check } from 'lucide-react';
+import { Package, Plus, Trash2, X, Store, Tag, Pencil, Banknote, Search, ChevronLeft, ChevronRight, AlertTriangle, Box, LayoutGrid, List, Minus, ArrowUpDown, Clock, Percent, Printer, CheckSquare, Check, ArrowLeftRight, RefreshCw } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { ProductShareModal } from '../components/ProductShareModal';
-
-import ShareInventoryModal from '../components/ShareInventoryModal';
 import { formatBs, formatUsd, smartCashRounding } from '../utils/calculatorUtils';
 import { generarEtiquetas } from '../utils/ticketGenerator';
 import { useWallet } from '../hooks/useWallet';
 import { BODEGA_CATEGORIES, UNITS, CATEGORY_COLORS } from '../config/categories';
+import { markSeedDone, upgradePharmacyCatalogIfNeeded } from '../config/pharmacySeed.js';
 import ProductCard from '../components/Products/ProductCard';
 import ProductFormModal from '../components/Products/ProductFormModal';
 import ConfirmModal from '../components/ConfirmModal';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
+import TransferenciasModal from '../components/Products/TransferenciasModal';
 import { useProductContext } from '../context/ProductContext';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
@@ -22,14 +22,28 @@ import SwipeableItem from '../components/SwipeableItem';
 import { useInventoryVelocity } from '../hooks/useInventoryVelocity';
 import { useProductFiltering } from '../hooks/useProductFiltering';
 import { buildProductPayload } from '../utils/productProcessor';
+import { processLocalAdminOperation } from '../utils/localAdminOperations.js';
+import { crearHuella } from '../utils/huella';
+import { getLocalISODate } from '../utils/dateHelpers';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { useAudit } from '../hooks/useAudit';
 import { pushCloudSync } from '../hooks/useCloudSync';
 
+// Campos que se comparan en la huella de edición (antes/después)
+const PRODUCT_SNAPSHOT_FIELDS = [
+    'name', 'priceUsdt', 'costUsd', 'costBs', 'stock', 'category',
+    'genericName', 'laboratorio', 'concentracion', 'presentacion',
+    'requiresPrescription', 'isControlled', 'requiresRefrigeration', 'vencimiento'
+];
+const pickProductSnapshot = (p) =>
+    Object.fromEntries(PRODUCT_SNAPSHOT_FIELDS.map(f => [f, p?.[f] ?? null]));
+
 export const ProductsView = ({ rates, triggerHaptic }) => {
+    const [storageService] = useState(bindStorageContext);
+    const storageContext = storageService.context;
     // ─── STATE DEL HOOK ─────────────────────────────────────
     const {
-        products, setProducts,
+        products, setProducts, adoptCommittedProducts, saveError, retryProductSave, recoverCommittedInventory,
         categories, setCategories,
         isLoadingProducts,
         streetRate, setStreetRate,
@@ -37,41 +51,26 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         customRate, setCustomRate,
         effectiveRate,
         copEnabled,
-        tasaCop,
-        adjustStock: baseAdjustStock
+        tasaCop
     } = useProductContext();
     const isCajero = useAuthStore(s => s.usuarioActivo)?.rol === 'CAJERO';
     const { log: auditLog } = useAudit();
 
-    // Envolver adjustStock para incluir registro de movimiento + haptic
     const adjustStock = async (productId, delta) => {
-        baseAdjustStock(productId, delta);
-        triggerHaptic && triggerHaptic();
-
-        // Registro silencioso del ajuste de inventario
         try {
-            const product = products.find(p => p.id === productId);
-            const record = {
-                id: `adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                timestamp: new Date().toISOString(),
-                tipo: delta > 0 ? 'AJUSTE_ENTRADA' : 'AJUSTE_SALIDA',
-                items: [{ id: productId, name: product?.name || 'Producto', qty: Math.abs(delta) }],
-                totalUsd: 0,
-                totalBs: 0,
-                status: 'COMPLETADA',
-            };
-            const sales = await storageService.getItem('bodega_sales_v1', []);
-            sales.push(record);
-            await storageService.setItem('bodega_sales_v1', sales);
-        } catch (e) { /* silencioso */ }
-    }
+            const product = products.find(item => item.id === productId);
+            const result = await processLocalAdminOperation('ADJUST_STOCK', { productId, delta, expectedStock: product?.stock, storageContext });
+            storageService.assertActive(); adoptCommittedProducts(result.products); triggerHaptic?.();
+            return true;
+        } catch (error) { showToast(error.message, 'error'); return false; }
+    };
 
     // Modal UI States
     const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    const [isShareOpen, setIsShareOpen] = useState(false);
     const [isBulkPriceOpen, setIsBulkPriceOpen] = useState(false);
+    const [isTransferenciasOpen, setIsTransferenciasOpen] = useState(false);
     const [deleteCategoryConfirmId, setDeleteCategoryConfirmId] = useState(null);
 
     // Share State
@@ -122,10 +121,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     // Pendientes de confirmación en vista lista
     const [pendingDeltas, setPendingDeltas] = useState({});
     const adjustPending = (id, d) => setPendingDeltas(prev => ({ ...prev, [id]: (prev[id] || 0) + d }));
-    const confirmPending = (id) => {
-        const d = pendingDeltas[id];
-        if (d) { adjustStock(id, d); }
-        setPendingDeltas(prev => { const n = { ...prev }; delete n[id]; return n; });
+    const confirmPending = async (id) => {
+        const delta = pendingDeltas[id];
+        if (delta && !await adjustStock(id, delta)) return;
+        setPendingDeltas(prev => { const next = { ...prev }; delete next[id]; return next; });
     };
     const cancelPending = (id) => setPendingDeltas(prev => { const n = { ...prev }; delete n[id]; return n; });
     
@@ -175,6 +174,15 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [packagingType, setPackagingType] = useState('suelto');
     const [stockInLotes, setStockInLotes] = useState('');
     const [granelUnit, setGranelUnit] = useState('kg');
+    // Datos farmacéuticos (F3.4)
+    const [genericName, setGenericName] = useState('');
+    const [laboratorio, setLaboratorio] = useState('');
+    const [concentracion, setConcentracion] = useState('');
+    const [presentacion, setPresentacion] = useState('');
+    const [requiresPrescription, setRequiresPrescription] = useState(false);
+    const [isControlled, setIsControlled] = useState(false);
+    const [requiresRefrigeration, setRequiresRefrigeration] = useState(false);
+    const [vencimiento, setVencimiento] = useState('');
     
     // UI states
     const [isFormShaking, setIsFormShaking] = useState(false);
@@ -183,13 +191,30 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // Form State (Category create)
     const [newCategoryName, setNewCategoryName] = useState('');
-    const [newCategoryIcon, setNewCategoryIcon] = useState('📦');
+    const [newCategoryIcon, setNewCategoryIcon] = useState('');
 
     // Delete State
     const [deleteId, setDeleteId] = useState(null);
     const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
     const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
     const [productMovements, setProductMovements] = useState([]);
+
+    // ─── LOTES (F3.6): por producto y lista global para vencimientos ───
+    const [lotes, setLotes] = useState([]);
+    const [lotesProducto, setLotesProducto] = useState([]);
+
+    useEffect(() => {
+        let alive = true;
+        storageService.getItem('farmacia_lotes_v1', []).then(list => { if (alive) setLotes(list); });
+        // El FEFO en checkout descarga lotes: mantener el panel y el formulario al día
+        const handler = (e) => {
+            if (e.detail?.key === 'farmacia_lotes_v1') {
+                storageService.getItem('farmacia_lotes_v1', []).then(list => setLotes(list));
+            }
+        };
+        window.addEventListener('app_storage_update', handler);
+        return () => { alive = false; window.removeEventListener('app_storage_update', handler); };
+    }, []);
 
     // ─── SALES VELOCITY (Días de Inventario) ────────────────
     const { salesVelocityMap } = useInventoryVelocity(products.length);
@@ -230,6 +255,25 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // Low stock count
     const lowStockCount = products.filter(p => (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0).length;
+
+    // Panel de vencimientos (F3.6): productos y lotes por vencer (≤60 días)
+    const todayStr = getLocalISODate();
+    const vencidosCount = products.filter(p => p.vencimiento && p.vencimiento <= todayStr).length;
+    const porVencer = useMemo(() => {
+        const limite = new Date(); limite.setDate(limite.getDate() + 60);
+        const limiteStr = getLocalISODate(limite);
+        const porProducto = products
+            .filter(p => p.vencimiento && p.vencimiento > todayStr && p.vencimiento <= limiteStr)
+            .map(p => ({ nombre: p.name, vencimiento: p.vencimiento, lote: null }));
+        const porLote = lotes
+            .filter(l => l.cantidad > 0 && l.vencimiento && l.vencimiento > todayStr && l.vencimiento <= limiteStr)
+            .map(l => ({
+                nombre: products.find(p => p.id === l.productoId)?.name || 'Producto',
+                vencimiento: l.vencimiento,
+                lote: l.numeroLote,
+            }));
+        return [...porProducto, ...porLote].sort((a, b) => a.vencimiento.localeCompare(b.vencimiento));
+    }, [products, lotes, todayStr]);
 
     // ─── IMAGE HANDLER ──────────────────────────────────────
 
@@ -282,7 +326,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // ─── CRUD ───────────────────────────────────────────────
 
-    const handleSave = () => {
+    const handleSave = async () => {
         triggerHaptic && triggerHaptic();
         if (!name || (!priceUsd && !priceBs)) {
             setIsFormShaking(true);
@@ -296,31 +340,52 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             showToast('Sin costo registrado — la ganancia no se calculará', 'warning');
         }
 
+        try {
+        const expectedProducts = JSON.stringify(products);
+        const saveCheckedProducts = updated => setProducts(current => {
+            if (JSON.stringify(current) !== expectedProducts) throw new Error('El inventario cambió mientras editabas. Recarga el producto antes de guardar.');
+            return updated;
+        });
         const productData = buildProductPayload({
             name, barcode, priceUsd, priceBs, costUsd, costBs, stock, stockInLotes,
             packagingType, unitsPerPackage, granelUnit, sellByUnit, unitPriceUsd,
-            category, lowStockAlert
+            category, lowStockAlert,
+            genericName, laboratorio, concentracion, presentacion,
+            requiresPrescription, isControlled, requiresRefrigeration, vencimiento
         }, effectiveRate);
 
         if (editingId) {
+            const prev = products.find(p => p.id === editingId);
+            const huella = await crearHuella({ context: storageContext,
+                tipo: 'EDICION', ref: editingId,
+                usuario: useAuthStore.getState().usuarioActivo,
+                detalle: { nombre: name, antes: pickProductSnapshot(prev), despues: pickProductSnapshot(productData) }
+            });
             const updated = products.map(p =>
-                p.id === editingId ? { ...p, ...productData, image } : p
+                p.id === editingId ? { ...p, ...productData, image, huella } : p
             );
-            setProducts(updated);
-            pushCloudSync('bodega_products_v1', updated).catch(() => {});
-            auditLog('INVENTARIO', 'PRODUCTO_EDITADO', `Producto "${name}" editado`);
+            storageService.assertActive();
+            await saveCheckedProducts(updated);
+            auditLog('INVENTARIO', 'PRODUCTO_EDITADO', `Producto "${name}" editado [${huella.correlativo}]`, null, { correlativo: huella.correlativo });
         } else {
+            const huella = await crearHuella({ context: storageContext,
+                tipo: 'EDICION', ref: null,
+                usuario: useAuthStore.getState().usuarioActivo,
+                detalle: { nombre: name }
+            });
             const updated = [{
                 id: crypto.randomUUID(),
                 ...productData,
                 image,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                huella
             }, ...products];
-            setProducts(updated);
-            pushCloudSync('bodega_products_v1', updated).catch(() => {});
-            auditLog('INVENTARIO', 'PRODUCTO_CREADO', `Producto "${name}" creado - $${priceUsd || '0'}`);
+            storageService.assertActive();
+            await saveCheckedProducts(updated);
+            auditLog('INVENTARIO', 'PRODUCTO_CREADO', `Producto "${name}" creado - $${priceUsd || '0'} [${huella.correlativo}]`, null, { correlativo: huella.correlativo });
         }
         handleClose();
+        } catch (error) { showToast(error.message || 'No se pudo guardar el producto.', 'error'); }
     };
 
     const handleEdit = async (product) => {
@@ -347,6 +412,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         setCategory(product.category || 'otros');
         setLowStockAlert(product.lowStockAlert ?? 5);
         setImage(product.image);
+        setGenericName(product.genericName || '');
+        setLaboratorio(product.laboratorio || '');
+        setConcentracion(product.concentracion || '');
+        setPresentacion(product.presentacion || '');
+        setRequiresPrescription(Boolean(product.requiresPrescription));
+        setIsControlled(Boolean(product.isControlled));
+        setRequiresRefrigeration(Boolean(product.requiresRefrigeration));
+        setVencimiento(product.vencimiento || '');
 
         // Derive packagingType from legacy unit
         const u = product.unit || 'unidad';
@@ -361,16 +434,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             setPackagingType('suelto');
         }
 
-        // Stock in lotes
-        if (product.stockInLotes) {
-            setStockInLotes(product.stockInLotes.toString());
-        } else if (u === 'paquete' && product.unitsPerPackage && product.stock) {
-            setStockInLotes(Math.floor(product.stock / (product.unitsPerPackage || 1)).toString());
-        } else {
-            setStockInLotes('');
-        }
+        // The editor always asks for physical base units. Never reuse a stale
+        // cached package count that would reset stock after a sale.
+        setStockInLotes('');
 
         if (u === 'kg' || u === 'litro') setGranelUnit(u);
+
+        // Lotes del producto (F3.6)
+        setLotesProducto(lotes.filter(l => l.productoId === product.id));
 
         setIsModalOpen(true);
 
@@ -397,19 +468,44 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         }
     };
 
+    // ─── LOTES: guardar y ajustar (cada escritura con huella) ───
+    const guardarLote = async nuevoLote => {
+        if (!editingId) return;
+        try {
+            const result = await processLocalAdminOperation('ADD_LOT', { productId: editingId, quantity: Number(nuevoLote.cantidad),
+                number: nuevoLote.numeroLote, expiry: nuevoLote.vencimiento, expectedStock: products.find(item => item.id === editingId)?.stock, storageContext });
+            storageService.assertActive();
+            setLotes(result.lots); setLotesProducto(result.lots.filter(lot => lot.productoId === editingId));
+            showToast('Stock asignado al lote con trazabilidad', 'success'); return true;
+        } catch (error) { showToast(error.message, 'error'); return false; }
+    };
+    const ajustarCantidadLote = async (lotId, quantity, expectedQuantity) => {
+        try {
+            const result = await processLocalAdminOperation('SET_LOT', { productId: editingId, lotId, quantity: Number(quantity), expectedQuantity, storageContext });
+            storageService.assertActive(); adoptCommittedProducts(result.products);
+            setStock(result.products.find(item => item.id === editingId)?.stock ?? '');
+            setLotes(result.lots); setLotesProducto(result.lots.filter(lot => lot.productoId === editingId));
+        } catch (error) { showToast(error.message, 'error'); }
+    };
+
     const handleDelete = (id) => { triggerHaptic && triggerHaptic(); setDeleteId(id); };
-    const confirmDelete = () => {
-        if (deleteId) {
-            const p = products.find(x => x.id === deleteId);
-            auditLog('INVENTARIO', 'PRODUCTO_ELIMINADO', `Producto "${p?.name || '?'}" eliminado`);
-            setProducts(products.filter(p => p.id !== deleteId)); setDeleteId(null); triggerHaptic && triggerHaptic();
-        }
+    const confirmDelete = async () => {
+        if (!deleteId) return;
+        const product = products.find(item => item.id === deleteId);
+        try {
+            await setProducts(products.filter(item => item.id !== deleteId));
+            auditLog('INVENTARIO', 'PRODUCTO_ELIMINADO', `Producto "${product?.name || '?'}" eliminado`);
+            setDeleteId(null); triggerHaptic?.();
+        } catch (error) { showToast(error.message, 'error'); }
     };
 
     const handleClose = () => {
         setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setEditingId(null); setIsModalOpen(false);
         setPackagingType('suelto'); setStockInLotes(''); setGranelUnit('kg');
+        setGenericName(''); setLaboratorio(''); setConcentracion(''); setPresentacion('');
+        setRequiresPrescription(false); setIsControlled(false); setRequiresRefrigeration(false); setVencimiento('');
         setProductMovements([]);
+        setLotesProducto([]);
     };
 
     // Gestionar Categorias
@@ -430,7 +526,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
         setCategories([...categories, newCat]);
         setNewCategoryName('');
-        setNewCategoryIcon('📦');
+        setNewCategoryIcon('package');
         triggerHaptic && triggerHaptic();
     };
 
@@ -463,7 +559,13 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     return (
         <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 p-3 sm:p-4 lg:p-4 overflow-y-auto">
-
+            {saveError && <section role="alert" className="mb-3 space-y-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-950 dark:text-amber-100">
+                <p className="font-semibold">No se guardó el inventario</p><p>{saveError}</p>
+                <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => { void Promise.resolve(retryProductSave()).catch(() => {}); }} className="rounded-lg border border-amber-500 px-3 py-2 font-semibold">Reintentar guardado</button>
+                    <button type="button" onClick={() => { void recoverCommittedInventory().catch(error => showToast(error.message, 'error')); }} className="rounded-lg border border-amber-500 px-3 py-2 font-semibold">Conservar borrador y recargar</button>
+                </div>
+            </section>}
             {/* Header — Fila 1: Título + Acciones */}
             <div className="shrink-0 mb-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -472,6 +574,12 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         <h2 className="text-lg sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight truncate">Inventario</h2>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                        {!isCajero && (
+                            <button onClick={() => { triggerHaptic && triggerHaptic(); setIsTransferenciasOpen(true); }}
+                                className="p-2 bg-teal-100 dark:bg-teal-900/30 text-teal-500 dark:text-teal-400 rounded-xl transition-all active:scale-95" title="Transferencias entre sedes">
+                                <ArrowLeftRight size={16} strokeWidth={2.5} />
+                            </button>
+                        )}
                         {products.length > 0 && !isCajero && (
                             <>
                                 <button onClick={() => { triggerHaptic && triggerHaptic(); setIsBulkPriceOpen(true); }}
@@ -506,13 +614,33 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                     >
                         <CheckSquare size={12} /> <span className="hidden sm:inline">Seleccionar todo</span><span className="sm:hidden">Todos</span>
                     </button>
+                    <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+                    <button 
+                        onClick={async () => { 
+                            triggerHaptic && triggerHaptic(); 
+                            try {
+                                const upgraded = await upgradePharmacyCatalogIfNeeded(storageService, storageContext, true);
+                                if (upgraded) {
+                                    showToast('Catálogo y fotos de estudio sincronizados', 'success');
+                                } else {
+                                    showToast('El catálogo ya está al día', 'info');
+                                }
+                            } catch (e) {
+                                showToast('Error al sincronizar catálogo', 'error');
+                            }
+                        }}
+                        title="Sincronizar nombres corregidos y fotografías de estudio de alta definición"
+                        className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors active:scale-95"
+                    >
+                        <RefreshCw size={12} /> <span className="hidden sm:inline">Sincronizar Fotos & Catálogo</span><span className="sm:hidden">Sincronizar</span>
+                    </button>
                     {lowStockCount > 0 && (
                         <>
                             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
                             <button
                                 onClick={() => { handleSetActiveCategory('bajo-stock'); triggerHaptic && triggerHaptic(); }}
                                 className="text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors">
-                                ⚠️ {lowStockCount} bajo stock
+                                Bajo stock · {lowStockCount}
                             </button>
                         </>
                     )}
@@ -526,6 +654,16 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             </button>
                         </>
                     )}
+                    {vencidosCount > 0 && (
+                        <>
+                            <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
+                            <button
+                                onClick={() => { handleSetActiveCategory('vencidos'); triggerHaptic && triggerHaptic(); }}
+                                className="text-[10px] font-bold bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors">
+                                Vencidos · {vencidosCount}
+                            </button>
+                        </>
+                    )}
                     <div className="ml-auto" />
                     <button
                         onClick={toggleViewMode}
@@ -535,6 +673,26 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         {viewMode === 'grid' ? <List size={16} /> : <LayoutGrid size={16} />}
                     </button>
                 </div>
+
+                {/* Panel de vencimientos (F3.6): próximos a vencer */}
+                {porVencer.length > 0 && (
+                    <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200/60 dark:border-amber-800/30 rounded-xl px-3 py-2">
+                        <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                            Por vencer (≤60 días) · {porVencer.length} producto(s)
+                        </p>
+                        <div className="mt-1 space-y-0.5 max-h-24 overflow-y-auto">
+                            {porVencer.slice(0, 8).map(p => (
+                                <div key={p.id} className="flex justify-between text-[11px]">
+                                    <span className="font-bold text-slate-600 dark:text-slate-300 truncate pr-2">{p.name}</span>
+                                    <span className="text-amber-600 dark:text-amber-400 font-bold shrink-0">vence {p.vencimiento}</span>
+                                </div>
+                            ))}
+                            {porVencer.length > 8 && (
+                                <p className="text-[10px] text-amber-500/70 font-bold">+ {porVencer.length - 8} más...</p>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Category Filter Pills — horizontal scroll with fade */}
                 <div className="relative">
@@ -844,6 +1002,18 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 packagingType={packagingType} setPackagingType={setPackagingType}
                 stockInLotes={stockInLotes} setStockInLotes={setStockInLotes}
                 granelUnit={granelUnit} setGranelUnit={setGranelUnit}
+                genericName={genericName} setGenericName={setGenericName}
+                laboratorio={laboratorio} setLaboratorio={setLaboratorio}
+                concentracion={concentracion} setConcentracion={setConcentracion}
+                presentacion={presentacion} setPresentacion={setPresentacion}
+                requiresPrescription={requiresPrescription} setRequiresPrescription={setRequiresPrescription}
+                isControlled={isControlled} setIsControlled={setIsControlled}
+                requiresRefrigeration={requiresRefrigeration} setRequiresRefrigeration={setRequiresRefrigeration}
+                vencimiento={vencimiento} setVencimiento={setVencimiento}
+                lotesProducto={editingId ? lotesProducto : null}
+                stockProducto={products.find(p => p.id === editingId)?.stock ?? 0}
+                onGuardarLote={guardarLote}
+                onAjustarLote={ajustarCantidadLote}
                 effectiveRate={effectiveRate}
                 copEnabled={copEnabled}
                 tasaCop={tasaCop}
@@ -852,6 +1022,14 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 handleSave={handleSave}
                 categories={categories}
                 productMovements={editingId ? productMovements : null}
+            />
+
+            {/* Transferencias entre sedes (F3.8) */}
+            <TransferenciasModal
+                isOpen={isTransferenciasOpen}
+                onClose={() => setIsTransferenciasOpen(false)}
+                products={products}
+                onProductsUpdated={adoptCommittedProducts}
             />
 
             {/* Share Modal */}
@@ -879,7 +1057,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             </Modal>
 
             {/* Modal de Confirmación Borrado Total */}
-            <Modal isOpen={isDeleteAllModalOpen} onClose={() => { setIsDeleteAllModalOpen(false); setDeleteAllConfirmText(''); }} title="⚠️ Borrado de Inventario">
+            <Modal isOpen={isDeleteAllModalOpen} onClose={() => { setIsDeleteAllModalOpen(false); setDeleteAllConfirmText(''); }} title="Borrado de Inventario">
                 <div className="p-4 flex flex-col items-center text-center">
                     <div className="w-16 h-16 bg-red-100 dark:bg-red-900/40 text-red-500 rounded-full flex items-center justify-center mb-4">
                         <Trash2 size={32} />
@@ -915,10 +1093,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                             triggerHaptic && triggerHaptic();
                             if (deleteAllConfirmText.trim().toUpperCase() === 'BORRAR') {
                                 const count = products.length;
-                                // Borrar de storage primero para garantizar persistencia
-                                await storageService.setItem('bodega_products_v1', []);
-                                // Luego actualizar el estado React
-                                setProducts([]);
+                                try { await setProducts([]); } catch { return; }
+                                // El vaciado es permanente: la sede queda marcada y la
+                                // semilla del catálogo no vuelve a ejecutarse jamás aquí.
+                                try { await markSeedDone(storageService, storageContext); } catch { /* No re-siembra aunque falle la marca. */ }
                                 auditLog('INVENTARIO', 'BORRADO_TOTAL', `Borrado total: ${count} productos eliminados`);
                                 setIsDeleteAllModalOpen(false);
                                 setDeleteAllConfirmText('');
@@ -932,11 +1110,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 </div>
             </Modal>
 
-
-
-            <ShareInventoryModal
-                isOpen={isShareOpen} onClose={() => setIsShareOpen(false)}
-            />
             <BulkPriceAdjustModal
                 isOpen={isBulkPriceOpen}
                 onClose={() => setIsBulkPriceOpen(false)}

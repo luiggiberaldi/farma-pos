@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, ChevronRight, Copy, Check, RotateCcw } from 'lucide-react';
-import { supabaseCloud as supabase } from '../config/supabaseCloud';
+import { SUPABASE_FREE_PROFILE } from '../config/supabaseFreeTier.js';
+import { ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY, captureStorageContext, isStorageContextActive } from '../config/storageScope.js';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
 
 export default function SyncStatus() {
-    const [isOnline, setIsOnline] = useState(navigator.onLine);
+    const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
     const [pendingCount, setPendingCount] = useState(0);
     const [failedCount, setFailedCount] = useState(0);
     const [showFailedBanner, setShowFailedBanner] = useState(false);
@@ -13,42 +15,21 @@ export default function SyncStatus() {
     const [failedItems, setFailedItems] = useState([]);
     const [copied, setCopied] = useState(false);
 
-    const checkHealth = async () => {
-        if (!navigator.onLine) {
-            setIsOnline(false);
-            return;
-        }
-        try {
-            const pingPromise = supabase.from('sync_documents').select('doc_id').limit(1);
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
-            const result = await Promise.race([pingPromise, timeoutPromise]);
-            if (result.error) throw result.error;
-            setIsOnline(true);
-            offlineQueueService.syncPendingSales().catch(() => {});
-        } catch (err) {
-            setIsOnline(false);
-        }
-    };
-
-    const checkQueue = async () => {
-        try {
-            const queue = await offlineQueueService.getQueue();
-            const pending = queue.filter(q => q.sync_status === 'pending');
-            const failed = queue.filter(q => q.sync_status === 'failed');
-            setPendingCount(pending.length);
-            setFailedCount(failed.length);
-            setFailedItems(failed);
-            if (failed.length > 0) setShowFailedBanner(true);
-        } catch(err) {
-            console.error('[SyncStatus] Error al leer cola', err);
-        }
-    };
+    const refreshQueueRef = useRef(() => {});
+    const queueReadRef = useRef(null);
+    const instanceRef = useRef(null);
+    const copyTimerRef = useRef(null);
+    const checkQueue = () => refreshQueueRef.current();
 
     const [isRetrying, setIsRetrying] = useState(false);
 
     const handleDismissFailed = async (e) => {
         e.stopPropagation();
+        if (REMOTE_OPERATIONS_PAUSED) return;
+        const instance = instanceRef.current;
+        const context = captureStorageContext();
         await offlineQueueService.dismissFailed();
+        if (instanceRef.current !== instance || !isStorageContextActive(context)) return;
         setFailedCount(0);
         setFailedItems([]);
         setShowFailedBanner(false);
@@ -57,13 +38,17 @@ export default function SyncStatus() {
 
     const handleRetryFailed = async (e) => {
         e.stopPropagation();
+        if (REMOTE_OPERATIONS_PAUSED) return;
+        const instance = instanceRef.current;
+        const context = captureStorageContext();
         setIsRetrying(true);
         try {
             await offlineQueueService.retryFailed();
+            if (instanceRef.current !== instance || !isStorageContextActive(context)) return;
             await checkQueue();
-            setShowErrorModal(false);
+            if (instanceRef.current === instance && isStorageContextActive(context)) setShowErrorModal(false);
         } finally {
-            setIsRetrying(false);
+            if (instanceRef.current === instance) setIsRetrying(false);
         }
     };
 
@@ -93,44 +78,94 @@ export default function SyncStatus() {
             document.body.removeChild(ta);
             return Promise.resolve();
         };
+        const instance = instanceRef.current;
+        const context = captureStorageContext();
         doCopy().then(() => {
+            if (instanceRef.current !== instance || !isStorageContextActive(context)) return;
             setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            clearTimeout(copyTimerRef.current);
+            copyTimerRef.current = setTimeout(() => {
+                if (instanceRef.current === instance && isStorageContextActive(context)) setCopied(false);
+            }, 2000);
         }).catch(() => {
-            setCopied(false);
+            if (instanceRef.current === instance && isStorageContextActive(context)) setCopied(false);
         });
     };
 
     useEffect(() => {
-        let mounted = true;
-        const goOnline = () => checkHealth();
-        const goOffline = () => { if(mounted) setIsOnline(false); };
-
-        window.addEventListener('online', goOnline);
-        window.addEventListener('offline', goOffline);
-
-        checkHealth();
-        checkQueue();
-
-        const healthInterval = setInterval(checkHealth, 900000);
-        const queueInterval = setInterval(checkQueue, 15000);
-
+        const instance = Symbol('sync-status');
+        instanceRef.current = instance;
+        let requested = false;
+        const active = () => instanceRef.current === instance;
+        const refresh = () => {
+            if (!active() || document.visibilityState !== 'visible') return Promise.resolve();
+            requested = true;
+            if (queueReadRef.current?.instance === instance) return queueReadRef.current.promise;
+            const entry = { instance, promise: null };
+            entry.promise = Promise.resolve().then(async () => {
+                do {
+                    requested = false;
+                    const context = captureStorageContext();
+                    try {
+                        const queue = await offlineQueueService.getQueue();
+                        if (!active() || document.visibilityState !== 'visible') return;
+                        if (!isStorageContextActive(context)) { requested = true; continue; }
+                        const failed = queue.filter(item => item.sync_status === 'failed');
+                        setPendingCount(queue.filter(item => item.sync_status === 'pending').length);
+                        setFailedCount(failed.length);
+                        setFailedItems(failed);
+                        setShowFailedBanner(failed.length > 0);
+                    } catch (error) {
+                        if (active()) console.error('[SyncStatus] Error al leer cola', error);
+                    }
+                } while (requested && active() && document.visibilityState === 'visible');
+            }).finally(() => {
+                if (queueReadRef.current === entry) queueReadRef.current = null;
+            });
+            queueReadRef.current = entry;
+            return entry.promise;
+        };
+        refreshQueueRef.current = refresh;
+        const connectivity = () => {
+            if (!active()) return;
+            setIsOnline(navigator.onLine);
+            void refresh();
+        };
+        const storageChanged = event => {
+            if (event.key === null || [ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY].includes(event.key)
+                || event.key?.endsWith('offline_sales_queue')) void refresh();
+        };
+        window.addEventListener('online', connectivity);
+        window.addEventListener('offline', connectivity);
+        window.addEventListener('offline_queue_update', refresh);
+        window.addEventListener('storage', storageChanged);
+        document.addEventListener('visibilitychange', connectivity);
+        void refresh();
+        // Local-only fallback for changes from another tab's IndexedDB. There
+        // is no database ping, no Realtime channel, and no 15-second queue scan.
+        const interval = setInterval(refresh, SUPABASE_FREE_PROFILE.queueRefreshFallbackMs);
         return () => {
-            mounted = false;
-            window.removeEventListener('online', goOnline);
-            window.removeEventListener('offline', goOffline);
-            clearInterval(healthInterval);
-            clearInterval(queueInterval);
+            if (active()) instanceRef.current = null;
+            refreshQueueRef.current = () => Promise.resolve();
+            window.removeEventListener('online', connectivity);
+            window.removeEventListener('offline', connectivity);
+            window.removeEventListener('offline_queue_update', refresh);
+            window.removeEventListener('storage', storageChanged);
+            document.removeEventListener('visibilitychange', connectivity);
+            clearInterval(interval);
+            clearTimeout(copyTimerRef.current);
         };
     }, []);
 
     let statusType = 'online';
-    if (!isOnline) statusType = 'offline';
+    if (REMOTE_OPERATIONS_PAUSED) statusType = 'paused';
+    else if (!isOnline) statusType = 'offline';
     else if (pendingCount > 0) statusType = 'syncing';
 
     const handleForceSync = () => {
-        checkHealth();
-        if (isOnline) {
+        setIsOnline(navigator.onLine);
+        void checkQueue();
+        if (!REMOTE_OPERATIONS_PAUSED && navigator.onLine) {
             offlineQueueService.syncPendingSales().catch(() => {});
         }
     };
@@ -142,16 +177,23 @@ export default function SyncStatus() {
                 className={`flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-[10px] sm:text-xs font-bold tracking-wider transition-all duration-300 shadow-sm border focus:outline-none focus:ring-2 focus:ring-offset-1 ${
                     statusType === 'online'
                         ? 'bg-emerald-50 border-emerald-100 text-emerald-600 focus:ring-emerald-500 hover:bg-emerald-100'
-                        : statusType === 'syncing'
+                        : statusType === 'syncing' || statusType === 'paused'
                         ? 'bg-amber-50 border-amber-100 text-amber-600 focus:ring-amber-500 hover:bg-amber-100'
                         : 'bg-rose-50 border-rose-100 text-rose-500 animate-pulse focus:ring-rose-500'
                 }`}
-                title={statusType === 'online' ? 'Conectado' : statusType === 'syncing' ? `${pendingCount} transacciones pendientes` : 'Sin conexión'}
+                title={statusType === 'paused' ? CLOUD_PAUSE_MESSAGE : statusType === 'online' ? 'El navegador tiene conexión; no se ha consultado la disponibilidad de Supabase' : statusType === 'syncing' ? `${pendingCount} transacciones pendientes` : 'Sin conexión'}
             >
+                {statusType === 'paused' && <><AlertTriangle size={13} strokeWidth={2.5} /><span>Sync pausada{pendingCount > 0 ? ` (${pendingCount})` : ''}</span></>}
                 {statusType === 'online' && <><Wifi size={13} strokeWidth={2.5} /><span className="hidden sm:inline">Online</span></>}
                 {statusType === 'syncing' && <><RefreshCw size={13} strokeWidth={2.5} className="animate-spin-slow" /><span className="hidden sm:inline">Sync ({pendingCount})</span><span className="sm:hidden">{pendingCount}</span></>}
                 {statusType === 'offline' && <><WifiOff size={13} strokeWidth={2.5} /><span>Offline</span></>}
             </button>
+
+            {REMOTE_OPERATIONS_PAUSED && (
+                <p role="status" className="max-w-xs text-[10px] text-amber-800 dark:text-amber-200">
+                    Operación local; pendientes conservados en este equipo. Sin envío a la nube.
+                </p>
+            )}
 
             {/* Banner ventas fallidas */}
             {showFailedBanner && failedCount > 0 && (
@@ -226,7 +268,7 @@ export default function SyncStatus() {
                             </button>
                             <button
                                 onClick={handleRetryFailed}
-                                disabled={isRetrying || !isOnline}
+                                disabled={REMOTE_OPERATIONS_PAUSED || isRetrying || !isOnline}
                                 className="flex-1 py-2.5 text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5"
                             >
                                 <RotateCcw size={13} className={isRetrying ? 'animate-spin' : ''} />
@@ -234,7 +276,9 @@ export default function SyncStatus() {
                             </button>
                             <button
                                 onClick={handleDismissFailed}
-                                className="py-2.5 px-3 text-xs font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-95"
+                                disabled={REMOTE_OPERATIONS_PAUSED}
+                                title={REMOTE_OPERATIONS_PAUSED ? CLOUD_PAUSE_MESSAGE : undefined}
+                                className="py-2.5 px-3 text-xs font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all active:scale-95"
                             >
                                 Descartar
                             </button>

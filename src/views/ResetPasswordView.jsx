@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, EyeOff, Eye, CheckCircle, ShieldCheck, AlertTriangle, Loader2, Mail, LogIn } from 'lucide-react';
 import { supabaseCloud } from '../config/supabaseCloud';
+import { signOutCloudAccount, beginCloudLogin, applyCloudSession } from '../services/cloudSessionLifecycle.js';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 
 // ─── Pantalla: Elegir nueva contraseña ────────────────────────────────────────
@@ -50,7 +51,7 @@ function ChangePasswordScreen({ onPasswordChanged }) {
             if (error) throw error;
 
             // Cerrar la sesión de recuperación para que el usuario haga login manual
-            await supabaseCloud.auth.signOut();
+            await signOutCloudAccount(supabaseCloud);
             onPasswordChanged();
         } catch (err) {
             setErrorMsg(err.message || 'Error al actualizar la contraseña.');
@@ -176,15 +177,19 @@ function LoginAfterResetScreen({ onDone }) {
         if (password.length < 6) { setErrorMsg('La contraseña debe tener al menos 6 caracteres.'); return; }
 
         setStatus('loading');
+        beginCloudLogin();
         try {
-            const { error } = await supabaseCloud.auth.signInWithPassword({
+            const { data, error } = await supabaseCloud.auth.signInWithPassword({
                 email: email.trim().toLowerCase(),
                 password,
             });
             if (error) throw error;
 
-            // Guardar credenciales en el store para activar la sincronización P2P
-            setAdminCredentials(email.trim().toLowerCase(), password);
+            // A recovered cloud session still requires a separate operator PIN.
+            if (!data?.session) throw new Error('No se confirmó la sesión cloud.');
+            applyCloudSession(data.session, { explicit: true });
+            setAdminCredentials(email.trim().toLowerCase());
+            setPassword('');
             onDone();
         } catch (err) {
             setErrorMsg(err.message || 'Correo o contraseña incorrectos.');

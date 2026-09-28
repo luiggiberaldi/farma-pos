@@ -1,10 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
+import { assertSupabaseBrowserKey } from './supabasePublicKey.js';
+import { createSupabaseFreeFetch } from '../services/supabaseFreeTransport.js';
 
 // Instancia única para toda la app (auth, sync, backups)
 // Las credenciales vienen del entorno (.env / Vercel env vars) — NUNCA hardcodeadas.
 // TODO: Configurar con las credenciales del NUEVO proyecto Supabase.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+assertSupabaseBrowserKey(supabaseKey);
 
 // ¿Hay proyecto cloud configurado? Sin estas variables la app corre en modo
 // local 100% offline (sin login cloud ni sincronización).
@@ -59,7 +62,9 @@ function createOfflineStub() {
 let _instance = null;
 function getSupabase() {
     if (!_instance) {
-        _instance = isCloudConfigured ? createClient(supabaseUrl, supabaseKey) : createOfflineStub();
+        _instance = isCloudConfigured ? createClient(supabaseUrl, supabaseKey, {
+            global: { fetch: createSupabaseFreeFetch() },
+        }) : createOfflineStub();
     }
     return _instance;
 }

@@ -1,9 +1,12 @@
 import localforage from 'localforage';
+import { REMOTE_OPERATIONS_PAUSED, pausedCloudOperation } from '../config/operationSafety.js';
 import {
   APP_STORAGE_DB_NAME,
   APP_STORAGE_STORE_NAME,
   getActiveAccountId,
   getScopedStorageKey,
+  captureStorageContext,
+  getStorageKeyForContext,
 } from '../config/storageScope';
 import {
   MAX_QUEUE_ATTEMPTS,
@@ -28,9 +31,12 @@ function newOperationId() {
   return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function getQueueStorageKey() {
-  const accountId = getActiveAccountId();
-  return accountId ? getScopedStorageKey(QUEUE_KEY) : null;
+// En modo local puro (sin Supabase) la cola vive bajo la pseudo-cuenta
+// 'local': la venta NUNCA se pierde y queda lista para reintentos.
+const LOCAL_ACCOUNT_ID = 'local';
+
+function getQueueStorageKey(context = captureStorageContext()) {
+  return getStorageKeyForContext(QUEUE_KEY, { ...context, accountId: context.accountId || LOCAL_ACCOUNT_ID });
 }
 
 function getDeviceId() {
@@ -44,16 +50,15 @@ function notifyQueueChanged() {
   }
 }
 
-async function readQueue() {
-  const key = getQueueStorageKey();
+async function readQueue(context = captureStorageContext()) {
+  const key = getQueueStorageKey(context);
   if (!key) return [];
   const queue = await localforage.getItem(key);
   return Array.isArray(queue) ? queue : [];
 }
 
-async function writeQueue(queue) {
-  const key = getQueueStorageKey();
-  if (!key) throw new Error('No hay una cuenta activa para guardar la cola offline.');
+async function writeQueue(queue, context = captureStorageContext()) {
+  const key = getQueueStorageKey(context);
   await localforage.setItem(key, queue);
   notifyQueueChanged();
 }
@@ -88,13 +93,11 @@ async function markLocalSaleSynced(item, serverData) {
 }
 
 export const offlineQueueService = {
-  async addSaleToQueue(salePayload) {
-    const accountId = getActiveAccountId();
-    if (!accountId) {
-      throw new Error('No se puede encolar una venta sin cuenta activa.');
-    }
+  async addSaleToQueue(salePayload, context = captureStorageContext()) {
+    // Pin account/branch before the first await; keep legacy entries untouched.
+    const accountId = context.accountId || LOCAL_ACCOUNT_ID;
 
-    const queue = await readQueue();
+    const queue = await readQueue(context);
     const operationId = salePayload.queue_id || salePayload.operation_id || newOperationId();
     const existing = queue.find(item => item.queue_id === operationId);
     if (existing) return existing;
@@ -104,6 +107,8 @@ export const offlineQueueService = {
       queue_id: operationId,
       operation_id: operationId,
       account_id: accountId,
+      sede_id: context.sedeId,
+      local_sales_key: getStorageKeyForContext(SALES_KEY, context),
       device_id: getDeviceId(),
       payload: salePayload,
       created_at: new Date().toISOString(),
@@ -113,7 +118,7 @@ export const offlineQueueService = {
       last_error: null,
     };
 
-    await writeQueue([...queue, entry]);
+    await writeQueue([...queue, entry], context);
     return entry;
   },
 
@@ -131,9 +136,12 @@ export const offlineQueueService = {
   },
 
   async syncPendingSales() {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     if (syncInFlight || typeof navigator !== 'undefined' && !navigator.onLine) return;
     const accountId = getActiveAccountId();
-    if (!accountId) return;
+    // Sin cuenta cloud no hay nada que enviar; en desarrollo tampoco existe
+    // el worker que atiende /api/checkout, así que no se queman reintentos.
+    if (!accountId || import.meta.env.DEV) return;
 
     syncInFlight = true;
     try {
@@ -193,6 +201,7 @@ export const offlineQueueService = {
   },
 
   async retryFailed() {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     const queue = await readQueue();
     const reset = queue.map(item => item.sync_status === 'failed'
       ? { ...item, sync_status: 'pending', attempts: 0, next_attempt_at: null, last_error: null }
@@ -202,6 +211,7 @@ export const offlineQueueService = {
   },
 
   async dismissFailed() {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     const queue = await readQueue();
     await writeQueue(queue.filter(item => item.sync_status !== 'failed'));
   },

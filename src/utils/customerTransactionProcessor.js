@@ -1,98 +1,62 @@
-import { storageService } from './storageService';
-import { procesarImpactoCliente } from './financialLogic';
-import { round2, divR, mulR } from './dinero';
-import { getLocalISODate, getLocalISOTime } from './dateHelpers';
-import { getOpenCashSession } from './closureLogic';
+import { bindStorageContext } from './scopedStorage.js';
+import { useAuthStore } from '../hooks/store/useAuthStore.js';
+import { beginLocalOperation } from '../services/localOperationGuard.js';
+import { round2 } from './dinero.js';
+import { getOpenCashSession } from './closureLogic.js';
+import { normalizeTender } from './tenderMath.js';
+import { customerCredit } from './salePlan.js';
+import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
 
-/**
- * Procesa la lógica de abonar o endeudar a un cliente desde el TransactionModal.
- * Guarda en `bodega_customers_v1` y añade un registro en `bodega_sales_v1`.
- */
-export async function processCustomerTransaction({
-    transactionAmount,
-    currencyMode,
-    type,
-    customer,
-    paymentMethod,
-    bcvRate,
-    tasaCop,
-    copEnabled
-}) {
-    if (!customer) throw new Error('Se requiere un cliente para esta transacción');
-
-    // 1. Convert to float and USD (with precision)
-    const rawAmount = parseFloat(transactionAmount);
-    let amountUsd = round2(rawAmount);
-    if (currencyMode === 'BS' && bcvRate > 0) amountUsd = divR(rawAmount, bcvRate);
-    if (currencyMode === 'COP' && tasaCop > 0) amountUsd = divR(rawAmount, tasaCop);
-
-    // 2. Financial quadrant logic
-    let transaccionOpts = {};
-    if (type === 'ABONO') {
-        transaccionOpts = { vueltoParaMonedero: amountUsd };
-    } else if (type === 'CREDITO') {
-        transaccionOpts = { esCredito: true, deudaGenerada: amountUsd };
-    }
-
-    const updatedCustomer = procesarImpactoCliente(customer, transaccionOpts);
-
-    // 3. Update customer storage
-    const customers = await storageService.getItem('bodega_customers_v1', []);
-    const newCustomers = customers.map(c => c.id === customer.id ? updatedCustomer : c);
-    await storageService.setItem('bodega_customers_v1', newCustomers);
-
-    // 4. Update sales storage
-    const sales = await storageService.getItem('bodega_sales_v1', []);
-    const totalEnBs = currencyMode === 'BS' ? rawAmount : mulR(rawAmount, bcvRate);
-    const totalEnUsd = amountUsd;
-    const totalEnCop = currencyMode === 'COP' ? rawAmount : mulR(amountUsd, tasaCop);
-    const openSession = getOpenCashSession(sales);
-    const fechaComercial = openSession?.businessDate || getLocalISODate(new Date());
-    const horaComercial = getLocalISOTime(new Date());
-
-    if (type === 'ABONO') {
-        const cobroRecord = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            fechaComercial,
-            horaComercial,
-            tipo: 'COBRO_DEUDA',
-            clienteId: customer.id,
-            clienteName: customer.name,
-            totalBs: totalEnBs,
-            totalUsd: totalEnUsd,
-            ...(copEnabled && { totalCop: totalEnCop }),
-            paymentMethod: paymentMethod, // Legacy keep just in case
-            payments: [{
-                methodId: paymentMethod,
-                amount: currencyMode === 'USD' ? totalEnUsd : (currencyMode === 'COP' ? totalEnCop : totalEnBs),
-                currency: currencyMode,
-                amountUsd: totalEnUsd,
-                amountBs: totalEnBs,
-                methodLabel: paymentMethod.replace('_', ' ')
-            }],
-            items: [{ name: `Abono de deuda: ${customer.name}`, qty: 1, priceUsd: totalEnUsd, costBs: 0 }]
-        };
-        sales.push(cobroRecord);
-    } else if (type === 'CREDITO') {
-        const fiadoRecord = {
-            id: crypto.randomUUID(),
-            timestamp: new Date().toISOString(),
-            fechaComercial,
-            horaComercial,
-            tipo: 'VENTA_FIADA',
-            clienteId: customer.id,
-            clienteName: customer.name,
-            totalBs: totalEnBs,
-            totalUsd: totalEnUsd,
-            ...(copEnabled && { totalCop: totalEnCop }),
-            fiadoUsd: totalEnUsd,
-            items: [{ name: `Credito manual: ${customer.name}`, qty: 1, priceUsd: totalEnUsd, costBs: 0 }]
-        };
-        sales.push(fiadoRecord);
-    }
-
-    await storageService.setItem('bodega_sales_v1', sales);
-
-    return { updatedCustomer, newCustomers };
+export async function processCustomerTransaction(input) {
+    const options = structuredClone(input);
+    const operator = useAuthStore.getState().usuarioActivo;
+    if (!['DUENO', 'ADMIN'].includes(operator?.rol)) throw new Error('No tienes permiso para registrar movimientos de cartera.');
+    const repo = bindStorageContext(options.storageContext);
+    const context = repo.context;
+    const { type, customer, currencyMode = 'USD', bcvRate, paymentMethod } = options;
+    if (!customer?.id || !['ABONO', 'CREDITO'].includes(type)) throw new Error('Cliente o tipo de movimiento inválido.');
+    const raw = Number(options.transactionAmount);
+    if (!Number.isFinite(raw) || raw <= 0 || raw !== round2(raw)) throw new Error('El importe debe ser positivo con hasta dos decimales.');
+    const payment = normalizeTender({ methodId: paymentMethod || 'efectivo_usd', currency: currencyMode, amountInput: raw }, bcvRate);
+    if (payment.amountUsd <= 0) throw new Error('El importe es menor a la precisión admitida para cartera.');
+    if (type === 'ABONO' && ['saldo_favor', 'cashea', 'fiado'].includes(payment.methodId)) throw new Error('El abono requiere un medio de pago recibido, no otra deuda.');
+    const operationId = options.operationId || crypto.randomUUID();
+    const intent = JSON.stringify([type, customer.id, payment.methodId, payment.currency, payment.amount, bcvRate]);
+    const timestamp = new Date().toISOString();
+    const release = beginLocalOperation('CUSTOMER_TRANSACTION', context);
+    try {
+        return await repo.transaction(ledgerRecords(['customers', 'sales', 'queue', 'audit'], context), state => {
+            repo.assertActive(); assertLedgerArrays(state);
+            const current = state.customers.find(item => item.id === customer.id);
+            if (!current) throw new Error('El cliente ya no existe.');
+            const queued = assertQueueOwnership(state.queue, operationId, 'CUSTOMER_MOVEMENT', context);
+            const prior = state.sales.find(item => item.operationId === operationId);
+            if (!prior && queued) throw new Error('El movimiento ya tiene un comprobante pendiente. Reconcilia el historial antes de reintentar.');
+            if (prior) {
+                if (prior.operationIntent !== intent) throw new Error('El identificador pertenece a otro movimiento.');
+                return { writes: {}, result: { updatedCustomer: current, newCustomers: state.customers, movement: prior, duplicate: true } };
+            }
+            const debt = Number(current.deuda || 0), favor = customerCredit(current);
+            if (!Number.isFinite(debt) || debt < 0) throw new Error('Saldo inválido; concilia el cliente antes de operar.');
+            const netDelta = (type === 'ABONO' ? 1 : -1) * payment.amountUsd;
+            const net = round2(favor - debt + netDelta);
+            const updatedCustomer = { ...current, favor: Math.max(0, net), deuda: Math.max(0, -net), updatedAt: timestamp };
+            delete updatedCustomer.saldo_favor; delete updatedCustomer.saldoFavor;
+            const newCustomers = state.customers.map(item => item.id === current.id ? updatedCustomer : item);
+            const huella = movementStamp(type, operationId, context, operator, timestamp, { clienteId: current.id });
+            const open = getOpenCashSession(state.sales);
+            const movement = { id: operationId, operationId, operationIntent: intent, schemaVersion: 3, accountId: context.accountId, sedeId: context.sedeId,
+                tipo: type === 'ABONO' ? 'COBRO_DEUDA' : 'AJUSTE_CREDITO', status: 'PENDIENTE_SYNC', timestamp,
+                fechaComercial: open?.businessDate || huella.fecha, horaComercial: huella.hora, cashSessionId: open?.apertura?.id || null,
+                customerId: current.id, customerName: current.name, clienteId: current.id, clienteName: current.name,
+                totalUsd: payment.amountUsd, totalBs: payment.amountBs, rate: bcvRate, fiadoUsd: type === 'CREDITO' ? payment.amountUsd : 0,
+                fiadoCollectedUsd: type === 'ABONO' ? Math.min(debt, payment.amountUsd) : 0,
+                creditAddedUsd: type === 'ABONO' ? Math.max(0, round2(payment.amountUsd - debt)) : 0,
+                payments: type === 'ABONO' ? [payment] : [], items: [], customerDelta: { netDelta, casheaDelta: 0 }, huella };
+            return { writes: { customers: newCustomers, sales: [movement, ...state.sales],
+                queue: [...state.queue, pendingOperation(operationId, 'CUSTOMER_MOVEMENT', movement, context, operator, timestamp)],
+                audit: [ledgerAudit(operationId, type, context, operator, timestamp, { customerId: current.id, amount: payment.amountUsd }), ...state.audit] },
+                result: { updatedCustomer, newCustomers, movement } };
+        });
+    } finally { release(); }
 }

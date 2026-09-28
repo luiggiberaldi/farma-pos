@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, ChevronUp, Barcode, Banknote, CheckCircle, Clock, ShoppingBag, CreditCard, ArrowUpRight, Plus, Minus } from 'lucide-react';
+import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, ChevronUp, Barcode, Banknote, CheckCircle, Clock, ShoppingBag, CreditCard, ArrowUpRight, Plus, Minus, Pill, Boxes } from 'lucide-react';
 import { Modal } from '../Modal';
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
-    { id: 'lote', label: 'Lote', Icon: Package, desc: 'Caja, bulto o paquete', color: 'indigo' },
+    { id: 'lote', label: 'Empaque', Icon: Package, desc: 'Caja, bulto o paquete', color: 'indigo' },
     { id: 'granel', label: 'Granel', Icon: Scale, desc: 'Por Kg o Litro', color: 'amber' },
 ];
 
@@ -32,6 +32,16 @@ export default function ProductFormModal({
     packagingType, setPackagingType,
     stockInLotes, setStockInLotes,
     granelUnit, setGranelUnit,
+    genericName, setGenericName,
+    laboratorio, setLaboratorio,
+    concentracion, setConcentracion,
+    presentacion, setPresentacion,
+    requiresPrescription, setRequiresPrescription,
+    isControlled, setIsControlled,
+    requiresRefrigeration, setRequiresRefrigeration,
+    vencimiento, setVencimiento,
+    // Gestor de lotes (F3.6): disponible al editar
+    lotesProducto, stockProducto, onGuardarLote, onAjustarLote,
     effectiveRate,
     copEnabled,
     tasaCop,
@@ -45,6 +55,8 @@ export default function ProductFormModal({
     const fileInputRef = useRef(null);
     const [showSummary, setShowSummary] = useState(false);
     const [showMovements, setShowMovements] = useState(false);
+    const [showLotes, setShowLotes] = useState(false);
+    const [nuevoLote, setNuevoLote] = useState({ numeroLote: '', vencimiento: '', cantidad: '', costoUnitario: '' });
 
     if (!isOpen) return null;
 
@@ -65,7 +77,7 @@ export default function ProductFormModal({
     const unitMarginUsd = effectiveUnitPrice - unitCost;
 
     // Stock equivalence for lote
-    const parsedStockLotes = parseInt(stockInLotes) || 0;
+    const parsedStockLotes = stockInLotes === '' ? (parsedUnits > 0 ? (Number(stock) || 0) / parsedUnits : 0) : Number(stockInLotes) || 0;
     const stockUnitsCalc = parsedStockLotes * (parsedUnits || 1);
 
     // Alert equivalence
@@ -365,12 +377,10 @@ export default function ProductFormModal({
                         <div>
                             {isLote ? (
                                 <>
-                                    <label className="text-xs font-bold text-slate-400 ml-1 mb-1 block uppercase">¿Cuántos lotes?</label>
-                                    <input type="number" inputMode="numeric" value={stockInLotes} onChange={e => setStockInLotes(e.target.value)} placeholder="0"
-                                        className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50" />
-                                    {parsedStockLotes > 0 && parsedUnits > 0 && (
-                                        <p className="text-[10px] text-indigo-500 font-bold mt-1 ml-1">= {stockUnitsCalc} unidades</p>
-                                    )}
+                                    <label htmlFor="product-base-stock" className="text-xs font-bold text-slate-600 dark:text-slate-300 ml-1 mb-1 block">Existencia física (unidades totales)</label>
+                                    <input id="product-base-stock" type="number" min="0" step="1" inputMode="numeric" value={stock} onChange={e => { setStock(e.target.value); setStockInLotes(''); }} placeholder="0"
+                                        className="w-full bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-primary" />
+                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">Cada empaque contiene {parsedUnits || 1} unidades. Verifica el conteo físico; no se convierten existencias antiguas automáticamente.</p>
                                 </>
                             ) : (
                                 <>
@@ -392,12 +402,60 @@ export default function ProductFormModal({
                         </div>
                     </div>
 
+                    {/* ─── DATOS FARMACÉUTICOS ─── */}
+                    <div className="bg-teal-50 dark:bg-teal-900/10 p-4 rounded-xl border border-teal-100 dark:border-teal-800/30 space-y-3">
+                        <p className="text-xs font-black text-teal-700 dark:text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Pill size={14} /> Datos farmacéuticos
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1 block uppercase">Genérico</label>
+                                <input value={genericName} onChange={e => setGenericName(e.target.value)} placeholder="Ej: Paracetamol"
+                                    className="w-full bg-white dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/50 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1 block uppercase">Laboratorio</label>
+                                <input value={laboratorio} onChange={e => setLaboratorio(e.target.value)} placeholder="Ej: Bayer"
+                                    className="w-full bg-white dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/50 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1 block uppercase">Concentración</label>
+                                <input value={concentracion} onChange={e => setConcentracion(e.target.value)} placeholder="Ej: 500mg"
+                                    className="w-full bg-white dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/50 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1 block uppercase">Presentación</label>
+                                <input value={presentacion} onChange={e => setPresentacion(e.target.value)} placeholder="Ej: Caja x 12"
+                                    className="w-full bg-white dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/50 text-sm" />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1 block uppercase">Fecha de vencimiento (opcional)</label>
+                                <input type="date" value={vencimiento || ''} onChange={e => setVencimiento(e.target.value)}
+                                    className="w-full bg-white dark:bg-slate-800 p-3 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-amber-500/50 text-sm" />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { id: 'requiresPrescription', value: requiresPrescription, set: setRequiresPrescription, label: '℞ Receta', active: 'text-rose-600 border-rose-400 bg-rose-50 dark:bg-rose-900/20' },
+                                { id: 'isControlled', value: isControlled, set: setIsControlled, label: '⚠ Controlado', active: 'text-amber-600 border-amber-400 bg-amber-50 dark:bg-amber-900/20' },
+                                { id: 'requiresRefrigeration', value: requiresRefrigeration, set: setRequiresRefrigeration, label: '❄ Refrigerado', active: 'text-sky-600 border-sky-400 bg-sky-50 dark:bg-sky-900/20' },
+                            ].map(flag => (
+                                <button key={flag.id} type="button" onClick={() => flag.set(!flag.value)}
+                                    className={`py-2.5 rounded-xl text-xs font-black border-2 transition-all active:scale-95 ${flag.value
+                                        ? flag.active
+                                        : 'border-slate-200 dark:border-slate-700 text-slate-400 bg-white dark:bg-slate-900'}`}>
+                                    {flag.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* ─── PRE-SAVE SUMMARY ─── */}
                     {name && parsedPrice > 0 && (
                         <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                             <button onClick={() => setShowSummary(!showSummary)}
                                 className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
-                                <span>📋 Resumen antes de guardar</span>
+                                <span>Resumen antes de guardar</span>
                                 {showSummary ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                             </button>
                             {showSummary && (
@@ -413,6 +471,77 @@ export default function ProductFormModal({
                                     {isLote && sellByUnit && <div className="flex justify-between"><span className="text-slate-400">Venta suelta:</span><span className="font-bold text-indigo-500">Sí — ${effectiveUnitPrice.toFixed(2)}/ud</span></div>}
                                     <div className="flex justify-between"><span className="text-slate-400">Stock:</span><span className="font-bold text-slate-700 dark:text-white">{isLote ? `${parsedStockLotes} lotes (${stockUnitsCalc} uds)` : `${stock || 0}`}</span></div>
                                     {barcode && <div className="flex justify-between"><span className="text-slate-400">Código:</span><span className="font-bold text-slate-700 dark:text-white">{barcode}</span></div>}
+                                    {genericName && <div className="flex justify-between"><span className="text-slate-400">Genérico:</span><span className="font-bold text-slate-700 dark:text-white">{genericName}</span></div>}
+                                    {laboratorio && <div className="flex justify-between"><span className="text-slate-400">Laboratorio:</span><span className="font-bold text-slate-700 dark:text-white">{laboratorio}</span></div>}
+                                    {concentracion && <div className="flex justify-between"><span className="text-slate-400">Concentración:</span><span className="font-bold text-slate-700 dark:text-white">{concentracion}</span></div>}
+                                    {vencimiento && <div className="flex justify-between"><span className="text-slate-400">Vence:</span><span className="font-bold text-amber-600">{vencimiento}</span></div>}
+                                    {(requiresPrescription || isControlled || requiresRefrigeration) && (
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-400">Indicadores:</span>
+                                            <span className="font-bold text-teal-600">
+                                                {[requiresPrescription && '℞', isControlled && '⚠', requiresRefrigeration && '❄'].filter(Boolean).join(' ')}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ─── LOTES (F3.6): registrar y ajustar lotes con vencimiento ─── */}
+                    {isEditing && lotesProducto && (
+                        <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                            <button onClick={() => setShowLotes(!showLotes)}
+                                className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
+                                <span className="flex items-center gap-1.5">
+                                    <Boxes size={13} className="text-teal-500" />
+                                    Lotes con vencimiento (FEFO)
+                                    {lotesProducto.length > 0 && (
+                                        <span className="bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 text-[9px] font-black px-1.5 py-0.5 rounded-full">{lotesProducto.length}</span>
+                                    )}
+                                </span>
+                                {showLotes ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                            {showLotes && (
+                                <div className="bg-white dark:bg-slate-900 p-3 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                                    {lotesProducto.map(l => (
+                                        <div key={l.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-lg px-2.5 py-1.5">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[11px] font-black text-slate-600 dark:text-slate-300">#{l.numeroLote}</p>
+                                                <p className={`text-[9px] font-bold ${l.vencimiento && l.vencimiento <= new Date().toISOString().slice(0, 10) ? 'text-red-500' : 'text-slate-400'}`}>
+                                                    {l.vencimiento ? `vence ${l.vencimiento}` : 'sin vencimiento'}
+                                                </p>
+                                            </div>
+                                            <input
+                                                type="number" min="0"
+                                                defaultValue={l.cantidad}
+                                                key={`${l.id}-${l.cantidad}`}
+                                                onBlur={(e) => {
+                                                    const nueva = parseInt(e.target.value);
+                                                    if (!isNaN(nueva) && nueva !== l.cantidad) onAjustarLote(l.id, nueva, l.cantidad);
+                                                }}
+                                                className="w-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-[11px] font-black text-center text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/40"
+                                            />
+                                            <span className="text-[9px] font-bold text-slate-400">uds</span>
+                                        </div>
+                                    ))}
+                                    {/* Nuevo lote */}
+                                    <div className="grid grid-cols-2 gap-2 pt-1">
+                                        <input value={nuevoLote.numeroLote} onChange={e => setNuevoLote(s => ({ ...s, numeroLote: e.target.value }))} placeholder="N° lote"
+                                            className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-[11px] font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/40" />
+                                        <input type="date" value={nuevoLote.vencimiento} onChange={e => setNuevoLote(s => ({ ...s, vencimiento: e.target.value }))}
+                                            className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-[11px] font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/40" />
+                                        <input type="number" min="1" value={nuevoLote.cantidad} onChange={e => setNuevoLote(s => ({ ...s, cantidad: e.target.value }))} placeholder="Cantidad"
+                                            className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-[11px] font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/40" />
+                                        <input type="number" min="0" step="0.01" value={nuevoLote.costoUnitario} onChange={e => setNuevoLote(s => ({ ...s, costoUnitario: e.target.value }))} placeholder="Costo/ud (opcional)"
+                                            className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-[11px] font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-teal-500/40" />
+                                    </div>
+                                    <button
+                                        onClick={async () => { if (await onGuardarLote(nuevoLote) !== false) setNuevoLote({ numeroLote: '', vencimiento: '', cantidad: '', costoUnitario: '' }); }}
+                                        disabled={!nuevoLote.numeroLote || !nuevoLote.cantidad}
+                                        className="w-full py-2 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-lg text-[11px] font-black active:scale-95 transition-all">
+                                        + Agregar lote
+                                    </button>
                                 </div>
                             )}
                         </div>

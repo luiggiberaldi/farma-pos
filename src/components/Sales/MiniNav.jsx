@@ -17,7 +17,7 @@ export default function MiniNav({ onNavigate, triggerHaptic }) {
                     <button
                         key={nav.id}
                         onClick={() => { triggerHaptic?.(); onNavigate(nav.id); }}
-                        className="flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl text-slate-400 hover:text-white active:scale-95 transition-all"
+                        className="flex flex-col items-center gap-0.5 py-2.5 px-4 rounded-xl text-slate-400 hover:text-white active:scale-95 transition-all"
                     >
                         <nav.icon size={18} />
                         <span className="text-[9px] font-bold">{nav.label}</span>

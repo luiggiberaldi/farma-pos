@@ -11,6 +11,7 @@ export const CLOSURE_SALE_TYPES = [
     'VENTA_FIADA',
     'VENTA_CASHEA',
     'COBRO_DEUDA',
+    'AJUSTE_CREDITO',
     'PAGO_PROVEEDOR',
     'APERTURA_CAJA',
     'ANULACION_VENTA',
@@ -77,17 +78,16 @@ export function isClosureStatsSale(sale) {
  * open until the operator explicitly confirms a closure, so a shift that
  * crosses 00:00 keeps receiving and grouping movements in the same session.
  */
-export const MAX_OPEN_SESSION_AGE_DAYS = 1;
+// No se aplica una caducidad por fecha: un turno permanece abierto hasta
+// que el operador confirma manualmente el cierre.
+export const MAX_OPEN_SESSION_AGE_DAYS = Infinity;
 
 function isRecentBusinessDate(businessDate, now) {
-    const todayMs = new Date(`${getLocalISODate(now)}T12:00:00`).getTime();
-    const openingMs = new Date(`${businessDate}T12:00:00`).getTime();
-    if (!Number.isFinite(todayMs) || !Number.isFinite(openingMs)) return true;
-
-    const ageDays = (todayMs - openingMs) / (24 * 60 * 60 * 1000);
-    // Allow an overnight shift, but never revive an opening left pending from
-    // older days as the next normal cash closure.
-    return ageDays <= MAX_OPEN_SESSION_AGE_DAYS;
+    // Se conserva la firma para compatibilidad con datos históricos, pero la
+    // fecha nunca invalida un turno: solo un cierre manual lo termina.
+    void businessDate;
+    void now;
+    return true;
 }
 
 export function getOpenCashSession(allSales, now = new Date()) {
@@ -205,7 +205,7 @@ export function getClosureDate(closure, fallbackDate = null) {
 }
 
 export function getClosureSummary(sales, { bcvRate = 0, products = [] } = {}) {
-    const list = Array.isArray(sales) ? sales.filter(isClosureMovement) : [];
+    const list = Array.isArray(sales) ? sales.filter(sale => isClosureMovement(sale) && (!(sale.status === 'ANULADA' || sale.estado === 'ANULADA' || sale.anuladaEn) || sale.relatedVoidId)) : [];
     const statsSales = list.filter(isClosureStatsSale);
     const cashFlowSales = list.filter(s => isClosureMovement(s));
 
@@ -217,7 +217,7 @@ export function getClosureSummary(sales, { bcvRate = 0, products = [] } = {}) {
     );
 
     const productMap = {};
-    statsSales.filter(s => s.tipo !== 'ANULACION_VENTA').forEach(sale => {
+    statsSales.forEach(sale => {
         (sale.items || []).forEach(item => {
             const key = item.name || item.id || 'Producto';
             if (!productMap[key]) productMap[key] = { name: key, qty: 0, revenue: 0 };

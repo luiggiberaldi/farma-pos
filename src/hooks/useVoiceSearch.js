@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { showToast } from '../components/Toast';
 
 export function useVoiceSearch({ onResult, triggerHaptic }) {
@@ -6,7 +6,12 @@ export function useVoiceSearch({ onResult, triggerHaptic }) {
     const [isProcessingAudio, setIsProcessingAudio] = useState(false);
     const recognitionRef = useRef(null);
     const onResultRef = useRef(onResult);
-    onResultRef.current = onResult;
+    useEffect(() => { onResultRef.current = onResult; }, [onResult]);
+    useEffect(() => () => {
+        const recognition = recognitionRef.current;
+        if (recognition) { recognition.onstart = null; recognition.onresult = null; recognition.onerror = null; recognition.onend = null; try { recognition.abort(); } catch { /* Already stopped. */ } }
+        recognitionRef.current = null;
+    }, []);
 
     const startRecording = () => {
         if (isRecording) return;

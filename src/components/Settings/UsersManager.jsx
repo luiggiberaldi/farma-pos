@@ -66,7 +66,8 @@ function PinInput({ value, onChange, label, length = 4 }) {
                 <input
                     key={i}
                     id={`pin-${label}-${i}`}
-                    type="text"
+                    aria-label={`${label}: dígito ${i + 1}`}
+                    type="password"
                     inputMode="numeric"
                     maxLength={1}
                     value={digits[i]?.trim() || ''}
@@ -130,7 +131,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
                 >
                     <Edit2 size={16} />
                 </button>
-                {!isCurrentUser && (
+                {!user.permanente && user.id !== 1 && !isCurrentUser && (
                     <button
                         onClick={() => { triggerHaptic?.(); onDelete(user); }}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-90"
@@ -153,6 +154,7 @@ export default function UsersManager({ triggerHaptic }) {
     const [newName, setNewName] = useState('');
     const [newRole, setNewRole] = useState('CAJERO');
     const [newPin, setNewPin] = useState('');
+    const [newSedeId, setNewSedeId] = useState('central');
 
     const [changePinUser, setChangePinUser] = useState(null);
     const [pinValue, setPinValue] = useState('');
@@ -164,54 +166,44 @@ export default function UsersManager({ triggerHaptic }) {
     const [editNameValue, setEditNameValue] = useState('');
 
     // ─── Handlers ────────────────────────────────────
-    const handleAdd = () => {
-        const pinLength = getPinLength(newRole);
+    const handleAdd = async () => {
         if (!newName.trim()) return showToast('Ingresa un nombre', 'error');
-        if (newPin.length !== pinLength) return showToast(`El PIN debe tener ${pinLength} dígitos`, 'error');
-        // Check duplicate PIN
-        if (usuarios.some(u => u.pin === newPin)) return showToast('Ese PIN ya esta en uso', 'error');
-
-        agregarUsuario(newName.trim(), newRole, newPin);
-        showToast(`Usuario "${newName.trim()}" creado`, 'success');
-        triggerHaptic?.();
-        setNewName('');
-        setNewRole('CAJERO');
-        setNewPin('');
-        setShowAddForm(false);
+        try {
+            await agregarUsuario(newName.trim(), newRole, newPin, newSedeId);
+            showToast(`Usuario "${newName.trim()}" creado`, 'success');
+            triggerHaptic?.();
+            setNewName(''); setNewRole('CAJERO'); setNewPin(''); setNewSedeId('central'); setShowAddForm(false);
+        } catch (error) { showToast(error.message || 'No se pudo crear el usuario.', 'error'); }
     };
 
-    const handleChangePin = () => {
-        const pinLength = getPinLength(changePinUser.rol);
-        if (pinValue.length !== pinLength) return showToast(`El PIN debe tener ${pinLength} dígitos`, 'error');
-        if (usuarios.some(u => u.id !== changePinUser.id && u.pin === pinValue)) return showToast('Ese PIN ya esta en uso', 'error');
-
-        cambiarPin(changePinUser.id, pinValue);
-        showToast(`PIN de ${changePinUser.nombre} actualizado`, 'success');
-        triggerHaptic?.();
-        setChangePinUser(null);
-        setPinValue('');
+    const handleChangePin = async () => {
+        if (!changePinUser) return;
+        try {
+            await cambiarPin(changePinUser.id, pinValue);
+            showToast(`PIN de ${changePinUser.nombre} actualizado`, 'success');
+            triggerHaptic?.(); setChangePinUser(null); setPinValue('');
+        } catch (error) { showToast(error.message || 'No se pudo cambiar el PIN.', 'error'); }
     };
 
     const handleDelete = () => {
-        const result = eliminarUsuario(deleteUser.id);
-        if (result === false) {
-            showToast('No se puede eliminar este usuario', 'error');
-        } else {
-            showToast(`"${deleteUser.nombre}" eliminado`, 'success');
-            triggerHaptic?.();
-        }
-        setDeleteUser(null);
+        try {
+            const result = eliminarUsuario(deleteUser.id);
+            if (result === false) showToast('No se puede eliminar este usuario', 'error');
+            else { showToast(`"${deleteUser.nombre}" eliminado`, 'success'); triggerHaptic?.(); }
+            setDeleteUser(null);
+        } catch (error) { showToast(error.message || 'No se pudo eliminar el usuario.', 'error'); }
     };
 
     const handleEditName = () => {
         if (!editNameValue.trim()) return showToast('Ingresa un nombre válido', 'error');
-        editarUsuario(editNameUser.id, { nombre: editNameValue.trim() });
-        showToast(`Nombre actualizado a ${editNameValue.trim()}`, 'success');
-        triggerHaptic?.();
-        setEditNameUser(null);
-        setEditNameValue('');
+        try {
+            editarUsuario(editNameUser.id, { nombre: editNameValue.trim() });
+            showToast(`Nombre actualizado a ${editNameValue.trim()}`, 'success');
+            triggerHaptic?.(); setEditNameUser(null); setEditNameValue('');
+        } catch (error) { showToast(error.message || 'No se pudo actualizar el nombre.', 'error'); }
     };
 
+    if (usuarioActivo?.rol !== 'DUENO') return <p className="p-3 text-sm text-slate-500">Solo el dueño administra usuarios y sus PIN.</p>;
     return (
         <div className="space-y-4">
             {/* User List */}
@@ -281,18 +273,28 @@ export default function UsersManager({ triggerHaptic }) {
                                 );
                             })}
                         </div>
-                    </div>
+                    </div>                    {newRole !== 'DUENO' && (
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Sede de trabajo</label>
+                            <select value={newSedeId} onChange={e => setNewSedeId(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700">
+                                <option value="central">C&Y 2025</option>
+                                <option value="norte">C&Y 2026</option>
+                                <option value="sur">Farmacia Las 24 Horas</option>
+                            </select>
+                        </div>
+                    )}
 
                     {/* PIN */}
                     <div>
                         <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de {getPinLength(newRole)} dígitos</label>
+                        {newRole === 'CAJERO' && <p className="text-[10px] text-slate-400 mb-2">Déjalo vacío para usar el PIN de fábrica 0000. Cámbialo antes de operar.</p>}
                         <PinInput value={newPin} onChange={setNewPin} label="new" length={getPinLength(newRole)} />
                     </div>
 
                     {/* Submit */}
                     <button
                         onClick={handleAdd}
-                        disabled={!newName.trim() || newPin.length !== getPinLength(newRole)}
+                        disabled={!newName.trim() || (newRole !== 'CAJERO' && newPin.length !== getPinLength(newRole))}
                         className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all active:scale-[0.98] shadow-md shadow-indigo-500/20 disabled:shadow-none"
                     >
                         <Check size={16} /> Crear Usuario

@@ -13,16 +13,36 @@ export function useOfflineQueue() {
         typeof navigator !== 'undefined' ? navigator.onLine : true
     );
 
+    const verifyConnectivity = useCallback(async () => {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            setIsOnline(false);
+            return false;
+        }
+        try {
+            const response = await fetch('/favicon.ico', { cache: 'no-store' });
+            const online = response.ok;
+            setIsOnline(online);
+            return online;
+        } catch {
+            setIsOnline(false);
+            return false;
+        }
+    }, []);
+
     useEffect(() => {
-        const goOnline = () => setIsOnline(true);
+        const goOnline = () => { setIsOnline(true); verifyConnectivity(); };
         const goOffline = () => setIsOnline(false);
         window.addEventListener('online', goOnline);
         window.addEventListener('offline', goOffline);
+        const initialCheck = setTimeout(verifyConnectivity, 0);
+        const interval = setInterval(verifyConnectivity, 60000);
         return () => {
             window.removeEventListener('online', goOnline);
             window.removeEventListener('offline', goOffline);
+            clearTimeout(initialCheck);
+            clearInterval(interval);
         };
-    }, []);
+    }, [verifyConnectivity]);
 
     /** Guardar tasa en cache para uso offline */
     const cacheRates = useCallback((rates) => {
@@ -42,5 +62,5 @@ export function useOfflineQueue() {
         } catch { return null; }
     }, []);
 
-    return { isOnline, cacheRates, getCachedRates };
+    return { isOnline, cacheRates, getCachedRates, verifyConnectivity };
 }

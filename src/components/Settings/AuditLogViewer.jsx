@@ -3,6 +3,7 @@ import { getAuditLog, getAuditCount, clearAuditLog, exportAuditLog, getCloudAudi
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
 import { jsPDF } from 'jspdf';
+import { SYSTEM_BRAND } from '../../config/branding';
 import {
     FileText, Download, Trash2, Filter, Shield, ShoppingCart,
     Package, Users, Settings, Database, Clock, ChevronDown, AlertTriangle,
@@ -71,7 +72,7 @@ async function generateAuditPDF(entries, dateFrom, dateTo) {
     // ── Logo ──
     try {
         const img = new Image();
-        img.src = '/logo.png';
+        img.src = SYSTEM_BRAND.logo;
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
         doc.addImage(img, 'PNG', CX - 23, y, 46, 11);
         y += 14;
@@ -157,7 +158,7 @@ async function generateAuditPDF(entries, dateFrom, dateTo) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(...INK);
-    doc.text('Listo POS', CX, y, { align: 'center' });
+    doc.text('Farma POS', CX, y, { align: 'center' });
     y += 3;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);

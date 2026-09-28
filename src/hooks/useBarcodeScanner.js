@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
  */
 export function useBarcodeScanner({ onScan, enabled = true, timeout = 50 }) {
     const buffer = useRef('');
-    const lastKeyTime = useRef(Date.now());
+    const lastKeyTime = useRef(0);
 
     useEffect(() => {
         if (!enabled) return;

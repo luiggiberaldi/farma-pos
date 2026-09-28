@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Clock, Send, Ban, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Trash2, Shuffle, Recycle, Receipt, Printer, LockIcon } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 import { formatOfficialRate } from '../../utils/rateResolver';
@@ -29,11 +29,6 @@ export default function SalesHistory({
     const visibleSales = isCashier
         ? recentSales.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
         : recentSales;
-
-    useEffect(() => {
-        setCurrentPage(1);
-        setExpandedSaleId(null);
-    }, [recentSales, isCashier]);
 
     if (visibleSales.length === 0) {
         return (
@@ -114,7 +109,7 @@ export default function SalesHistory({
                                 onClick={() => setExpandedSaleId(isExpanded ? null : s.id)}
                             >
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isCanceled ? 'bg-red-100 opacity-50' : 'bg-white dark:bg-slate-700 shadow-sm'}`}>
-                                    {isCanceled ? <Ban size={20} className="text-red-400" /> : (PayMethodIcon ? <PayMethodIcon size={20} className="text-slate-500" /> : <span className="text-xl">💵</span>)}
+                                    {isCanceled ? <Ban size={20} className="text-red-400" /> : (PayMethodIcon ? <PayMethodIcon size={20} className="text-slate-500" /> : <Receipt size={20} className="text-slate-500" />)}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className={`text-sm font-bold flex items-center gap-1.5 truncate ${isCanceled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>

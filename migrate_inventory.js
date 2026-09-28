@@ -85,7 +85,7 @@ async function run() {
         if (typeof payload === 'string') {
             payload = JSON.parse(payload);
         }
-    } catch(e) {}
+    } catch { /* Plain text values are preserved, not parsed as JSON. */ }
 
     const { error } = await supabase.from('sync_documents').upsert({
       user_id: userId,

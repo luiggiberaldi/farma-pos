@@ -39,6 +39,8 @@ api/*.js
 !api/checkout.js
 !api/update-profile.js
 !api/rates.js
+!api/operator-session.js
+!api/business-operation.js
 
 # Backups y datos locales
 backup_*.json
@@ -82,12 +84,14 @@ capturas_manual/
 directivas/
 future_plans/
 android/
-server/
+/server/
 scripts/
 
 # Herramientas de agente y configs de deploy privadas
 .agent/
+.workbuddy-ai/
 .freebuff/
+outputs/
 .wrangler/
 .vercel
 capacitor.config.json

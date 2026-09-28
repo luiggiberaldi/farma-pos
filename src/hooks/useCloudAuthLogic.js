@@ -6,7 +6,11 @@ import { sanitizeForPush } from './useCloudSync';
 import { useAudit } from './useAudit';
 import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
-import { setActiveAccountId } from '../config/storageScope';
+import { setActiveAccountId, captureStorageContext } from '../config/storageScope';
+import { buildCloudDocumentId, hasCloudDocumentPolicy } from '../config/cloudDocumentScope.js';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
+import { beginCloudLogin } from '../services/cloudSessionLifecycle.js';
+import { sanitizeBackup } from '../utils/backupSafety.js';
 
 // El Worker local no suele tener SUPABASE_SERVICE_KEY; no lanzar peticiones
 // destinadas al despliegue desde el servidor de desarrollo.
@@ -19,7 +23,9 @@ const PROFILE_SYNC_ENABLED = import.meta.env.PROD
  * en sync_documents para que la restauración sea visible en los demás equipos.
  */
 export const uploadBackupToCloud = async (email, backupData, { strictSync = false } = {}) => {
+    if (REMOTE_OPERATIONS_PAUSED) throw new Error(CLOUD_PAUSE_MESSAGE);
     if (!email || !backupData?.data) throw new Error('Backup o cuenta cloud inválidos.');
+    backupData = sanitizeBackup(backupData);
 
     const { error } = await supabaseCloud
         .from('cloud_backups')
@@ -34,23 +40,27 @@ export const uploadBackupToCloud = async (email, backupData, { strictSync = fals
     if (!session?.user?.id) throw new Error('La sesión cloud expiró. Vuelve a iniciar sesión.');
 
     const syncPayloads = [];
+    const cloudContext = captureStorageContext();
+    if (cloudContext.accountId !== session.user.id) throw new Error('El contexto local no coincide con la cuenta cloud activa.');
     for (const [key, value] of Object.entries(backupData.data.idb || {})) {
+        if (!hasCloudDocumentPolicy(key)) continue;
         syncPayloads.push({
             user_id: session.user.id,
             collection: 'store',
-            doc_id: key,
-            data: { payload: sanitizeForPush(key, value) },
+            doc_id: buildCloudDocumentId(key, cloudContext),
+            data: { payload: sanitizeForPush(key, value), sourceKey: key, sedeId: cloudContext.sedeId },
             updated_at: new Date().toISOString()
         });
     }
     for (const [key, value] of Object.entries(backupData.data.ls || {})) {
+        if (!hasCloudDocumentPolicy(key)) continue;
         let finalVal = value;
         try { finalVal = JSON.parse(value); } catch { /* valores de localStorage que no son JSON */ }
         syncPayloads.push({
             user_id: session.user.id,
             collection: 'local',
-            doc_id: key,
-            data: { payload: sanitizeForPush(key, finalVal) },
+            doc_id: buildCloudDocumentId(key, cloudContext),
+            data: { payload: sanitizeForPush(key, finalVal), sourceKey: key, sedeId: cloudContext.sedeId },
             updated_at: new Date().toISOString()
         });
     }
@@ -70,7 +80,6 @@ export function useCloudAuthLogic() {
     const businessName = localStorage.getItem('business_name') || '';
 
     const adminEmail = useAuthStore(s => s.adminEmail);
-    const adminPassword = useAuthStore(s => s.adminPassword);
     const setAdminCredentials = useAuthStore(s => s.setAdminCredentials);
 
     const { deviceId } = useSecurity();
@@ -128,6 +137,7 @@ export function useCloudAuthLogic() {
     };
 
     const applyCloudBackup = async (cloudBackup) => {
+        if (REMOTE_OPERATIONS_PAUSED) throw new Error(CLOUD_PAUSE_MESSAGE);
         if (!cloudBackup?.data) {
             throw new Error('El backup de la nube está vacío o es inválido.');
         }
@@ -138,7 +148,7 @@ export function useCloudAuthLogic() {
             }
         }
         if (cloudBackup.data.ls) {
-            for (const [key, value] of Object.entries(cloudBackup.data.ls)) {
+            for (const [key, value] of Object.entries(sanitizeBackup(cloudBackup.data.ls))) {
                 localStorage.setItem(key, value);
             }
         }
@@ -172,12 +182,12 @@ export function useCloudAuthLogic() {
             const val = localStorage.getItem(key);
             if (val !== null) lsData[key] = val;
         }
-        return {
+        return sanitizeBackup({
             timestamp: new Date().toISOString(),
             version: '2.0',
             appName: 'Listo_POS_Cloud',
             data: { idb: idbData, ls: lsData }
-        };
+        });
     };
 
     const uploadLocalBackup = uploadBackupToCloud;
@@ -214,7 +224,7 @@ export function useCloudAuthLogic() {
                 await notifyCloudLoginCompleted();
                 showToast('Datos locales guardados en la nube', 'success');
             }
-            setAdminCredentials(email, inputPassword);
+            setAdminCredentials(email);
             setInputPassword('');
             auditLog('NUBE', 'CONFLICTO_RESUELTO', `Resuelto: ${choice}`);
             setImportStatus(null);
@@ -261,6 +271,7 @@ export function useCloudAuthLogic() {
         if (hasError) return;
 
         const emailToUse = inputEmail.trim().toLowerCase();
+        beginCloudLogin();
 
         try {
             setImportStatus('loading');
@@ -325,6 +336,18 @@ export function useCloudAuthLogic() {
                 }
             }
 
+            if (REMOTE_OPERATIONS_PAUSED) {
+                // Auth remains usable, but do not pull/restore or upload legacy
+                // datasets into the currently selected branch during containment.
+                setAdminCredentials(emailToUse, '');
+                setInputPassword('');
+                await notifyCloudLoginCompleted();
+                showToast(CLOUD_PAUSE_MESSAGE, 'warning');
+                setImportStatus(null);
+                setStatusMessage('');
+                return;
+            }
+
             setStatusMessage('Consultando nube...');
             // El backup completo es una copia de recuperación, no la fuente
             // diaria. Consultar primero un documento operativo pequeño evita
@@ -335,7 +358,7 @@ export function useCloudAuthLogic() {
                 .select('updated_at')
                 .eq('user_id', (await supabaseCloud.auth.getUser()).data.user?.id || '')
                 .eq('collection', 'store')
-                .eq('doc_id', 'bodega_products_v1')
+                .eq('doc_id', buildCloudDocumentId('bodega_products_v1', captureStorageContext()))
                 .limit(1);
 
             if (syncProbeError || !syncProbe?.length) {
@@ -356,7 +379,7 @@ export function useCloudAuthLogic() {
             if (isCloudLogin && hasCloudData && hasLocalData) {
                 setDataConflictPending({ email: emailToUse, cloudBackup, localBackup });
                 await registerDevice(emailToUse);
-                setAdminCredentials(emailToUse, inputPassword);
+                setAdminCredentials(emailToUse);
                 setInputPassword('');
                 setImportStatus(null);
                 setStatusMessage('');
@@ -368,7 +391,7 @@ export function useCloudAuthLogic() {
                 setStatusMessage('Restaurando nube...');
                 await applyCloudBackup(cloudBackup);
                 await registerDevice(emailToUse);
-                setAdminCredentials(emailToUse, inputPassword);
+                setAdminCredentials(emailToUse);
                 setInputPassword('');
                 showToast('Datos restaurados desde la nube', 'success');
                 setImportStatus('success');
@@ -388,7 +411,7 @@ export function useCloudAuthLogic() {
                 await registerDevice(emailToUse);
             }
 
-            setAdminCredentials(emailToUse, inputPassword);
+            setAdminCredentials(emailToUse);
             setInputPassword('');
             // Guardar datos del negocio en localStorage para la estación
             if (!isCloudLogin) {

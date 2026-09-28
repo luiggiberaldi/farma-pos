@@ -3,6 +3,8 @@ import { formatBs } from './calculatorUtils';
 import { formatOfficialRate } from './rateResolver';
 import { getPaymentLabel, toTitleCase } from '../config/paymentMethods';
 import { divR, mulR } from './dinero';
+import { getBranding } from '../config/branding';
+import { getActiveSedeId } from '../config/storageScope';
 
 /**
  * Genera un PDF de Cierre del Día con reporte detallado.
@@ -72,7 +74,7 @@ export async function generateDailyClosePDF({
     // ════════════════════════════════════
     try {
         const img = new Image();
-        img.src = '/logo.png';
+        img.src = getBranding(getActiveSedeId()).logo;
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
         const maxLogoW = 46;
         const maxLogoH = 18;
@@ -400,7 +402,7 @@ export async function generateDailyClosePDF({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(...INK);
-    doc.text('Listo POS Lite', CX, y, { align: 'center' });
+    doc.text('Farma POS', CX, y, { align: 'center' });
     y += 4;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
@@ -452,7 +454,7 @@ export async function generateDailyCloseLetterPDF({
     const now = new Date();
     const fmtUsd = (v) => `$${(parseFloat(v) || 0).toFixed(2)}`;
 
-    const businessName = localStorage.getItem('business_name') || 'Listo POS Lite';
+    const businessName = localStorage.getItem('business_name') || 'Farma POS';
 
     // Mapa de productos para resolver barcode por ID o Nombre
     const productMap = {};
@@ -490,10 +492,10 @@ export async function generateDailyCloseLetterPDF({
     let imgLogo = null;
     try {
         const img = new Image();
-        img.src = '/logo.png';
+        img.src = getBranding(getActiveSedeId()).logo;
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
         imgLogo = img;
-    } catch (_) {}
+    } catch (_) { /* sede sin logo disponible: el PDF sale sin encabezado gráfico */ }
 
     const doc = new jsPDF('p', 'mm', 'letter');
     const WIDTH = 215.9;

@@ -1,270 +1,110 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Delete, Loader2, ShieldAlert, Clock } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Delete, Loader2, ShieldAlert } from 'lucide-react';
 import LoginAvatar from './LoginAvatar';
-import { logEvent } from '../../services/auditService';
-import { createNotification, NOTIF_TYPES } from '../../services/notificationService';
+import { useAuthStore } from '../../hooks/store/useAuthStore.js';
+import { canUsePinlessAccess } from '../../utils/operatorSession.js';
+import { captureStorageContext } from '../../config/storageScope.js';
 
-const getPinLength = (rol) => rol === 'ADMIN' || rol === 'DUENO' ? 6 : 4;
-
-const LOCKOUT_SECONDS = 30;
-const MAX_ATTEMPTS = 3;
-
-const lockoutKey = (userId) => `pin_lockout_${userId}`;
-
-function getLockout(userId) {
-    try {
-        const raw = sessionStorage.getItem(lockoutKey(userId));
-        if (!raw) return null;
-        return JSON.parse(raw);
-    } catch { return null; }
+export default function LoginPinModal({ isOpen, onClose, user, onSubmit, forcePin = false, purpose = 'login' }) {
+    if (!isOpen || !user) return null;
+    return <PinEntry key={`${user.id}:${purpose}`} user={user} onClose={onClose} onSubmit={onSubmit} forcePin={forcePin} purpose={purpose} />;
 }
 
-function setLockout(userId, data) {
-    sessionStorage.setItem(lockoutKey(userId), JSON.stringify(data));
-}
+function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
+    const requireLogin = useAuthStore(s => s.requireLogin);
+    const pinLength = ['ADMIN', 'DUENO'].includes(user.rol) ? 6 : 4;
+    const pinless = !forcePin && canUsePinlessAccess(user, captureStorageContext(), requireLogin);
+    const [pin, setPin] = useState('');
+    const [error, setError] = useState('');
+    const [processing, setProcessing] = useState(false);
+    const [pinlessAttempted, setPinlessAttempted] = useState(false);
+    const inputRef = useRef(null);
+    const pinRef = useRef('');
+    const processingRef = useRef(false);
+    const mounted = useRef(true);
+    const onSubmitRef = useRef(onSubmit);
+    useEffect(() => { onSubmitRef.current = onSubmit; }, [onSubmit]);
 
-function clearLockout(userId) {
-    sessionStorage.removeItem(lockoutKey(userId));
-}
-
-export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
-  const PIN_LENGTH = getPinLength(user?.rol);
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [attempts, setAttempts] = useState(0);
-  const [lockedUntil, setLockedUntil] = useState(null);
-  const [secondsLeft, setSecondsLeft] = useState(0);
-  const inputRef = useRef(null);
-  const countdownRef = useRef(null);
-
-  const isTouchDevice = () => window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-
-  const checkLockout = useCallback(() => {
-    if (!user?.id) return;
-    const data = getLockout(user.id);
-    if (data?.lockedUntil && Date.now() < data.lockedUntil) {
-      setLockedUntil(data.lockedUntil);
-      setAttempts(data.attempts || MAX_ATTEMPTS);
-    } else {
-      if (data?.lockedUntil) clearLockout(user.id);
-      setLockedUntil(null);
-      setAttempts(data?.lockedUntil ? 0 : (data?.attempts || 0));
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setPin('');
-      setError(false);
-      checkLockout();
-      if (!isTouchDevice()) setTimeout(() => inputRef.current?.focus(), 100);
-    } else {
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    }
-  }, [isOpen, checkLockout]);
-
-  // Countdown
-  useEffect(() => {
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    if (!lockedUntil) { setSecondsLeft(0); return; }
-
-    const tick = () => {
-      const left = Math.ceil((lockedUntil - Date.now()) / 1000);
-      if (left <= 0) {
-        clearInterval(countdownRef.current);
-        clearLockout(user?.id);
-        setLockedUntil(null);
-        setAttempts(0);
-        setSecondsLeft(0);
-        if (!isTouchDevice()) setTimeout(() => inputRef.current?.focus(), 100);
-      } else {
-        setSecondsLeft(left);
-      }
-    };
-    tick();
-    countdownRef.current = setInterval(tick, 500);
-    return () => clearInterval(countdownRef.current);
-  }, [lockedUntil, user?.id]);
-
-  useEffect(() => {
-    if (pin.length === PIN_LENGTH && !processing && !lockedUntil) {
-      handleSubmit();
-    }
-  }, [pin]);
-
-  const handleSubmit = async () => {
-    if (pin.length !== PIN_LENGTH || processing || lockedUntil) return;
-    setProcessing(true);
-
-    const success = await onSubmit(pin, user?.id);
-
-    if (!success) {
-      const newAttempts = attempts + 1;
-      setAttempts(newAttempts);
-      setError(true);
-      setPin('');
-      setProcessing(false);
-      setTimeout(() => setError(false), 600);
-
-      if (newAttempts >= MAX_ATTEMPTS) {
-        const until = Date.now() + LOCKOUT_SECONDS * 1000;
-        setLockout(user.id, { lockedUntil: until, attempts: newAttempts });
-        setLockedUntil(until);
-        logEvent('AUTH', 'PIN_BLOQUEADO', `${MAX_ATTEMPTS} intentos fallidos para "${user?.nombre}". Bloqueado ${LOCKOUT_SECONDS}s.`, null);
-        createNotification(
-            NOTIF_TYPES.PIN_BLOQUEADO,
-            'PIN bloqueado',
-            `${MAX_ATTEMPTS} intentos fallidos para "${user?.nombre}". Acceso bloqueado ${LOCKOUT_SECONDS}s.`,
-            { userId: user?.id, userName: user?.nombre, rol: user?.rol }
-        );
-      } else {
-        setLockout(user.id, { attempts: newAttempts, lockedUntil: null });
-        logEvent('AUTH', 'PIN_FALLIDO', `Intento ${newAttempts}/${MAX_ATTEMPTS} fallido para "${user?.nombre}"`, null);
-        if (!isTouchDevice()) setTimeout(() => inputRef.current?.focus(), 100);
-      }
-    } else {
-      clearLockout(user?.id);
-    }
-  };
-
-  const handlePadPress = (digit) => {
-    if (pin.length >= PIN_LENGTH || processing || lockedUntil) return;
-    setPin(prev => prev + digit);
-  };
-
-  const handleDelete = () => {
-    if (processing || lockedUntil) return;
-    setPin(prev => prev.slice(0, -1));
-  };
-
-  if (!isOpen || !user) return null;
-
-  const isLocked = Boolean(lockedUntil);
-  const userName = (user.nombre || 'Usuario').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-
-  return (
-    <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={isLocked ? undefined : onClose}
-    >
-      <div
-        className="relative bg-white rounded-3xl p-8 w-full max-w-sm mx-4 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-300"
-        onClick={e => e.stopPropagation()}
-      >
-        {!isLocked && (
-          <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-full hover:bg-slate-100">
-            <X size={20} />
-          </button>
-        )}
-
-        <div className="flex flex-col items-center mb-8">
-          <div className="mb-4"><LoginAvatar user={user} /></div>
-          <h2 className="text-xl font-bold text-slate-800">{userName}</h2>
-          <p className="text-xs text-slate-500 mt-1">Ingresa tu PIN de {PIN_LENGTH} dígitos</p>
-        </div>
-
-        {isLocked ? (
-          <div className="flex flex-col items-center gap-4 py-2">
-            <div className="w-20 h-20 rounded-full bg-red-50 border-4 border-red-100 flex items-center justify-center">
-              <ShieldAlert size={36} className="text-red-500" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-black text-slate-700">Acceso bloqueado</p>
-              <p className="text-xs text-slate-400 mt-1">{MAX_ATTEMPTS} intentos fallidos consecutivos</p>
-            </div>
-            <div className="flex items-center gap-2 px-6 py-3 bg-red-50 border border-red-200 rounded-2xl">
-              <Clock size={18} className="text-red-500 shrink-0" />
-              <span className="text-2xl font-black text-red-600 tabular-nums w-8 text-center">{secondsLeft}</span>
-              <span className="text-sm font-bold text-red-500">segundos restantes</span>
-            </div>
-            <p className="text-[11px] text-slate-400 text-center">Espera para volver a intentarlo</p>
-          </div>
-        ) : (
-          <>
-            {attempts > 0 && (
-              <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
-                <ShieldAlert size={14} className="text-amber-500 shrink-0" />
-                <p className="text-[11px] font-bold text-amber-600">
-                  {attempts}/{MAX_ATTEMPTS} intentos fallidos — bloqueo al 3er intento
-                </p>
-              </div>
-            )}
-
-            <div className={`flex justify-center gap-3 mb-8 ${error ? 'animate-shake' : ''}`}>
-              {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-                    error
-                      ? 'bg-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'
-                      : i < pin.length
-                        ? 'bg-sky-500 border-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.4)] scale-110'
-                        : 'bg-transparent border-slate-300'
-                  }`}
-                />
-              ))}
-            </div>
-
-            <input
-              ref={inputRef}
-              type="tel"
-              maxLength={PIN_LENGTH}
-              value={pin}
-              onChange={e => {
-                const val = e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH);
-                setPin(val);
-              }}
-              className="absolute opacity-0 w-0 h-0"
-              autoComplete="off"
-              inputMode="numeric"
-              readOnly={isTouchDevice()}
-            />
-
-            <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                <button
-                  key={n}
-                  onClick={() => handlePadPress(String(n))}
-                  className="h-14 rounded-xl bg-slate-50 text-slate-800 text-xl font-bold hover:bg-slate-100 active:scale-95 active:bg-sky-50 transition-all duration-150 border border-slate-200 shadow-sm"
-                >
-                  {n}
-                </button>
-              ))}
-              <div />
-              <button
-                onClick={() => handlePadPress('0')}
-                className="h-14 rounded-xl bg-slate-50 text-slate-800 text-xl font-bold hover:bg-slate-100 active:scale-95 active:bg-sky-50 transition-all duration-150 border border-slate-200 shadow-sm"
-              >
-                0
-              </button>
-              <button
-                onClick={handleDelete}
-                className="h-14 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 active:scale-95 transition-all duration-150 border border-slate-200 shadow-sm"
-              >
-                <Delete size={22} />
-              </button>
-            </div>
-          </>
-        )}
-
-        {processing && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-3xl flex items-center justify-center">
-            <Loader2 className="animate-spin text-sky-500" size={32} />
-          </div>
-        )}
-      </div>
-
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-10px); }
-          40% { transform: translateX(10px); }
-          60% { transform: translateX(-6px); }
-          80% { transform: translateX(6px); }
+    const submit = async (value, direct = false) => {
+        if (processingRef.current || (!direct && value.length !== pinLength)) return;
+        processingRef.current = true;
+        if (direct) setPinlessAttempted(true);
+        setProcessing(true);
+        setError('');
+        try {
+            const success = await onSubmitRef.current(value, user.id);
+            if (mounted.current && !success) {
+                setError(useAuthStore.getState().lastAuthError || 'PIN incorrecto o acceso temporalmente bloqueado.');
+                pinRef.current = '';
+                setPin('');
+            }
+        } catch (err) {
+            if (mounted.current) {
+                setError(err.message || 'No se pudo verificar el acceso.');
+                pinRef.current = '';
+                setPin('');
+            }
+        } finally {
+            processingRef.current = false;
+            if (mounted.current) setProcessing(false);
         }
-        .animate-shake { animation: shake 0.4s ease-in-out; }
-      `}</style>
-    </div>
-  );
+    };
+    const submitRef = useRef(submit);
+    useEffect(() => { submitRef.current = submit; });
+    useEffect(() => {
+        mounted.current = true;
+        const timer = setTimeout(() => {
+            if (pinless) void submitRef.current('', true);
+            else inputRef.current?.focus();
+        }, 0);
+        return () => {
+            clearTimeout(timer);
+            mounted.current = false;
+            useAuthStore.getState().cancelPendingAuthentication();
+        };
+    }, [pinless]);
+
+    const changePin = value => {
+        if (processingRef.current) return;
+        const next = value.replace(/\D/g, '').slice(0, pinLength);
+        pinRef.current = next;
+        setPin(next);
+        setError('');
+        if (next.length === pinLength) void submit(next);
+    };
+    const close = () => {
+        useAuthStore.getState().cancelPendingAuthentication();
+        onClose();
+    };
+
+    return (
+        <div role="dialog" aria-modal="true" aria-labelledby="pin-dialog-title" className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={close}>
+            <form onSubmit={event => { event.preventDefault(); void submit(pinRef.current); }} onClick={event => event.stopPropagation()}
+                className="relative bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-700">
+                <button type="button" onClick={close} aria-label="Cancelar verificación de PIN" className="absolute top-3 right-3 p-3 text-slate-500 hover:bg-slate-100 rounded-full"><X size={20} /></button>
+                <div className="flex flex-col items-center mb-6">
+                    <LoginAvatar user={user} />
+                    <h2 id="pin-dialog-title" className="mt-4 text-xl font-bold text-slate-800 dark:text-white">{user.nombre || 'Usuario'}</h2>
+                    <p className="mt-2 text-xs text-center text-slate-500">{purpose === 'sede' ? 'Autoriza el cambio de sede sin cambiar de usuario' : pinless ? 'Acceso local limitado a la sede asignada' : `Ingresa tu PIN de ${pinLength} dígitos`}</p>
+                </div>
+                {!user.pin && !pinless && <p role="alert" className="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mb-4">El dueño debe configurar un PIN para este usuario. El acceso cloud no permite saltar el PIN.</p>}
+                {error && <p role="alert" className="flex items-start gap-2 mb-4 p-3 text-sm font-semibold text-red-700 bg-red-50 rounded-xl"><ShieldAlert size={18} className="shrink-0" />{error}</p>}
+                {pinless && pinlessAttempted && error && <button type="button" disabled={processing} onClick={() => void submit('', true)} className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold">Reintentar acceso local</button>}
+                {!pinless && <>
+                    <label className="block text-xs font-bold text-slate-500 mb-2" htmlFor="operator-pin">PIN de {pinLength} dígitos</label>
+                    <input id="operator-pin" aria-label={`PIN de ${pinLength} dígitos`} ref={inputRef} type="password" inputMode="numeric" autoComplete="off" maxLength={pinLength}
+                        value={pin} onChange={event => changePin(event.target.value)} disabled={processing}
+                        className="w-full mb-5 p-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-center text-xl tracking-[0.5em] text-slate-800 dark:text-white bg-white dark:bg-slate-800 focus:border-emerald-500 outline-none" />
+                    <div className="grid grid-cols-3 gap-2">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => <button type="button" key={n} disabled={processing} onClick={() => changePin(pinRef.current + n)}
+                            className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xl font-bold border border-slate-200 dark:border-slate-700 active:scale-95">{n}</button>)}
+                        <div />
+                        <button type="button" disabled={processing} onClick={() => changePin(pinRef.current + '0')} className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-xl font-bold text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700">0</button>
+                        <button type="button" disabled={processing} aria-label="Borrar último dígito" onClick={() => changePin(pinRef.current.slice(0, -1))} className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 flex justify-center items-center"><Delete size={22} /></button>
+                    </div>
+                </>}
+                {processing && <p role="status" className="flex justify-center gap-2 mt-4 text-sm text-emerald-700"><Loader2 size={18} className="animate-spin" />Verificando...</p>}
+            </form>
+        </div>
+    );
 }

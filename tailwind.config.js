@@ -16,12 +16,12 @@ export default {
 
         // 1. LA MARCA (Acción, Foco, Botones principales)
         primary: {
-          DEFAULT: '#0B8D63', // Verde esmeralda — color de la cruz de farmacia
-          hover:   '#0AA577', // Verde hover (más brillante)
-          bright:  '#0AA577', // Acentos brillantes
-          light:   '#E8F5F0', // Fondos suaves, badges
-          focus:   '#C3EADC', // Anillo de foco en inputs
-          dark:    '#086B4D', // pressed/active states
+          DEFAULT: '#086B4D', // Accessible brand action color with white text.
+          hover:   '#06573F',
+          bright:  '#0AA577',
+          light:   '#E8F5F0',
+          focus:   '#C3EADC',
+          dark:    '#04402E',
         },
 
         // 2. FONDOS DE PANTALLA
@@ -58,83 +58,20 @@ export default {
         // 6. BORDES Y SEPARADORES
         border: {
           subtle: '#E2E8F0', // Slate-200 — líneas finas
-          focus:  '#0B8D63', // Verde — borde activo en inputs
+          focus:  '#086B4D', // Brand border for active inputs.
         },
 
-        // ─────────────────────────────────────────────────────
-        // 🔄 ALIASES RETROACTIVOS (Compatibilidad con código existente)
-        // Redirigen las clases viejas (sky/blue/indigo/purple) al verde
-        // farmacéutico. Efecto visual: toda la app cambia automáticamente.
-        // ─────────────────────────────────────────────────────
-
-        // Escala verde farmacia (base de los aliases)
-        // 500 = primario · 600 = hover brillante · 700 = oscuro
-        // brand (viejo token de color primario)
+        // Legacy brand token; semantic Tailwind palettes remain distinct.
         brand: {
           light:   '#E8F5F0',
-          DEFAULT: '#0B8D63',
-          dark:    '#086B4D',
+          DEFAULT: '#086B4D',
+          dark:    '#06573F',
         },
 
         // background (viejo token de fondo)
         background: {
           light: '#F8FAFB',
           dark:  '#0F172A',
-        },
-
-        // sky → verde (la paleta anterior era sky)
-        sky: {
-          50:  '#F0FAF7',
-          100: '#E8F5F0',
-          200: '#C3EADC',
-          300: '#8FD4BC',
-          400: '#4CB998',
-          500: '#0B8D63',
-          600: '#0AA577',
-          700: '#086B4D',
-          800: '#06573F',
-          900: '#04402E',
-          950: '#02291E',
-        },
-
-        // blue → verde (todo bg-blue-* se vuelve verde automáticamente)
-        blue: {
-          50:  '#F0FAF7',
-          100: '#E8F5F0',
-          200: '#C3EADC',
-          300: '#8FD4BC',
-          400: '#4CB998',
-          500: '#0B8D63',
-          600: '#0AA577',
-          700: '#086B4D',
-          800: '#06573F',
-          900: '#04402E',
-          950: '#02291E',
-        },
-
-        // indigo → verde (compatibilidad con CloudAuthModal, spinner, etc)
-        indigo: {
-          50:  '#F0FAF7',
-          100: '#E8F5F0',
-          200: '#C3EADC',
-          300: '#8FD4BC',
-          400: '#4CB998',
-          500: '#0B8D63',
-          600: '#0AA577',
-          700: '#086B4D',
-          800: '#06573F',
-          900: '#04402E',
-          950: '#02291E',
-        },
-
-        // purple → verde (activos de nav, badges)
-        purple: {
-          50:  '#F0FAF7',
-          100: '#E8F5F0',
-          400: '#4CB998',
-          500: '#0B8D63',
-          600: '#0AA577',
-          700: '#086B4D',
         },
 
         // slate (neutros — sin cambios, son la base del sistema)

@@ -23,6 +23,8 @@ export default function ProductCard({
     const valBs = p.priceUsdt * effectiveRate;
     const valCop = p.priceUsdt * tasaCop;
     const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
+    const isVencido = p.vencimiento && p.vencimiento <= new Date().toISOString().slice(0, 10);
+    const flags = [p.requiresPrescription && '℞', p.isControlled && '⚠', p.requiresRefrigeration && '❄'].filter(Boolean);
     const margin = p.costBs > 0 ? ((valBs - p.costBs) / p.costBs * 100) : null;
     const catInfo = categories.find(c => c.id === p.category);
     const unitInfo = UNITS.find(u => u.id === p.unit);
@@ -57,11 +59,31 @@ export default function ProductCard({
                         <AlertTriangle size={9} /> Bajo
                     </div>
                 )}
+                {/* Vencido */}
+                {isVencido && (
+                    <div className="absolute bottom-1 left-1 bg-red-600/90 backdrop-blur-sm text-white text-[9px] font-black px-1.5 py-0.5 rounded">
+                        VENCIDO · {p.vencimiento}
+                    </div>
+                )}
             </div>
 
             {/* Info */}
             <div className="p-3 flex flex-col flex-1">
-                <h3 className="font-bold text-slate-700 dark:text-slate-200 text-[13px] leading-tight line-clamp-2 mb-2">{p.name}</h3>
+                <h3 className="font-bold text-slate-700 dark:text-slate-200 text-[13px] leading-tight line-clamp-2">{p.name}</h3>
+                {p.genericName && p.genericName.toLowerCase() !== p.name.toLowerCase() && (
+                    <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate mt-0.5">{p.genericName}</p>
+                )}
+                {p.presentacion && (
+                    <p className="text-[10px] text-slate-400 truncate">{p.presentacion}{p.laboratorio && p.laboratorio !== '-' ? ` · ${p.laboratorio}` : ''}</p>
+                )}
+                {(flags.length > 0 || p.vencimiento) && (
+                    <div className="flex items-center gap-1 mt-1 mb-2 flex-wrap">
+                        {p.requiresPrescription && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-600">Receta</span>}
+                        {p.isControlled && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-600">Controlado</span>}
+                        {p.requiresRefrigeration && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-sky-100 text-sky-600">Refrigerado</span>}
+                        {p.vencimiento && !isVencido && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">vence {p.vencimiento}</span>}
+                    </div>
+                )}
 
                 {/* Units per package info */}
                 {p.unit === 'paquete' && p.unitsPerPackage && (

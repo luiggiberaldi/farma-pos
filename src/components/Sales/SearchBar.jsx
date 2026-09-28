@@ -39,12 +39,13 @@ const SearchBar = forwardRef(function SearchBar({
                         onPasteBarcode?.(pastedData);
                     }
                 }}
+                aria-label="Buscar producto"
                 placeholder="Buscar producto..."
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl py-3 pl-10 sm:pl-12 pr-14 sm:pr-20 text-slate-800 dark:text-white font-medium outline-none focus:ring-2 focus:ring-emerald-500/50 shadow-inner text-sm sm:text-base transition-all" />
 
             <div className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 flex items-center pr-1 gap-0.5">
                 {searchTerm && (
-                    <button onClick={() => { onSearchChange(''); ref.current?.focus(); }} className="text-slate-400 hover:text-slate-600 p-1.5 transition-colors">
+                    <button onClick={() => { onSearchChange(''); ref.current?.focus(); }} className="min-h-[44px] min-w-[44px] p-2 text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center rounded-full">
                         <X size={18} />
                     </button>
                 )}
@@ -54,7 +55,7 @@ const SearchBar = forwardRef(function SearchBar({
                     onPointerLeave={(e) => { if (isRecording) stopRecording(); }}
                     // Prevenir el menú contextual en móvil al mantener presionado
                     onContextMenu={(e) => e.preventDefault()}
-                    className={`p-1.5 rounded-full transition-all flex items-center justify-center select-none ${isRecording
+                    className={`min-h-[44px] min-w-[44px] p-2 rounded-full transition-all flex items-center justify-center select-none ${isRecording
                         ? 'bg-red-100 text-red-500 shadow-inner animate-pulse scale-110'
                         : isProcessingAudio
                             ? 'bg-amber-100 text-amber-500'
@@ -76,6 +77,7 @@ const SearchBar = forwardRef(function SearchBar({
                     {searchResults.map((p, index) => {
                         const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5) && (p.stock ?? 0) >= 0;
                         const isOutOfStock = (p.stock ?? 0) === 0;
+                        const isExpired = p.vencimiento && p.vencimiento <= new Date().toISOString().slice(0, 10);
                         const catInfo = BODEGA_CATEGORIES.find(c => c.id === p.category);
                         const catColor = catInfo ? CATEGORY_COLORS[catInfo.color] : null;
                         const CatIcon = catInfo ? CATEGORY_ICONS[catInfo.id] : null;
@@ -110,6 +112,10 @@ const SearchBar = forwardRef(function SearchBar({
                                                 {catInfo.label}
                                             </span>
                                         )}
+                                        {p.requiresPrescription && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-600">Receta</span>}
+                                        {p.isControlled && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-600">Controlado</span>}
+                                        {p.requiresRefrigeration && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-sky-100 text-sky-600">Refrigerado</span>}
+                                        {isExpired && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-100 text-red-600">VENCIDO</span>}
                                         <span className={`text-[10px] font-medium flex items-center gap-1
                                             ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-slate-400'}`}>
                                             {isLowStock && !isOutOfStock && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />}

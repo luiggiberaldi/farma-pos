@@ -11,6 +11,7 @@ import {
 import {
   getScopedStorageKey,
   setActiveAccountId,
+  setActiveSedeId,
 } from '../src/config/storageScope.js';
 
 function installLocalStorage() {
@@ -53,14 +54,28 @@ test('synced queue entries are retained during the recovery window', () => {
   assert.deepEqual(pruneSyncedItems(queue, now).map(item => item.id), ['pending', 'recent']);
 });
 
-test('storage keys are isolated by account', () => {
+test('storage keys are isolated by account and by sede', () => {
   installLocalStorage();
-  setActiveAccountId('account-a');
-  const accountAKey = getScopedStorageKey('bodega_products_v1');
-  setActiveAccountId('account-b');
-  const accountBKey = getScopedStorageKey('bodega_products_v1');
 
-  assert.notEqual(accountAKey, accountBKey);
-  assert.equal(accountAKey, 'account:account-a:bodega_products_v1');
-  assert.equal(accountBKey, 'account:account-b:bodega_products_v1');
+  // Inventario (sede-scoped): cada sede tiene su propia clave
+  setActiveAccountId('account-a');
+  setActiveSedeId('central');
+  const productsCentral = getScopedStorageKey('bodega_products_v1');
+  setActiveSedeId('norte');
+  const productsNorte = getScopedStorageKey('bodega_products_v1');
+  setActiveAccountId('account-b');
+  setActiveSedeId('central');
+  const productsOtherAccount = getScopedStorageKey('bodega_products_v1');
+
+  assert.equal(productsCentral, 'account:account-a:sede:central:bodega_products_v1');
+  assert.equal(productsNorte, 'account:account-a:sede:norte:bodega_products_v1');
+  assert.equal(productsOtherAccount, 'account:account-b:sede:central:bodega_products_v1');
+  assert.notEqual(productsCentral, productsNorte);
+  assert.notEqual(productsCentral, productsOtherAccount);
+
+  // Claves globales: solo se aíslan por cuenta, no por sede
+  const customers = getScopedStorageKey('bodega_customers_v1');
+  assert.equal(customers, 'account:account-b:bodega_customers_v1');
+
+  setActiveSedeId('central');
 });

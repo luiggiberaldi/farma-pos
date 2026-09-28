@@ -108,8 +108,8 @@ export default function OnboardingOverlay() {
                             {/* Logo */}
                             <div className="relative mx-auto mb-5">
                                 <img
-                                    src="/logo.png"
-                                    alt="Listo POS Lite"
+                                    src="/logos/farma-pos.png"
+                                    alt="Farma POS"
                                     className="w-44 h-auto mx-auto drop-shadow-lg"
                                 />
                                 <div className="absolute inset-0 bg-emerald-500/15 rounded-full blur-2xl -z-10 scale-150" />

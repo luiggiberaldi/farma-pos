@@ -1,52 +1,49 @@
 import {
-    ShoppingBasket, Droplets, Sparkles, Beef, Wheat,
-    Milk, Drumstick, Leaf, Croissant, ShoppingBag,
-    Package, LayoutGrid
+    LayoutGrid, Package, Pill, Thermometer, HeartPulse,
+    Droplets, ShieldPlus, Baby, Wind, Activity,
+    Droplet, Eye, Citrus, FlaskConical, Bug, Cross
 } from 'lucide-react';
 
-// Categorías predefinidas para el Inventario
+// Categorías farmacéuticas predefinidas para el Inventario
 export const BODEGA_CATEGORIES = [
     { id: 'todos', label: 'Todos', icon: '◉', color: 'slate' },
-    // --- Repuestos de Motos ---
-    { id: 'motor', label: 'Motor', icon: '◆', color: 'red' },
-    { id: 'electrico', label: 'Eléctrico', icon: '◆', color: 'yellow' },
-    { id: 'carroceria', label: 'Carrocería', icon: '◆', color: 'blue' },
-    { id: 'transmision', label: 'Transmisión', icon: '◆', color: 'orange' },
-    { id: 'frenos', label: 'Frenos', icon: '◆', color: 'red' },
-    { id: 'cauchos', label: 'Cauchos/Tripas', icon: '◆', color: 'slate' },
-    { id: 'suspension', label: 'Suspensión', icon: '◆', color: 'cyan' },
-    { id: 'escape', label: 'Escape', icon: '◆', color: 'gray' },
-    { id: 'accesorios', label: 'Accesorios', icon: '◆', color: 'green' },
-    { id: 'aceites', label: 'Aceites', icon: '◆', color: 'amber' },
-    { id: 'baterias', label: 'Baterías', icon: '◆', color: 'yellow' },
-    { id: 'guayas', label: 'Guayas', icon: '◆', color: 'slate' },
-    // --- Abastos General ---
-    { id: 'bebidas', label: 'Bebidas', icon: '◆', color: 'blue' },
-    { id: 'limpieza', label: 'Limpieza', icon: '◆', color: 'cyan' },
-    { id: 'charcuteria', label: 'Charcutería', icon: '◆', color: 'amber' },
-    { id: 'snacks', label: 'Snacks', icon: '◆', color: 'orange' },
-    { id: 'granos', label: 'Granos', icon: '◆', color: 'yellow' },
-    { id: 'lacteos', label: 'Lácteos', icon: '◆', color: 'slate' },
-    { id: 'carnes', label: 'Carnes', icon: '◆', color: 'red' },
-    { id: 'verduras', label: 'Verduras', icon: '◆', color: 'green' },
-    { id: 'panaderia', label: 'Panadería', icon: '◆', color: 'amber' },
-    { id: 'viveres', label: 'Víveres', icon: '◆', color: 'green' },
-    { id: 'otros', label: 'Otros', icon: '◆', color: 'gray' },
+    // --- Farmacia ---
+    { id: 'analgesicos', label: 'Analgésicos', icon: 'pill', color: 'red' },
+    { id: 'antibioticos', label: 'Antibióticos', icon: 'shield-plus', color: 'blue' },
+    { id: 'antipireticos', label: 'Antipiréticos', icon: 'thermometer', color: 'orange' },
+    { id: 'antiinflamatorios', label: 'Antiinflamatorios', icon: 'activity', color: 'amber' },
+    { id: 'antihistaminicos', label: 'Antihistamínicos', icon: 'wind', color: 'cyan' },
+    { id: 'gastrointestinal', label: 'Gastrointestinal', icon: 'flask-conical', color: 'green' },
+    { id: 'vitaminas', label: 'Vitaminas', icon: 'citrus', color: 'yellow' },
+    { id: 'cardiovascular', label: 'Cardiovascular', icon: 'heart-pulse', color: 'red' },
+    { id: 'respiratorio', label: 'Respiratorio', icon: 'wind', color: 'sky' },
+    { id: 'antiparasitarios', label: 'Antiparasitarios', icon: 'bug', color: 'amber' },
+    { id: 'cuidado-personal', label: 'Cuidado Personal', icon: 'droplets', color: 'cyan' },
+    { id: 'primeros-auxilios', label: 'Primeros Auxilios', icon: 'cross', color: 'red' },
+    { id: 'materno-infantil', label: 'Materno Infantil', icon: 'baby', color: 'pink' },
+    { id: 'dermatologicos', label: 'Dermatológicos', icon: 'droplet', color: 'violet' },
+    { id: 'oftalmologicos', label: 'Oftalmológicos', icon: 'eye', color: 'blue' },
+    { id: 'otros', label: 'Otros', icon: 'package', color: 'gray' },
 ];
 
 // Lucide icon map for factory categories
 export const CATEGORY_ICONS = {
     todos: LayoutGrid,
-    bebidas: Droplets,
-    limpieza: Sparkles,
-    charcuteria: Beef,
-    snacks: ShoppingBasket,
-    granos: Wheat,
-    lacteos: Milk,
-    carnes: Drumstick,
-    verduras: Leaf,
-    panaderia: Croissant,
-    viveres: ShoppingBag,
+    analgesicos: Pill,
+    antibioticos: ShieldPlus,
+    antipireticos: Thermometer,
+    antiinflamatorios: Activity,
+    antihistaminicos: Wind,
+    gastrointestinal: FlaskConical,
+    vitaminas: Citrus,
+    cardiovascular: HeartPulse,
+    respiratorio: Wind,
+    antiparasitarios: Bug,
+    'cuidado-personal': Droplets,
+    'primeros-auxilios': Cross,
+    'materno-infantil': Baby,
+    dermatologicos: Droplet,
+    oftalmologicos: Eye,
     otros: Package,
 };
 
@@ -68,4 +65,7 @@ export const CATEGORY_COLORS = {
     red: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
     green: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
     gray: 'bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400',
+    sky: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
+    pink: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
+    violet: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
 };

@@ -9,10 +9,13 @@ const toTitleCase = (str) => {
 };
 
 export default function UserCard({ user, onClick }) {
-  const isAdmin = user.rol === 'ADMIN' || user.rol === 'DUENO';
+  const isOwner = user.rol === 'DUENO';
+  const isAdmin = user.rol === 'ADMIN' || isOwner;
 
   return (
-    <div onClick={onClick} className="cursor-pointer outline-none focus:outline-none active:scale-95 transition-transform duration-200">
+    <div role="button" tabIndex={0} aria-label={`Seleccionar ${user.nombre}`} onClick={onClick}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick(); } }}
+      className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 rounded-2xl active:scale-95 transition-transform duration-200">
       <CardContainer className="inter-var py-0">
         <CardBody className="relative group/card w-auto h-auto rounded-xl p-0 border-transparent bg-transparent">
 
@@ -55,7 +58,7 @@ export default function UserCard({ user, onClick }) {
             <h3 className="text-lg font-bold text-slate-800 drop-shadow-sm">
               {toTitleCase(user.nombre)}
             </h3>
-            <span className={`block text-[9px] font-black uppercase tracking-[0.2em] ${isAdmin ? 'text-sky-500' : 'text-teal-500'}`}>
+            <span className={`block text-[9px] font-black uppercase tracking-[0.2em] ${isOwner ? 'text-indigo-600' : user.rol === 'ADMIN' ? 'text-sky-500' : 'text-teal-500'}`}>
               {user.rol === 'DUENO' ? 'Dueño' : user.rol === 'ADMIN' ? 'Administrador' : 'Cajero'}
             </span>
           </CardItem>

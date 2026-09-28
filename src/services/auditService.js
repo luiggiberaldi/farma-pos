@@ -22,6 +22,8 @@
  * ═══════════════════════════════════════════════════════
  */
 import { storageService } from '../utils/storageService';
+import { captureStorageContext } from '../config/storageScope';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE, pausedCloudOperation } from '../config/operationSafety.js';
 
 const AUDIT_KEY = 'abasto_audit_log_v1';
 const AUDIT_SYNC_CURSOR = 'abasto_audit_sync_cursor';
@@ -39,7 +41,7 @@ const SYNC_BATCH = 200; // entries per cloud push
  * @param {object} [user] - { id, nombre, rol } del usuario activo
  * @param {object} [meta] - Datos extra opcionales
  */
-export async function logEvent(cat, action, desc, user = null, meta = null) {
+export async function logEvent(cat, action, desc, user = null, meta = null, context = captureStorageContext()) {
     try {
         const entry = {
             id: crypto.randomUUID(),
@@ -50,18 +52,14 @@ export async function logEvent(cat, action, desc, user = null, meta = null) {
             userId: user?.id ?? null,
             userName: user?.nombre ?? 'Sistema',
             userRole: user?.rol ?? 'SYSTEM',
+            sedeId: context.sedeId,
         };
         if (meta) entry.meta = meta;
 
-        const log = await storageService.getItem(AUDIT_KEY, []);
-        log.unshift(entry); // Más reciente primero
-
-        // Límite duro
-        if (log.length > MAX_ENTRIES) {
-            log.length = MAX_ENTRIES;
-        }
-
-        await storageService.setItem(AUDIT_KEY, log);
+        await storageService.transaction([{ name: 'audit', key: AUDIT_KEY, fallback: [] }], state => {
+            if (!Array.isArray(state.audit)) throw new Error('Bitácora inválida; no se sobrescribirá.');
+            return { writes: { audit: [entry, ...state.audit] } };
+        }, context);
     } catch (err) {
         // Silencioso — el audit log nunca debe romper la app
         console.warn('[AuditService] Error writing log:', err);
@@ -126,6 +124,9 @@ export async function getAuditCount() {
  * Llamar al iniciar la app.
  */
 export async function purgeOldEntries() {
+    // Business evidence is retained until an explicit, backed-up retention policy exists.
+    return { status: 'retained' };
+    /* Legacy retention, intentionally not executed.
     try {
         const log = await storageService.getItem(AUDIT_KEY, []);
         const cutoff = Date.now() - (MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
@@ -137,14 +138,14 @@ export async function purgeOldEntries() {
         }
     } catch (err) {
         console.warn('[AuditService] Error purging:', err);
-    }
+    } */
 }
 
 /**
  * Borra todo el audit log. Solo admin.
  */
 export async function clearAuditLog() {
-    await storageService.setItem(AUDIT_KEY, []);
+    throw new Error('La huella de operaciones no se elimina desde la aplicación. Exporta y concilia antes de definir retención.');
 }
 
 /**
@@ -174,6 +175,7 @@ export async function exportAuditLog() {
  * @param {string} deviceId - ID del dispositivo actual
  */
 export async function syncAuditToCloud(adminEmail, deviceId) {
+    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
     if (!adminEmail) return;
 
     try {
@@ -229,6 +231,7 @@ export async function syncAuditToCloud(adminEmail, deviceId) {
  * @returns {Promise<{entries: Array, total: number}>}
  */
 export async function getCloudAuditLog(filters = {}) {
+    if (REMOTE_OPERATIONS_PAUSED) throw new Error(CLOUD_PAUSE_MESSAGE);
     const { cat, fromTs, toTs, limit = 200, offset = 0 } = filters;
     const { supabaseCloud } = await import('../config/supabaseCloud');
 

@@ -51,7 +51,7 @@ export default function CartPanel({
                 <span className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-wider">Cesta de Compra</span>
                 <div className="flex items-center gap-3">
                     {cart.length > 0 && (
-                        <button onClick={onClearCart} aria-label="Vaciar carrito" className="text-[10px] sm:text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">
+                        <button onClick={onClearCart} aria-label="Vaciar carrito" className="min-h-[44px] text-xs font-bold text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
                             <Trash2 size={12} /> Vaciar
                         </button>
                     )}
@@ -107,7 +107,7 @@ export default function CartPanel({
                                     <div className="flex flex-col items-end shrink-0 gap-1.5 sm:gap-2 lg:gap-1">
                                         <p className="text-sm sm:text-base lg:text-xs font-black text-slate-800 dark:text-white">${(item.priceUsd * item.qty).toFixed(2)}</p>
                                         <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
-                                            <button onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} className="w-7 sm:w-8 lg:w-6 h-7 sm:h-8 lg:h-6 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors rounded-l-md active:bg-slate-200 dark:active:bg-slate-700"><Minus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
+                                            <button onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors rounded-l-md active:bg-slate-200 dark:active:bg-slate-700"><Minus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
                                             
                                             {isEditing ? (
                                                 <input
@@ -117,7 +117,7 @@ export default function CartPanel({
                                                     onChange={e => setTempQty(e.target.value)}
                                                     onBlur={() => submitCustomQty(item)}
                                                     onKeyDown={e => { if (e.key === 'Enter') submitCustomQty(item) }}
-                                                    className="w-12 sm:w-16 h-7 sm:h-8 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded text-xs outline-none"
+                                                    className="w-12 sm:w-16 h-10 text-center font-black text-slate-700 bg-white dark:bg-slate-900 dark:text-white border border-emerald-500 rounded text-xs outline-none"
                                                     step={item.isWeight ? "0.01" : "1"}
                                                 />
                                             ) : (
@@ -129,10 +129,10 @@ export default function CartPanel({
                                                 </span>
                                             )}
 
-                                            <button onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} className="w-7 sm:w-8 lg:w-6 h-7 sm:h-8 lg:h-6 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors rounded-r-md active:bg-slate-200 dark:active:bg-slate-700"><Plus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
+                                            <button onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors rounded-r-md active:bg-slate-200 dark:active:bg-slate-700"><Plus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
                                         </div>
                                     </div>
-                                    <button onClick={() => removeFromCart(item.id)} className="absolute -top-1 -right-1 sm:top-2 sm:right-2 lg:top-1.5 lg:right-1.5 p-1.5 bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity rounded-full sm:rounded-lg">
+                                    <button onClick={() => removeFromCart(item.id)} className="absolute -top-1 -right-1 sm:top-2 sm:right-2 lg:top-1.5 lg:right-1.5 w-9 h-9 flex items-center justify-center bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 sm:opacity-70 group-hover:opacity-100 transition-all rounded-full sm:rounded-lg">
                                         <X size={12} className="sm:w-[14px] sm:h-[14px]" />
                                     </button>
                                 </div>
@@ -149,7 +149,7 @@ export default function CartPanel({
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); onOpenDiscount(); }}
                     disabled={cart.length === 0}
-                    className={`w-full py-2 sm:py-2.5 lg:py-1.5 px-3 sm:px-4 rounded-xl lg:rounded-lg flex items-center justify-between transition-all outline-none focus:ring-2 focus:ring-emerald-500/50 ${discountData?.active ? 'bg-amber-100/80 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed'}`}
+                    className={`w-full min-h-[44px] py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-between transition-all outline-none focus:ring-2 focus:ring-emerald-500/50 ${discountData?.active ? 'bg-amber-100/80 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                 >
                     <div className="flex items-center gap-2">
                         <Percent size={16} className={`lg:w-[14px] lg:h-[14px] ${discountData?.active ? 'text-amber-600 dark:text-amber-500' : ''}`} />
@@ -214,7 +214,7 @@ export default function CartPanel({
                     onClick={onCheckout}
                     className="w-full relative group disabled:opacity-50 disabled:cursor-not-allowed">
                     <div className="absolute inset-0 bg-emerald-500 rounded-xl sm:rounded-2xl lg:rounded-xl shadow-emerald-500/30 shadow-lg blur-[2px] opacity-70 group-active:opacity-100 group-hover:blur-[4px] transition-all"></div>
-                    <div className="relative w-full py-3 sm:py-4 lg:py-2.5 bg-emerald-500 text-white font-black text-sm sm:text-lg lg:text-sm rounded-xl sm:rounded-2xl lg:rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 tracking-wide">
+                    <div className="relative w-full min-h-[44px] py-3 sm:py-4 bg-emerald-500 text-white font-black text-sm sm:text-lg lg:text-sm rounded-xl sm:rounded-2xl lg:rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 tracking-wide">
                         <CheckCircle size={18} className="sm:w-[22px] sm:h-[22px] lg:w-[16px] lg:h-[16px] opacity-80" />
                         PROCESAR COBRO
                     </div>

@@ -4,12 +4,12 @@ import {
     Smartphone, Database, AlertCircle, X, Download, Eye, EyeOff, Store
 } from 'lucide-react';
 import { useCloudAuthLogic } from '../../hooks/useCloudAuthLogic';
-import { useConfirm } from '../../hooks/useConfirm.jsx';
+import { useConfirm } from '../../hooks/confirmState.js';
 
 // ─── Constantes de color del brand ──────────────────────────────────
 const C = {
-    primary:      '#0B8D63', // sky-500
-    primaryHover: '#0AA577', // sky-600
+    primary:      '#086B4D',
+    primaryHover: '#06573F',
     primaryLight: '#E8F5F0', // sky-100
     surface:      '#FFFFFF',
     surfaceSub:   '#F8FAFC',
@@ -171,7 +171,7 @@ export default function CloudAuthModal({
 
                 {/* Botón cerrar */}
                 {!forceLogin && (
-                    <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors z-20">
+                    <button type="button" aria-label="Close" onClick={onClose} className="absolute top-4 right-4 p-2 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors z-20">
                         <X size={18} />
                     </button>
                 )}
@@ -180,8 +180,8 @@ export default function CloudAuthModal({
                     {/* Logo */}
                     <div className="flex flex-col items-center justify-center mt-2 mb-6">
                         <img
-                            src="/logo.png"
-                            alt="Listo POS Lite"
+                            src="/logos/farma-pos.png"
+                            alt="Farma POS"
                             className="h-28 sm:h-32 w-auto object-contain select-none"
                             draggable={false}
                         />
@@ -208,26 +208,32 @@ export default function CloudAuthModal({
                         </div>
                     )}
 
-                    <div className="space-y-3">
+                    <form className="space-y-3" onSubmit={event => {
+                        event.preventDefault();
+                        if (importStatus === 'loading') return;
+                        if (isRecoveringPassword) handleResetPasswordRequest();
+                        else handleSaveCloudAccount();
+                    }}>
                         {isRecoveringPassword ? (
                             <>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Mail size={16} className="text-slate-400" /></div>
                                     <input
-                                        type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
+                                        type="email" name="email" aria-label="Email" autoComplete="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
                                         className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                         placeholder="Tu correo de cuenta"
                                     />
                                 </div>
                                 {emailError && <p className="text-xs text-red-500 font-medium ml-1">{emailError}</p>}
                                 <button
-                                    onClick={handleResetPasswordRequest} disabled={importStatus === 'loading'}
-                                    className="w-full py-3.5 text-white text-sm font-black rounded-xl transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2"
-                                    style={{ background: `linear-gradient(135deg, ${C.primary}, #6FD9B8)` }}
+                                    type="submit" disabled={importStatus === 'loading'}
+                                    aria-label="Enviar correo de recuperación"
+                                    aria-busy={importStatus === 'loading'}
+                                    className="w-full py-3.5 bg-primary hover:bg-primary-hover text-white text-sm font-black rounded-xl transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                                 >
                                     {importStatus === 'loading' ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Enviar correo de recuperación'}
                                 </button>
-                                <button onClick={() => setIsRecoveringPassword(false)} className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                                <button type="button" onClick={() => setIsRecoveringPassword(false)} className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
                                     Volver al login
                                 </button>
                             </>
@@ -238,7 +244,7 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Mail size={16} className="text-slate-400" /></div>
                                         <input
-                                            type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
+                                            type="email" name="email" aria-label="Email" autoComplete="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
                                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Correo electrónico"
                                         />
@@ -251,7 +257,7 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Store size={16} className="text-slate-400" /></div>
                                         <input
-                                            type="text" value={inputBusinessName} onChange={e => setInputBusinessName(e.target.value)}
+                                            type="text" name="businessName" aria-label="Business name" autoComplete="organization" value={inputBusinessName} onChange={e => setInputBusinessName(e.target.value)}
                                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Nombre del negocio"
                                         />
@@ -263,7 +269,7 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Phone size={16} className="text-slate-400" /></div>
                                         <input
-                                            type="tel" value={inputPhone} onChange={e => setInputPhone(e.target.value)}
+                                            type="tel" name="phone" aria-label="Business WhatsApp" autoComplete="tel" value={inputPhone} onChange={e => setInputPhone(e.target.value)}
                                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="WhatsApp del negocio"
                                         />
@@ -275,11 +281,11 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Key size={16} className="text-slate-400" /></div>
                                         <input
-                                            type={showPassword ? 'text' : 'password'} value={inputPassword} onChange={e => setInputPassword(e.target.value)}
+                                            type={showPassword ? 'text' : 'password'} name="password" aria-label="Password" autoComplete={isCloudLogin ? 'current-password' : 'new-password'} value={inputPassword} onChange={e => setInputPassword(e.target.value)}
                                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Contraseña"
                                         />
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
+                                        <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
                                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                         </button>
                                     </div>
@@ -291,11 +297,11 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Key size={16} className="text-slate-400" /></div>
                                         <input
-                                            type={showConfirmPassword ? 'text' : 'password'} value={inputConfirmPassword} onChange={e => setInputConfirmPassword(e.target.value)}
+                                            type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword" aria-label="Confirm password" autoComplete="new-password" value={inputConfirmPassword} onChange={e => setInputConfirmPassword(e.target.value)}
                                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Confirmar contraseña"
                                         />
-                                        <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
+                                        <button type="button" aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'} aria-pressed={showConfirmPassword} onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
                                             {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                         </button>
                                     </div>
@@ -316,7 +322,7 @@ export default function CloudAuthModal({
                                 {/* Olvidé contraseña */}
                                 {isCloudLogin && (
                                     <div className="flex justify-end">
-                                        <button onClick={() => setIsRecoveringPassword(true)} className="text-[11px] font-bold text-sky-600 hover:underline">
+                                        <button type="button" onClick={() => setIsRecoveringPassword(true)} className="text-[11px] font-bold text-sky-600 hover:underline">
                                             ¿Olvidaste tu contraseña?
                                         </button>
                                     </div>
@@ -331,10 +337,11 @@ export default function CloudAuthModal({
 
                                 {/* CTA Principal */}
                                 <button
-                                    onClick={handleSaveCloudAccount}
+                                    type="submit"
                                     disabled={importStatus === 'loading'}
-                                    className="w-full py-3.5 text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-sky-500/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
-                                    style={{ background: `linear-gradient(135deg, ${C.primary} 0%, #6FD9B8 100%)` }}
+                                    aria-label={isCloudLogin ? 'Conectar Estación' : 'Crear Cuenta Segura'}
+                                    aria-busy={importStatus === 'loading'}
+                                    className="w-full py-3.5 bg-primary hover:bg-primary-hover text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-primary/20 active:scale-[0.98] flex items-center justify-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                                 >
                                     {importStatus === 'loading' ? (
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -376,7 +383,7 @@ export default function CloudAuthModal({
                                 )}
                             </>
                         )}
-                    </div>
+                    </form>
                 </div>
             </div>
         </div>

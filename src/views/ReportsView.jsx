@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { FinancialEngine } from '../core/FinancialEngine';
 import { BarChart3, Calendar, Download, TrendingUp, ShoppingBag, DollarSign, Package, ChevronDown, ChevronUp, Clock, Send, Ban, Shuffle, Receipt, Search, X, Filter, Recycle, LockIcon } from 'lucide-react';
-import { storageService } from '../utils/storageService';
+import { bindStorageContext } from '../utils/scopedStorage.js';
 import { formatBs, formatVzlaPhone } from '../utils/calculatorUtils';
 import { formatOfficialRate } from '../utils/rateResolver';
 import { getPaymentLabel, getPaymentMethod, PAYMENT_ICONS, toTitleCase, getPaymentIcon } from '../config/paymentMethods';
@@ -14,8 +14,13 @@ import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
 import { loadClosures } from '../utils/closureService';
+import { SEDES } from '../config/sedes';
+import { canSeeConsolidatedReports } from '../config/permissionsFarmacia';
+import { useSedeStore } from '../hooks/store/useSedeStore';
+import { useAuthStore } from '../hooks/store/useAuthStore';
 import CierreHistoryCard from '../components/Reports/CierreHistoryCard';
 import CasheaIcon from '../components/CasheaIcon';
+import { showToast } from '../components/Toast';
 
 
 const SALES_KEY = 'bodega_sales_v1';
@@ -30,7 +35,8 @@ const RANGE_OPTIONS = [
 
 
 export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive }) {
-    const { products, setProducts, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
+    const [storageService] = useState(bindStorageContext);
+    const { products, adoptCommittedProducts: setProducts, effectiveRate: bcvRate, copEnabled, tasaCop } = useProductContext();
     const { loadCart } = useCart();
     const [allSales, setAllSales] = useState([]);
     const [closures, setClosures] = useState([]);
@@ -48,11 +54,24 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [recycleOffer, setRecycleOffer] = useState(null);
     const [openPaySections, setOpenPaySections] = useState({});
 
+    // ── F3.10: فلتر السيدات (dueño/admin فقط) ──
+    const usuarioActivo = useAuthStore(s => s.usuarioActivo);
+    const canConsolidate = canSeeConsolidatedReports(usuarioActivo);
+    const sedeActivaId = useSedeStore(s => s.sedeActivaId);
+    const [sedeFilter, setSedeFilter] = useState(canConsolidate ? sedeActivaId : sedeActivaId);
+    const effectiveSedeFilter = canConsolidate ? sedeFilter : sedeActivaId;
+    const isMerged = canConsolidate && effectiveSedeFilter === 'todas';
+    const canVoidHere = !isMerged && effectiveSedeFilter === sedeActivaId && ['DUENO', 'ADMIN'].includes(usuarioActivo?.rol);
+
     // ── Void Sale Handler ──
     const confirmVoidSale = async () => {
         const sale = voidSaleTarget;
         if (!sale) return;
         setVoidSaleTarget(null);
+        if (!canVoidHere || (sale.huella?.sedeId || sale.sedeId) !== sedeActivaId) {
+            showToast('Activa la sede de origen antes de anular esta venta.', 'error');
+            return;
+        }
         try {
             const isPostCierre = sale.cajaCerrada;
             const voidOptions = isPostCierre ? {
@@ -65,6 +84,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
             setRecycleOffer(sale);
         } catch (error) {
             console.error('Error anulando venta:', error);
+            showToast(error.message || 'No se pudo anular la venta.', 'error');
         }
     };
 
@@ -72,19 +92,29 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         if (isActive === false) return; // Si es explicitamente false, abortamos
         let mounted = true;
         const load = async () => {
-            const [saved, savedClosures] = await Promise.all([
-                storageService.getItem(SALES_KEY, []),
-                loadClosures(),
-            ]);
+            setIsLoading(true);
+            let merged = [];
+            if (canConsolidate && sedeFilter === 'todas') {
+                const lists = await Promise.all(SEDES.map(s => storageService.getItemForSede(SALES_KEY, s.id, [])));
+                merged = lists.flat();
+            } else if (canConsolidate && sedeFilter !== 'activa') {
+                merged = await storageService.getItemForSede(SALES_KEY, sedeFilter, []);
+            } else {
+                merged = await storageService.getItemForSede(SALES_KEY, effectiveSedeFilter, []);
+            }
+            // Cierres: solo en modo sede activa (son datos sede-scoped)
+            const savedClosures = effectiveSedeFilter !== 'todas'
+                ? (await loadClosures({ ...storageService.context, sedeId: effectiveSedeFilter })).map(item => ({ ...item, sedeId: effectiveSedeFilter }))
+                : (await Promise.all(SEDES.map(async sede => (await loadClosures({ ...storageService.context, sedeId: sede.id })).map(item => ({ ...item, sedeId: sede.id }))))).flat();
             if (mounted) {
-                setAllSales(saved);
+                setAllSales(merged);
                 setClosures(savedClosures);
                 setIsLoading(false);
             }
         };
         load();
         return () => { mounted = false; };
-    }, [isActive]);
+    }, [isActive, sedeFilter, sedeActivaId, effectiveSedeFilter, canConsolidate]);
 
     const { from, to } = useMemo(() => {
         if (selectedRange === 'custom') {
@@ -97,7 +127,8 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     }, [selectedRange, customFrom, customTo]);
 
     const { 
-        salesForStats, 
+        salesForStats,
+        salesCount, rateFallbackUsed, missingRateSaleIds,
         salesForCashFlow, 
         historySales, 
         totalUsd, 
@@ -181,6 +212,9 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 </div>
             </div>
 
+            {missingRateSaleIds.length > 0 && <p role="status" className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-100">
+                {missingRateSaleIds.length} movimientos no tienen tasa histórica válida. {rateFallbackUsed ? 'La ganancia usa una tasa de referencia actual; no es una reconstrucción histórica exacta.' : 'No puede verificarse su ganancia en bolívares.'}
+            </p>}
             {/* Tab Selector */}
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                 <button
@@ -213,11 +247,49 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 ))}
             </div>
 
+            {/* Filtro de sedes (solo dueño/admin) */}
+            {canConsolidate && (
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                        <Filter size={12} /> Sede:
+                    </span>
+                    <button
+                        onClick={() => { triggerHaptic && triggerHaptic(); setSedeFilter(sedeActivaId); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors active:scale-95 ${sedeFilter === sedeActivaId
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                            }`}>
+                        Sede activa
+                    </button>
+                    {SEDES.map(s => (
+                        <button
+                            key={s.id}
+                            onClick={() => { triggerHaptic && triggerHaptic(); setSedeFilter(s.id); }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors active:scale-95 ${sedeFilter === s.id
+                                ? 'text-white shadow-sm'
+                                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                                }`}
+                            style={sedeFilter === s.id ? { backgroundColor: s.color } : {}}
+                        >
+                            {s.nombre}
+                        </button>
+                    ))}
+                    <button
+                        onClick={() => { triggerHaptic && triggerHaptic(); setSedeFilter('todas'); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors active:scale-95 ${sedeFilter === 'todas'
+                            ? 'bg-indigo-500 text-white shadow-sm'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                            }`}>
+                        Todas las sedes
+                    </button>
+                </div>
+            )}
+
             {/* Custom Date Range */}
             {selectedRange === 'custom' && (
                 <div className="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
                     <div className="flex-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Desde</label>
+                        <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1 block">Desde</label>
                         <input
                             type="date"
                             value={customFrom}
@@ -226,7 +298,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                         />
                     </div>
                     <div className="flex-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Hasta</label>
+                        <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1 block">Hasta</label>
                         <input
                             type="date"
                             value={customTo}
@@ -241,7 +313,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 <>
                     {/* Summary Cards — Responsive grid */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <StatCard icon={ShoppingBag} label="Ventas" value={salesForStats.length} color="emerald" />
+                        <StatCard icon={ShoppingBag} label="Ventas" value={salesCount} color="emerald" />
                         <StatCard icon={DollarSign} label="Ingresos" value={`$${totalUsd.toFixed(2)}`} sub={`${formatBs(totalBs)} Bs`} color="blue" />
                         <StatCard icon={TrendingUp} label="Ganancia" value={bcvRate > 0 ? `$${(profit / bcvRate).toFixed(2)}` : '$0.00'} sub={`${formatBs(profit)} Bs`} color="indigo" />
                         <StatCard icon={Package} label="Artículos" value={totalItems} color="amber" />
@@ -473,7 +545,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                                     }`}>{i + 1}</span>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{p.name}</p>
-                                    <p className="text-[10px] text-slate-400">{p.qty} vendidos</p>
+                                    <p className="text-xs text-slate-600 dark:text-slate-300">{p.qty} vendidos</p>
                                 </div>
                                 <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">${p.revenue.toFixed(2)}</span>
                             </div>
@@ -578,7 +650,9 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                                         bcvRate={bcvRate}
                                         isExpanded={expandedSaleId === s.id}
                                         onToggle={() => setExpandedSaleId(prev => prev === s.id ? null : s.id)}
-                                        onVoidSale={setVoidSaleTarget}
+                                        // En modo consolidado (todas las sedes) se desactiva anular:
+                                        // la anulación solo toca el inventario de la sede activa.
+                                        onVoidSale={canVoidHere ? setVoidSaleTarget : null}
                                         onRecycleSale={setRecycleOffer}
                                     />
                                 ))}
@@ -619,7 +693,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                     {groupedClosings.length > 0 ? (
                         groupedClosings.map(cierre => (
-                            <CierreHistoryCard key={cierre.cierreId} cierre={cierre} bcvRate={bcvRate} products={products} />
+                            <CierreHistoryCard key={cierre.groupKey || cierre.cierreId} cierre={cierre} bcvRate={bcvRate} products={products} />
                         ))
                     ) : (
                         <div className="mt-8">
@@ -690,55 +764,29 @@ function StatCard({ icon: Icon, label, value, sub, color }) {
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${colors[color]}`}>
                 <Icon size={16} />
             </div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase">{label}</p>
             <p className="text-lg md:text-xl font-black text-slate-800 dark:text-white mt-0.5">{value}</p>
-            {sub && <p className="text-xs font-bold text-slate-400 mt-0.5">{sub}</p>}
+            {sub && <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mt-0.5">{sub}</p>}
         </div>
     );
 }
 
 function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, onRecycleSale }) {
     const d = new Date(s.timestamp);
-    let methodLabel = 'Efectivo';
-    let PayMethodIcon = PAYMENT_ICONS['efectivo_bs'];
-
-    if (s.tipo === 'ANULACION_VENTA') {
-        methodLabel = 'Reverso';
-        PayMethodIcon = Ban;
-    } else if (s.tipo === 'VENTA_FIADA') {
-        methodLabel = 'Por Cobrar';
-        PayMethodIcon = Clock;
-    } else if (s.tipo === 'VENTA_CASHEA') {
-        // Show the client's real payment method (non-cashea payment) as the label
-        const realPayment = s.payments && s.payments.find(p => p.methodId !== 'cashea');
-        if (realPayment) {
-            methodLabel = toTitleCase(realPayment.methodLabel || realPayment.methodId);
-            const m = getPaymentMethod(realPayment.methodId);
-            if (m) PayMethodIcon = getPaymentIcon(m.id) || m.Icon || null;
-        } else {
-            methodLabel = 'Cashea';
-        }
-    } else if (s.payments && s.payments.length === 1) {
-        methodLabel = toTitleCase(s.payments[0].methodLabel);
-        const m = getPaymentMethod(s.payments[0].methodId);
-        if (m) PayMethodIcon = getPaymentIcon(m.id) || m.Icon || null;
-    } else if (s.payments && s.payments.length > 1) {
-        methodLabel = 'Pago Mixto';
-        PayMethodIcon = Shuffle;
-    } else if (s.paymentMethod) {
-        const m = getPaymentMethod(s.paymentMethod);
-        if (m) {
-            methodLabel = toTitleCase(m.label);
-            PayMethodIcon = getPaymentIcon(m.id) || m.Icon || null;
-        }
-    }
-
+    const realPayment = s.tipo === 'VENTA_CASHEA' ? s.payments?.find(payment => payment.methodId !== 'cashea') : s.payments?.[0];
+    const methodId = realPayment?.methodId || s.paymentMethod || 'efectivo_bs';
+    const mixed = s.tipo !== 'VENTA_CASHEA' && (s.payments?.length || 0) > 1;
+    const methodLabel = s.tipo === 'ANULACION_VENTA' ? 'Reverso' : s.tipo === 'VENTA_FIADA' ? 'Por Cobrar'
+        : mixed ? 'Pago Mixto' : s.tipo === 'VENTA_CASHEA' && !realPayment ? 'Cashea'
+            : getPaymentLabel(methodId, realPayment?.methodLabel);
     const isCanceled = s.status === 'ANULADA' || !!s.relatedVoidId;
+    const PaymentIcon = s.tipo === 'ANULACION_VENTA' ? Ban : s.tipo === 'VENTA_FIADA' ? Clock
+        : mixed ? Shuffle : PAYMENT_ICONS[methodId] || DollarSign;
     const dateLabel = d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
 
     const handleShare = (e) => {
         e.stopPropagation();
-        let text = `*COMPROBANTE | LISTO POS LITE*\n`;
+        let text = `*COMPROBANTE | FARMA POS*\n`;
         text += `Orden: #${s.id.substring(0, 6).toUpperCase()}\n`;
         text += `Fecha: ${d.toLocaleString('es-VE')}\n`;
         text += `================================\n`;
@@ -766,7 +814,7 @@ function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle, onVoidSale, on
                 onClick={onToggle}
             >
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isCanceled ? 'bg-red-100 opacity-50' : 'bg-slate-50 dark:bg-slate-700 shadow-sm'}`}>
-                    {isCanceled ? <Ban size={20} className="text-red-400" /> : (PayMethodIcon ? <PayMethodIcon size={20} className="text-slate-500" /> : <span className="text-xl">$</span>)}
+                    {isCanceled ? <Ban size={20} className="text-red-400" /> : (PaymentIcon ? <PaymentIcon size={20} className="text-slate-500" /> : <span className="text-xl">$</span>)}
                 </div>
                 <div className="flex-1 min-w-0">
                     <p className={`text-sm font-bold flex items-center gap-1.5 truncate ${isCanceled ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>

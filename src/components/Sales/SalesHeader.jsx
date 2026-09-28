@@ -43,7 +43,7 @@ export default function SalesHeader({
                         <button 
                             onClick={handleRateToggle} 
                             disabled={isLocked}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all ${
+                            className={`flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl border transition-all ${
                                 isLocked 
                                     ? 'bg-slate-100 border-slate-200 opacity-80 cursor-not-allowed dark:bg-slate-800/50 text-slate-400' 
                                     : rateMode === 'bcv'
@@ -71,7 +71,7 @@ export default function SalesHeader({
                 <div className="hidden sm:flex items-center gap-2">
                     <button 
                         onClick={() => setShowKeyboardHelp(true)}
-                        className="hidden md:flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-xl transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                        className="hidden md:flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 min-h-[44px] px-4 py-2 rounded-xl transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
                     >
                         <Keyboard size={14} />
                         <span className="text-xs font-bold">Atajos (PC)</span>
@@ -81,7 +81,7 @@ export default function SalesHeader({
                         <button 
                             onClick={handleRateToggle} 
                             disabled={isLocked}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all group ${
+                            className={`flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl border transition-all group ${
                                 isLocked 
                                     ? 'bg-slate-100 border-slate-200 dark:bg-slate-800/80 dark:border-slate-800 cursor-not-allowed opacity-80 text-slate-400' 
                                     : rateMode === 'bcv'
@@ -182,7 +182,7 @@ export default function SalesHeader({
                                 type="number" 
                                 value={customRate} 
                                 onChange={e => setCustomRate(e.target.value)}
-                                className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                                className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold text-indigo-600 dark:text-indigo-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                                 placeholder="Ingresa Tasa Manual (Bs por $)" 
                                 autoFocus 
                             />
@@ -190,7 +190,7 @@ export default function SalesHeader({
                     )}
                     <button
                         onClick={() => { triggerHaptic && triggerHaptic(); setShowRateConfig(false); }}
-                        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-sm shadow-emerald-500/20 active:scale-95 transition-all"
+                        className="w-full min-h-[44px] py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-sm shadow-emerald-500/20 active:scale-95 transition-all"
                     >
                         Aceptar
                     </button>

@@ -1,8 +1,8 @@
-import React, { useState, useCallback, createContext, useContext } from 'react';
+import React, { useState, useCallback } from 'react';
+import { ConfirmContext } from './confirmState.js';
 import { AlertTriangle, LogOut, Trash2, Link2Off } from 'lucide-react';
 
 // ─── Context ─────────────────────────────────────────────────────────────────
-const ConfirmContext = createContext(null);
 
 // ─── Modal UI ─────────────────────────────────────────────────────────────────
 const VARIANTS = {
@@ -90,8 +90,3 @@ export function ConfirmProvider({ children }) {
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
-export function useConfirm() {
-    const ctx = useContext(ConfirmContext);
-    if (!ctx) throw new Error('useConfirm must be used inside ConfirmProvider');
-    return ctx;
-}

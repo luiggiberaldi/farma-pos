@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
-import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, WifiOff, X, Settings } from 'lucide-react';
+import { Home, ShoppingCart, Store, Users, Download, FlaskConical, Moon, Sun, BarChart3, X, Settings } from 'lucide-react';
 
 import SalesView from './views/SalesView';
 import DashboardView from './views/DashboardView';
@@ -20,7 +20,6 @@ import { CartProvider } from './context/CartContext';
 import TermsOverlay from './components/TermsOverlay';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import ErrorBoundary from './components/ErrorBoundary';
-import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import CommandPalette from './components/CommandPalette';
 import SpotlightTour from './components/SpotlightTour';
@@ -31,14 +30,21 @@ import { useAutoLock } from './hooks/useAutoLock';
 import { purgeOldEntries, syncAuditToCloud } from './services/auditService';
 import { useCloudSync } from './hooks/useCloudSync';
 import { supabaseCloud, isCloudConfigured as envCloudConfigured } from './config/supabaseCloud';
-import { useConfirm } from './hooks/useConfirm.jsx';
-import { setActiveAccountId, setActiveSedeId } from './config/storageScope';
+import { useConfirm } from './hooks/confirmState.js';
+import { getActiveAccountId, setActiveAccountId, ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY } from './config/storageScope';
+import { applyCloudSession, signOutCloudAccount } from './services/cloudSessionLifecycle.js';
+import { OPERATOR_SESSION_KEY } from './utils/operatorSession.js';
 import { useSedeStore } from './hooks/store/useSedeStore';
-import SedeSelector from './components/SedeSelector';
+import { REMOTE_OPERATIONS_PAUSED } from './config/operationSafety.js';
+import { SUPABASE_FREE_PROFILE } from './config/supabaseFreeTier.js';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('inicio');
+  const [selectedTab, setActiveTab] = useState('inicio');
   const usuarioActivo = useAuthStore(state => state.usuarioActivo);
+  const [workspace, setWorkspace] = useState({ identity: null, mode: 'gestion' });
+  const workspaceIdentity = `${getActiveAccountId() || 'local'}:${usuarioActivo?.id || 'locked'}`;
+  const appMode = usuarioActivo?.rol === 'CAJERO' ? 'caja' : workspace.identity === workspaceIdentity ? workspace.mode : 'gestion';
+  const activeTab = appMode === 'caja' && !['inicio', 'ventas'].includes(selectedTab) ? 'ventas' : selectedTab;
   const syncSedeWithUser = useSedeStore(state => state.syncWithUser);
   const sedeActivaId = useSedeStore(state => state.sedeActivaId);
   const [installPrompt, setInstallPrompt] = useState(() => window.deferredInstallPrompt);
@@ -48,8 +54,7 @@ export default function App() {
   useCloudSync();
 
   useEffect(() => {
-    const sede = syncSedeWithUser(usuarioActivo);
-    setActiveSedeId(sede);
+    syncSedeWithUser();
   }, [usuarioActivo, syncSedeWithUser]);
 
   // Apply saved screen scale on mount
@@ -72,7 +77,7 @@ export default function App() {
   
   // Cloud Auth Session State
   const [cloudSession, setCloudSession] = useState(null);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const [checkingSession, setCheckingSession] = useState(() => envCloudConfigured || Boolean(getActiveAccountId()));
 
   // ── Sesión Supabase ───────────────────────────────────────────────────────
   // Sin proyecto cloud configurado la app corre en modo local (offline total):
@@ -81,70 +86,60 @@ export default function App() {
     let mounted = true;
 
     if (!envCloudConfigured) {
+      if (getActiveAccountId()) useAuthStore.getState().logout('modo local sin cuenta cloud');
       setActiveAccountId(null);
-      setCloudSession(null);
-      setCheckingSession(false);
-      return;
+      queueMicrotask(() => { if (mounted) setCheckingSession(false); });
+      return () => { mounted = false; };
     }
 
-    const applySession = async (session) => {
+    let sessionEventRevision = 0;
+    const applySession = (session, explicit = false) => {
       if (!mounted) return;
-      if (!session?.user?.email) {
-        setActiveAccountId(null);
-        setCloudSession(null);
-        setCheckingSession(false);
-        return;
-      }
-      // Se fija antes de montar ProductProvider para que IndexedDB nunca lea otra cuenta.
-      setActiveAccountId(session.user.id);
-      setCloudSession(session);
+      const blocked = localStorage.getItem('farmapos_cloud_signed_out') === '1';
+      const next = applyCloudSession(blocked ? null : session, { explicit });
+      setCloudSession(next);
       setCheckingSession(false);
     };
-
-    const onCloudLoginCompleted = (event) => {
-      const session = event.detail?.session;
-      if (session?.user?.email && mounted) {
-        setActiveAccountId(session.user.id);
-        setCloudSession(session);
-        setCheckingSession(false);
-      }
+    const onCloudLoginCompleted = event => {
+      sessionEventRevision += 1;
+      applySession(event.detail?.session, true);
+    };
+    const onCloudLogoutCompleted = () => {
+      sessionEventRevision += 1;
+      applySession(null);
     };
     window.addEventListener('cloud_login_completed', onCloudLoginCompleted);
+    window.addEventListener('cloud_logout_completed', onCloudLogoutCompleted);
 
-    supabaseCloud.auth.getSession().then(({ data: { session } }) => {
-      applySession(session);
-    });
+    const initialRevision = sessionEventRevision;
+    supabaseCloud.auth.getSession().then(({ data, error }) => {
+      if (sessionEventRevision === initialRevision) applySession(error ? null : data?.session);
+    }).catch(() => { if (sessionEventRevision === initialRevision) applySession(null); });
 
     const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      if (event === 'SIGNED_IN') applySession(session);
-      else if (event === 'SIGNED_OUT') {
-        setActiveAccountId(null);
-        setCloudSession(null);
-        setCheckingSession(false);
-      }
+      sessionEventRevision += 1;
+      if (event === 'SIGNED_OUT') applySession(null);
+      else if (['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) applySession(session);
     });
 
     return () => {
       mounted = false;
       window.removeEventListener('cloud_login_completed', onCloudLoginCompleted);
+      window.removeEventListener('cloud_logout_completed', onCloudLogoutCompleted);
       subscription.unsubscribe();
     };
   }, []);
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
-  const { rates, loading, isOffline, updateData } = useRates();
+  const { rates } = useRates();
   const { deviceId } = useSecurity();
-  const { isOnline, cacheRates } = useOfflineQueue();
-  useAutoBackup(false, false, deviceId);
+  useAutoBackup(false, false, usuarioActivo ? deviceId : null);
   useAutoLock(); // Auto-lock for ADMINs
 
   // Purge old audit log entries on startup
   useEffect(() => { purgeOldEntries(); }, []);
-
-  // Cache rates whenever they update
-  useEffect(() => { if (rates) cacheRates(rates); }, [rates, cacheRates]);
 
   useEffect(() => {
     const handlePromptReady = (e) => {
@@ -218,6 +213,7 @@ export default function App() {
 
   // Admin Panel Logic (Hidden — 10 clicks on top-left corner)
   const handleLogoClick = () => {
+    if (!['DUENO', 'ADMIN'].includes(usuarioActivo?.rol)) return;
     const now = Date.now();
     if (window.lastClickTime && (now - window.lastClickTime > 1000)) {
       setAdminClicks(1);
@@ -260,20 +256,30 @@ export default function App() {
   }, []);
 
   // === Auth — condiciones para mostrar pantalla de PIN ===
-  const requireLogin = useAuthStore(s => s.requireLogin ?? false);
   const adminEmail = useAuthStore(s => s.adminEmail);
-  const adminPassword = useAuthStore(s => s.adminPassword);
+  const operatorSessionId = useAuthStore(s => s.operatorSession?.sessionId || 'locked');
 
   const isCajero = usuarioActivo?.rol === 'CAJERO';
-  const isCloudConfigured = Boolean(adminEmail);
-  // El PIN solo bloquea si requireLogin está activado Y hay cuenta cloud registrada
-  const pinLoginEnabled = requireLogin && isCloudConfigured;
+  // El dueño opera siempre en Gestión (ve todo desde su perfil); solo el admin
+  // conserva el interruptor Gestión/Caja para atender el mostrador.
+  const canSwitchMode = usuarioActivo?.rol === 'ADMIN';
+  const changeWorkspace = mode => {
+    if (!canSwitchMode || !['caja', 'gestion'].includes(mode)) return;
+    setWorkspace({ identity: workspaceIdentity, mode });
+    setActiveTab(mode === 'caja' ? 'ventas' : 'inicio');
+  };
 
-  // Sync audit log to cloud periodically (every 15 min) when cloud is configured
+
+
+  // Free profile: no cloud audit timer while containment is active. Once the
+  // reviewed contract is enabled, send bounded batches only while visible.
   useEffect(() => {
-    if (!adminEmail || !deviceId) return;
-    syncAuditToCloud(adminEmail, deviceId);
-    const interval = setInterval(() => syncAuditToCloud(adminEmail, deviceId), 15 * 60 * 1000);
+    if (REMOTE_OPERATIONS_PAUSED || !adminEmail || !deviceId) return;
+    const syncVisible = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void syncAuditToCloud(adminEmail, deviceId);
+    };
+    syncVisible();
+    const interval = setInterval(syncVisible, SUPABASE_FREE_PROFILE.auditIntervalMs);
     return () => clearInterval(interval);
   }, [adminEmail, deviceId]);
 
@@ -288,22 +294,32 @@ export default function App() {
       variant: 'logout',
     });
     if (!ok) return;
-    await supabaseCloud.auth.signOut();
-    setCloudSession(null);
+    try {
+      await signOutCloudAccount(supabaseCloud);
+    } catch (error) {
+      // El bloqueo local se aplica antes de la red; aun sin conexión la salida
+      // debe terminar y no dejar la UI esperando indefinidamente.
+      console.warn('[Cloud logout] Salida remota no confirmada:', error?.message || error);
+    } finally {
+      setCloudSession(null);
+      window.location.reload();
+    }
   };
 
-  // Auto-login: cuando el PIN no aplica, forzar rol ADMIN.
-  // Sin PIN no hay seguridad de roles, así que el usuario siempre es Admin.
+  // Changes from another tab invalidate local identity. A local device session
+  // cannot silently follow another account or operator selected elsewhere.
   useEffect(() => {
-    if (!pinLoginEnabled) {
-      const admins = useAuthStore.getState().usuarios.filter(u => u.rol === 'ADMIN' || u.rol === 'DUENO');
-      if (admins.length > 0 && usuarioActivo?.rol !== 'ADMIN' && usuarioActivo?.rol !== 'DUENO') {
-        useAuthStore.setState({ usuarioActivo: admins[0] });
-      } else if (!usuarioActivo && admins.length > 0) {
-        useAuthStore.setState({ usuarioActivo: admins[0] });
+    const onStorage = event => {
+      if ([ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY, OPERATOR_SESSION_KEY, 'abasto-auth-storage', 'farmapos_cloud_signed_out'].includes(event.key)) {
+        useAuthStore.getState().logout('cambio de acceso en otra pestaña', { preserveSavedSession: true });
+        if (event.key === 'abasto-auth-storage') void useAuthStore.persist.rehydrate();
+        syncSedeWithUser();
+        if (event.key === ACTIVE_ACCOUNT_STORAGE_KEY || event.key === 'farmapos_cloud_signed_out') setCloudSession(null);
       }
-    }
-  }, [pinLoginEnabled, usuarioActivo]);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [syncSedeWithUser]);
 
   const ALL_TABS = [
     { id: 'inicio', label: 'Inicio', icon: Home },
@@ -313,9 +329,20 @@ export default function App() {
     { id: 'reportes', label: 'Reportes', icon: BarChart3, adminOnly: true },
     { id: 'ajustes', label: 'Config.', icon: Settings, adminOnly: true },
   ];
-  // Solo ocultar tabs admin si el PIN está activo Y el usuario es cajero.
-  // Sin PIN, todos ven todas las pestañas (no hay seguridad que justifique ocultarlas).
-  const TABS = (isCajero && pinLoginEnabled) ? ALL_TABS.filter(t => !t.adminOnly) : ALL_TABS;
+  // Modo cajero estricto: POS puro. Sin inventario, contactos ni config.
+  // Sin PIN no hay roles reales, así que todos ven todas las pestañas.
+  const TABS = appMode === 'caja'
+    ? ALL_TABS.filter(t => ['ventas', 'inicio'].includes(t.id))
+    : ALL_TABS;
+
+  // Si el cajero aterrizó en una pestaña oculta, redirigir a Vender
+  // (deferido con timeout para no llamar setState síncrono en el efecto)
+  useEffect(() => {
+    if (isCajero && !['ventas', 'inicio'].includes(activeTab)) {
+      const id = setTimeout(() => setActiveTab('ventas'), 0);
+      return () => clearTimeout(id);
+    }
+  }, [activeTab, isCajero, appMode]);
 
   // Global Hard Gate: Loading State
   if (checkingSession) {
@@ -339,8 +366,9 @@ export default function App() {
     );
   }
 
-  // Local Guard: si el PIN local aplica y no ha desbloqueado
-  if (!usuarioActivo && pinLoginEnabled) {
+  // Every cloud login and every absent/invalid local session requires an
+  // explicit operator choice. Never synthesize a privileged owner session.
+  if (!usuarioActivo) {
     return (
       <LockScreen 
         installPrompt={installPrompt} 
@@ -357,26 +385,17 @@ export default function App() {
   );
 
   return (
-    <div className="font-sans antialiased bg-[#F8FAFC] h-[100dvh] flex flex-col overflow-clip">
+    <div className="font-sans antialiased bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-[100dvh] flex flex-col overflow-clip">
 
-      <div className="fixed top-3 left-3 z-40"><SedeSelector /></div>
 
       {/* Terms and Conditions Overlay (First Use) */}
-      <TermsOverlay />
+      <TermsOverlay onAccepted={() => {
+        useAuthStore.getState().logout('términos aceptados: selecciona operador');
+      }} />
 
       {/* Tutorial Onboarding (First Use, after Terms) */}
       <OnboardingOverlay />
 
-      {/* Offline Banner */}
-      {!isOnline && (
-        <div className="fixed top-0 left-0 right-0 z-[200] flex justify-center pt-[env(safe-area-inset-top)]">
-          <div className="mt-2 px-4 py-2 bg-slate-900/95 backdrop-blur-md rounded-full border border-red-500/30 shadow-xl flex items-center gap-2 animate-in slide-in-from-top-4">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <WifiOff size={14} className="text-red-400" />
-            <span className="text-xs font-bold text-white">Sin conexión · Modo offline</span>
-          </div>
-        </div>
-      )}
 
       {/* Tour Spotlight */}
       {!tourDone && (
@@ -399,29 +418,29 @@ export default function App() {
       )}
 
 
-      <CartProvider>
-      <ProductProvider rates={rates}>
+      <CartProvider key={`${getActiveAccountId() || 'local'}:${sedeActivaId}:${operatorSessionId}`}>
+      {/* Remonta el inventario al cambiar de sede/cuenta: sin esta key, el contexto
+          mantiene datos de la sede anterior porque captura el storage context una vez. */}
+      <ProductProvider key={`${getActiveAccountId() || 'local'}:${sedeActivaId}`} rates={rates}>
         <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:px-4 xl:px-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-20 lg:pb-16'} flex flex-col overflow-y-auto`}>
 
-          {/* Hidden Admin Trigger Area */}
-        <div
-          className="absolute top-0 left-0 w-20 h-20 z-50 cursor-pointer opacity-0"
-          onClick={handleLogoClick}
-          title="Ssshh..."
-        ></div>
+        {canSwitchMode && <div className="shrink-0 flex justify-end px-3 py-2" role="group" aria-label="Modo de trabajo">
+          <div className="inline-flex gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1">
+            {['gestion', 'caja'].map(mode => <button type="button" key={mode} aria-pressed={appMode === mode} onClick={() => changeWorkspace(mode)} className={`rounded-lg px-4 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${appMode === mode ? 'bg-primary text-white' : 'text-slate-600 dark:text-slate-200'}`}>{mode === 'gestion' ? 'Gestión' : 'Caja'}</button>)}
+          </div>
+        </div>}
 
         {/* Eager views — always mounted, visibility toggled via CSS */}
         <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'ventas' ? '' : 'hidden'}`}>
-          <ErrorBoundary>
-            <SalesView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} isActive={activeTab === 'ventas'} />
+          <ErrorBoundary>                <SalesView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} isActive={activeTab === 'ventas'} />
           </ErrorBoundary>
         </div>
 
-        <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
+        {!isCajero && <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
           <ErrorBoundary>
             <ProductsView rates={rates} triggerHaptic={triggerHaptic} />
           </ErrorBoundary>
-        </div>
+        </div>}
 
         <div className={`flex-1 flex flex-col ${activeTab === 'inicio' ? '' : 'hidden'}`}>
           <ErrorBoundary>
@@ -431,14 +450,14 @@ export default function App() {
 
         {/* Lazy views — mount on first access, then stay persistent */}
         <Suspense fallback={<div className="flex-1 p-4 space-y-4"><div className="skeleton h-10 w-40" /><div className="skeleton h-32" /><div className="skeleton h-48" /></div>}>
-          {(activeTab === 'clientes' || document.querySelector('[data-view="clientes"]')) && (
+          {!isCajero && (activeTab === 'clientes' || document.querySelector('[data-view="clientes"]')) && (
             <div data-view="clientes" className={`flex-1 flex flex-col ${activeTab === 'clientes' ? '' : 'hidden'}`}>
               <ErrorBoundary>
                 <CustomersView triggerHaptic={triggerHaptic} rates={rates} isActive={activeTab === 'clientes'} />
               </ErrorBoundary>
             </div>
           )}
-          {(activeTab === 'reportes' || document.querySelector('[data-view="reportes"]')) && (
+          {!isCajero && (activeTab === 'reportes' || document.querySelector('[data-view="reportes"]')) && (
             <div data-view="reportes" className={`flex-1 flex flex-col ${activeTab === 'reportes' ? '' : 'hidden'}`}>
               <ErrorBoundary>
                 <ReportsView rates={rates} triggerHaptic={triggerHaptic} onNavigate={setActiveTab} isActive={activeTab === 'reportes'} />
@@ -448,7 +467,7 @@ export default function App() {
         </Suspense>
 
         {/* Settings — mounted as tab inside providers */}
-        <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'ajustes' ? '' : 'hidden'}`}>
+        {!isCajero && <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'ajustes' ? '' : 'hidden'}`}>
           <ErrorBoundary>
             <SettingsView
               onClose={() => setActiveTab('inicio')}
@@ -457,7 +476,7 @@ export default function App() {
               triggerHaptic={triggerHaptic}
             />
           </ErrorBoundary>
-        </div>
+        </div>}
 
       </main>
 
@@ -471,10 +490,10 @@ export default function App() {
           navigateTo={setActiveTab} 
       />
 
-      {/* Bottom Nav — hidden in POS mode for full-screen selling */}
+      {/* Bottom Nav — the role determines the available workspace */}
       {!isKeyboardOpen && (
         <div className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 lg:mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-[#1E293B]/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-2xl shadow-slate-900/30 border border-white/10 ring-1 ring-black/5 pointer-events-auto">
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-lg shadow-slate-900/10 border border-slate-200 dark:border-slate-700 pointer-events-auto">
             {TABS.map(tab => (
               <TabButton
                 key={tab.id}
@@ -508,14 +527,14 @@ export default function App() {
             <div className="space-y-4">
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center shrink-0 text-blue-600 font-bold text-sm">1</div>
-                <p className="text-sm text-slate-600 dark:text-slate-300">Toca el botón <strong>Compartir</strong> <span className="inline-block w-5 h-5 align-middle">⬆️</span> en la barra de Safari</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">Toca el botón <strong>Compartir</strong> en la barra de Safari</p>
               </div>
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center shrink-0 text-blue-600 font-bold text-sm">2</div>
                 <p className="text-sm text-slate-600 dark:text-slate-300">Busca y toca <strong>"Agregar a la pantalla de inicio"</strong></p>
               </div>
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center shrink-0 text-emerald-600 font-bold text-sm">✓</div>
+                <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center shrink-0 text-emerald-600 font-bold text-sm">OK</div>
                 <p className="text-sm text-slate-600 dark:text-slate-300">¡Listo! La app aparecerá como un ícono en tu teléfono</p>
               </div>
             </div>
@@ -534,14 +553,14 @@ export default function App() {
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <FlaskConical className="text-[#0B8D63]" /> Panel Dev
               </h2>
-              <button onClick={() => setShowAdminPanel(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={() => setShowAdminPanel(false)} className="text-slate-400 hover:text-white" aria-label="Cerrar">Cerrar</button>
             </div>
 
             <button
               onClick={() => { triggerHaptic(); setShowTester(true); setShowAdminPanel(false); }}
               className="w-full bg-[#0B8D63] hover:bg-[#0AA577] text-white font-bold py-3 rounded-lg text-sm uppercase tracking-wider transition-colors"
             >
-              🚀 Abrir Tester
+              Abrir Tester
             </button>
           </div>
         </div>
@@ -553,9 +572,9 @@ export default function App() {
 
 function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 sm:py-2.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#0B8D63] text-white shadow-md shadow-sky-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+    <button type="button" aria-label={label} aria-current={isActive ? 'page' : undefined} data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-1 min-h-[48px] py-2 rounded-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${isActive ? 'bg-primary text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
       {icon}
-      {isActive && <span className="text-[9px] sm:text-[10px] font-extrabold animate-in zoom-in duration-200">{label}</span>}
+      <span className="text-[11px] font-bold">{label}</span>
     </button>
   );
 }

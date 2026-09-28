@@ -1,5 +1,7 @@
 import { formatBs, formatUsd } from './calculatorUtils';
 import { formatOfficialRate } from './rateResolver';
+import { getBranding, SYSTEM_BRAND } from '../config/branding';
+import { getActiveSedeId } from '../config/storageScope';
 
 /**
  * Genera el HTML del ticket térmico (fuente única de verdad para print y PDF).
@@ -52,7 +54,6 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
     }
 
     const settings = {
-        name: localStorage.getItem('business_name') || '',
         rif: localStorage.getItem('business_rif') || '',
         address: localStorage.getItem('business_address') || '',
         phone: localStorage.getItem('business_phone') || '',
@@ -66,7 +67,12 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
     const hora = d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
     const hasFiado = sale.fiadoUsd > 0;
 
-    const logoSrc = forCapture ? `${location.origin}/logo.png` : '/logo.png';
+    // Branding por sede (agent.md #3): el ticket muestra el logo y nombre
+    // de la sede de la venta; si la sede no tiene logo, cae al de Farma POS.
+    const sedeId = sale.huella?.sedeId || getActiveSedeId();
+    const brand = getBranding(sedeId);
+    const logoSrc = forCapture ? `${location.origin}${brand.logo}` : brand.logo;
+    const fallbackLogo = forCapture ? `${location.origin}${SYSTEM_BRAND.logo}` : SYSTEM_BRAND.logo;
 
     const itemsHtml = (sale.items || []).map(item => {
         const qty = item.isWeight ? item.qty.toFixed(2) : String(item.qty);
@@ -168,10 +174,10 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
 </head>
 <body>
     <div class="center" style="margin-bottom:6px;">
-        <img src="${logoSrc}" alt="Logo" style="max-width:${cssLogoW};max-height:16mm;width:auto;height:auto;" onerror="this.style.display='none'">
+        <img src="${logoSrc}" alt="Logo" style="max-width:${cssLogoW};max-height:16mm;width:auto;height:auto;" onerror="this.onerror=null;this.src='${fallbackLogo}';">
     </div>
     <div class="center" style="margin-bottom:6px;line-height:1.2;">
-        ${settings.name ? `<div class="bold" style="font-size:${fTitle};text-transform:uppercase;">${settings.name}</div>` : ''}
+        ${brand.name ? `<div class="bold" style="font-size:${fTitle};text-transform:uppercase;">${brand.name}</div>` : ''}
         ${settings.rif ? `<div style="font-size:${fTiny};">RIF: ${settings.rif}</div>` : ''}
         ${settings.address ? `<div style="font-size:${fTiny};">${settings.address}</div>` : ''}
         ${settings.phone ? `<div style="font-size:${fTiny};">Tel: ${settings.phone}</div>` : ''}
@@ -343,7 +349,7 @@ export function printThermalTicket(sale, bcvRate) {
 
     // Fallback si onload no dispara
     setTimeout(() => {
-        try { printWindow.print(); } catch(_) {}
+        try { printWindow.print(); } catch(_) { /* navegador bloqueó el print */ }
     }, 1500);
 }
 
@@ -405,7 +411,7 @@ export const generarEtiquetas = async (productos, effectiveRate, copEnabled, tas
         doc.setFontSize(12);
         
         const priceBsRaw = priceUsdRaw * effectiveRate;
-        // Redondeo inteligente de Bs hacia arriba como en Listo POS si se quiere, o exacto.
+        // Redondeo inteligente de Bs hacia arriba como en Farma POS si se quiere, o exacto.
         const textBs = `Bs ${Math.ceil(priceBsRaw).toLocaleString('es-VE')}`;
         
         doc.text(textBs, centerX, safeY, { align: "center", baseline: "top" });

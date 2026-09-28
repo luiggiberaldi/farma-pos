@@ -9,8 +9,11 @@ export default function AnimatedCounter({ value, prefix = '', suffix = '', durat
     const numericValue = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.-]/g, '')) || 0;
     const isDecimal = String(value).includes('.') || numericValue % 1 !== 0;
 
+    // Ajuste durante render (patrón recomendado por React, sin cascada de efectos)
+    if (numericValue === 0 && display !== 0) setDisplay(0);
+
     useEffect(() => {
-        if (numericValue === 0) { setDisplay(0); return; }
+        if (numericValue === 0) return;
 
         const startTime = performance.now();
         let rafId;
@@ -29,7 +32,10 @@ export default function AnimatedCounter({ value, prefix = '', suffix = '', durat
         };
 
         rafId = requestAnimationFrame(animate);
-        return () => cancelAnimationFrame(rafId);
+        // Fallback: si requestAnimationFrame está pausado (pestaña oculta),
+        // garantiza mostrar el valor final.
+        const snapId = setTimeout(() => setDisplay(numericValue), duration + 100);
+        return () => { cancelAnimationFrame(rafId); clearTimeout(snapId); };
     }, [numericValue, duration]);
 
     const formatted = isDecimal ? display.toFixed(2) : Math.round(display).toLocaleString();

@@ -9,6 +9,7 @@ import {
 import { storageService } from '../utils/storageService';
 import { broadcastFactoryReset, broadcastForceReload } from '../hooks/useCloudSync';
 import { uploadBackupToCloud } from '../hooks/useCloudAuthLogic';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
 import { showToast } from '../components/Toast';
 import PaymentMethodsManager from '../components/Settings/PaymentMethodsManager';
 import UsersManager from '../components/Settings/UsersManager';
@@ -16,12 +17,13 @@ import AuditLogViewer from '../components/Settings/AuditLogViewer';
 import { useSecurity } from '../hooks/useSecurity';
 import { useNotifications } from '../hooks/useNotifications';
 import { supabaseCloud } from '../config/supabaseCloud';
+import { signOutCloudAccount } from '../services/cloudSessionLifecycle.js';
+import { collectBranchBackup, validateBranchBackup, restoreBranchBackup, previewBranchBackup } from '../services/dataBackupService.js';
 import { useProductContext } from '../context/ProductContext';
 import { useAuthStore } from '../hooks/store/useAuthStore';
-import ShareInventoryModal from '../components/ShareInventoryModal';
 import { useAudit } from '../hooks/useAudit';
-import { useConfirm } from '../hooks/useConfirm.jsx';
-import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey } from '../config/storageScope';
+import { useConfirm } from '../hooks/confirmState.js';
+import { APP_STORAGE_DB_NAME } from '../config/storageScope';
 import SettingsTabNegocio from '../components/Settings/tabs/SettingsTabNegocio';
 import SettingsTabVentas from '../components/Settings/tabs/SettingsTabVentas';
 import SettingsTabUsuarios from '../components/Settings/tabs/SettingsTabUsuarios';
@@ -57,7 +59,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const requireLogin = useAuthStore(s => s.requireLogin ?? false);
     const setRequireLogin = useAuthStore(s => s.setRequireLogin);
     const adminEmail = useAuthStore(s => s.adminEmail);
-    const adminPassword = useAuthStore(s => s.adminPassword);
     const setAdminCredentials = useAuthStore(s => s.setAdminCredentials);
 
     const { deviceId, forceHeartbeat } = useSecurity();
@@ -67,7 +68,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
     const [activeTab, setActiveTab] = useState('negocio');
     const [idCopied, setIdCopied] = useState(false);
-    const [isShareOpen, setIsShareOpen] = useState(false);
     const [importStatus, setImportStatus] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -85,7 +85,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     const isCloudConfigured = Boolean(adminEmail);
     // Sin PIN activo, tratar a todos como admin para mostrar todas las pestañas
     const pinLoginEnabled = requireLogin && isCloudConfigured;
-    const effectiveAdmin = isAdmin || !pinLoginEnabled;
+    const effectiveAdmin = isAdmin;
     const [showPostImportCloud, setShowPostImportCloud] = useState(false);
     const [importedBackup, setImportedBackup] = useState(null);
 
@@ -99,6 +99,10 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
     };
 
     const handleForceRemoteReload = async () => {
+        if (REMOTE_OPERATIONS_PAUSED) {
+            showToast(CLOUD_PAUSE_MESSAGE, 'warning');
+            return;
+        }
         try {
             const { data: { session } } = await supabaseCloud.auth.getSession();
             if (!session?.user?.id) {
@@ -118,35 +122,11 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         try {
             setImportStatus('loading');
             setStatusMessage('Generando backup completo...');
-            const idbKeys = [
-                'bodega_products_v1', 'my_categories_v1',
-                'bodega_sales_v1', 'bodega_customers_v1',
-                'bodega_suppliers_v1', 'bodega_supplier_invoices_v1',
-                'bodega_accounts_v2', 'bodega_pending_cart_v1',
-                'payment_methods_v1', 'payment_methods_v2'
-            ];
-            const idbData = {};
-            for (const key of idbKeys) {
-                const data = await storageService.getItem(key, null);
-                if (data !== null) idbData[key] = data;
-            }
-            const lsKeys = [
-                'premium_token', 'street_rate_bs', 'catalog_use_auto_usdt',
-                'catalog_custom_usdt_price', 'catalog_show_cash_price',
-                'monitor_rates_v12', 'business_name', 'business_rif',
-                'printer_paper_width', 'printer_mode', 'allow_negative_stock', 'cop_enabled',
-                'auto_cop_enabled', 'tasa_cop', 'bodega_use_auto_rate',
-                'bodega_custom_rate', 'bodega_inventory_view'
-            ];
-            const lsData = {};
-            for (const key of lsKeys) {
-                const val = localStorage.getItem(key);
-                if (val !== null) lsData[key] = val;
-            }
-            const blob = new Blob([JSON.stringify({ timestamp: new Date().toISOString(), version: '2.0', appName: 'Listo_POS', data: { idb: idbData, ls: lsData } })], { type: 'application/json' });
+            const backup = await collectBranchBackup();
+            const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `backup_listo_pos_${new Date().toISOString().slice(0,10)}.json`;
+            a.href = url; a.download = `backup_farma_pos_${new Date().toISOString().slice(0,10)}.json`;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             URL.revokeObjectURL(url);
             setImportStatus('success'); setStatusMessage('Backup descargado.');
@@ -157,7 +137,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         }
     };
 
-    const handleImportClick = () => fileInputRef.current?.click();
+    const handleImportClick = () => showToast('Restauración pausada hasta conciliar pendientes y garantizar un guardado atómico. Los respaldos existentes se conservan.', 'warning');
 
     const handleUploadImportedBackup = async () => {
         if (!importedBackup?.data) return;
@@ -200,30 +180,43 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
 
     const handleFileChange = (event) => {
         const file = event.target.files[0];
+        event.target.value = '';
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
-                setImportStatus('loading'); setStatusMessage('Restaurando...');
-                const json = JSON.parse(e.target.result);
-                if (!json.data) throw new Error('Formato invalido.');
-                // Bypass storageService to prevent app_storage_update events from firing.
-                // If events fire, ProductContext auto-save overwrites the imported products
-                // with the old in-memory state before the page reloads.
-                const lf = localforage.createInstance({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
-                if (json.version === '2.0' && json.data.idb) {
-                    for (const [key, value] of Object.entries(json.data.idb)) await lf.setItem(getScopedStorageKey(key), value);
-                    if (json.data.ls) for (const [key, value] of Object.entries(json.data.ls)) localStorage.setItem(key, value);
-                } else {
-                    if (json.data.bodega_products_v1) await lf.setItem(getScopedStorageKey('bodega_products_v1'), typeof json.data.bodega_products_v1 === 'string' ? JSON.parse(json.data.bodega_products_v1) : json.data.bodega_products_v1);
+                const backup = validateBranchBackup(JSON.parse(e.target.result));
+                const preview = previewBranchBackup(backup);
+                setImportStatus(null);
+                setStatusMessage(null);
+                // Replacing every collection is irreversible: show the exact
+                // numbers and require an explicit confirmation first.
+                const confirmed = await confirm({
+                    title: 'Restaurar respaldo',
+                    message: [
+                        `Origen: ${new Date(preview.sourceTimestamp).toLocaleString('es-VE')} · sede ${preview.branch}`,
+                        `Productos: ${preview.collections.bodega_products_v1 || 0} · ventas: ${preview.collections.bodega_sales_v1 || 0} · clientes: ${preview.collections.bodega_customers_v1 || 0}`,
+                        preview.preservedOutbox > 0
+                            ? `El respaldo trae ${preview.preservedOutbox} operación(es) pendiente(s): se guardarán como evidencia y NO se reenviarán.`
+                            : 'El respaldo no trae operaciones pendientes.',
+                        'Se reemplazará TODO el historial de esta sede en este equipo. Esta acción no se puede deshacer.',
+                    ].join('\n\n'),
+                    confirmText: 'Restaurar y reemplazar',
+                    cancelText: 'Cancelar',
+                    variant: 'danger',
+                });
+                if (!confirmed) return;
+                setImportStatus('loading');
+                setStatusMessage('Restaurando respaldo...');
+                const result = await restoreBranchBackup(backup);
+                if (result.warning) {
+                    setImportStatus('error');
+                    setStatusMessage(result.warning);
+                    return;
                 }
-                setImportedBackup(json);
-                setImportStatus('success'); setStatusMessage('Restauracion finalizada.');
-                auditLog('SISTEMA', 'BACKUP_IMPORTADO', 'Backup restaurado'); triggerHaptic?.();
-                // Mantener el diálogo abierto para permitir una subida explícita.
-                setShowPostImportCloud(true);
-            } catch {
-                setImportStatus('error'); setStatusMessage('Error: archivo corrupto o invalido.');
+                showToast('Respaldo de esta sede restaurado. Vuelve a iniciar sesión por PIN.', 'success');
+            } catch (error) {
+                setImportStatus('error'); setStatusMessage(error.message || 'Error: archivo corrupto o inválido.');
             }
         };
         reader.readAsText(file);
@@ -260,8 +253,13 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                         variant: 'logout',
                                     });
                                     if (!ok) return;
-                                    await supabaseCloud.auth.signOut();
-                                    window.location.reload();
+                                    try {
+                                        await signOutCloudAccount(supabaseCloud);
+                                    } catch (error) {
+                                        showToast(error?.message || 'La sesión local se cerró; no se pudo confirmar la salida cloud.', 'warning');
+                                    } finally {
+                                        window.location.reload();
+                                    }
                                 }}
                                 className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-2.5 pr-3 py-1.5 group hover:border-rose-300 dark:hover:border-rose-700 transition-colors"
                             >
@@ -359,7 +357,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                             importStatus={importStatus} statusMessage={statusMessage}
                             handleExport={handleExport}
                             handleImportClick={handleImportClick}
-                            setIsShareOpen={() => setIsShareOpen(true)}
                             setShowFactoryReset={setShowFactoryReset}
                             triggerHaptic={triggerHaptic}
                             isCloudConfigured={isCloudConfigured}
@@ -370,7 +367,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                     {/* Version footer */}
                     <div className="text-center pt-2 pb-1">
                         <p className="text-[10px] text-slate-300 dark:text-slate-700 font-bold tracking-widest uppercase">
-                            Farmacia César · POS Multi-Sede
+                            Farma POS · Multi-Sede
                         </p>
                     </div>
                 </div>
@@ -387,6 +384,11 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
                             Se eliminará <strong>todo</strong>: inventario, ventas, clientes, cuentas, configuraciones y usuarios. La app quedará como recién instalada. Escribe <span className="font-mono font-black text-red-500">REINICIAR</span> para confirmar:
                         </p>
+                        {REMOTE_OPERATIONS_PAUSED && (
+                            <p role="status" className="mb-4 text-sm font-bold text-amber-800 dark:text-amber-200">
+                                Reinicio bloqueado: se conservan los datos y las ventas pendientes mientras la sincronización está pausada.
+                            </p>
+                        )}
                         <input
                             type="text"
                             value={factoryResetInput}
@@ -400,8 +402,13 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                 Cancelar
                             </button>
                             <button
-                                disabled={factoryResetInput !== 'REINICIAR'}
+                                disabled={REMOTE_OPERATIONS_PAUSED || factoryResetInput !== 'REINICIAR'}
+                                title={REMOTE_OPERATIONS_PAUSED ? CLOUD_PAUSE_MESSAGE : undefined}
                                 onClick={async () => {
+                                    if (REMOTE_OPERATIONS_PAUSED) {
+                                        showToast('Reinicio bloqueado durante la pausa para conservar datos y ventas pendientes.', 'warning');
+                                        return;
+                                    }
                                     if (factoryResetInput !== 'REINICIAR') return;
                                     triggerHaptic?.();
 
@@ -422,7 +429,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                             await supabaseCloud.from('sync_documents').delete().eq('user_id', cloudSession.user.id);
                                             await supabaseCloud.from('cloud_backups').delete().eq('email', cloudSession.user.email);
                                             await supabaseCloud.from('device_backups').delete().eq('device_id', localStorage.getItem('pda_device_id') || '');
-                                            await supabaseCloud.auth.signOut();
+                                            await signOutCloudAccount(supabaseCloud);
                                         } catch (e) { /* ignorar */ }
                                     }
 
@@ -505,11 +512,6 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                     </div>
                 </div>
             )}
-
-            <ShareInventoryModal
-                isOpen={isShareOpen}
-                onClose={() => setIsShareOpen(false)}
-            />
 
             <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
         </div>
