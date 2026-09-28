@@ -229,16 +229,18 @@ CREATE POLICY "Dispositivos acceden su propio backup"
     USING (true)
     WITH CHECK (true);
 
--- 8. process_checkout — Stub de RPC para checkout server-side
--- TODO: Marck debe implementar la lógica real de validación de pagos.
+-- 8. process_checkout — STUB NEUTRALIZADO (C5, 2026-09-28).
+-- El stub original retornaba un sale_id falso sin escribir nada, lo que
+-- permitía ventas "exitosas" inexistentes si un CREATE OR REPLACE pisaba la
+-- implementación real. Ahora falla de forma ruidosa. El checkout real vive
+-- en supabase/migrations/ (pharmacy_commit_sale sobre app_private).
 CREATE OR REPLACE FUNCTION public.process_checkout(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-    -- Stub: retorna sale_id generado. Implementar validación de pagos aquí.
-    RETURN jsonb_build_object('sale_id', gen_random_uuid()::text);
+    RAISE EXCEPTION 'process_checkout es un stub deshabilitado: usar pharmacy_commit_sale';
 END;
 $$;
 

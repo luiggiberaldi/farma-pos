@@ -101,12 +101,14 @@ export async function exportCloudBackup(deviceId) {
         const backup = await storageService.getItem(BACKUP_KEY, null);
         if (!backup?.data) return false;
 
-        await supabase.from('device_backups').upsert({
-            device_id: deviceId,
-            product_id: 'bodega',
-            backup_data: sanitizeBackup(backup.data),
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'device_id' });
+        // C2 (2026-09-28): la tabla ya no admite acceso directo anónimo.
+        // Se usa el RPC device_backup_save (SECURITY DEFINER), que exige el
+        // device_id como capacidad. Ver supabase/migrations/202609280001_device_backups_hardening.sql
+        const { error: rpcError } = await supabase.rpc('device_backup_save', {
+            p_device_id: deviceId,
+            p_backup: sanitizeBackup(backup.data),
+        });
+        if (rpcError) throw rpcError;
 
         return true;
     } catch (e) {

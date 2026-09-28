@@ -428,7 +428,9 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                             // Borrar datos de la nube (sesión activa garantizada)
                                             await supabaseCloud.from('sync_documents').delete().eq('user_id', cloudSession.user.id);
                                             await supabaseCloud.from('cloud_backups').delete().eq('email', cloudSession.user.email);
-                                            await supabaseCloud.from('device_backups').delete().eq('device_id', localStorage.getItem('pda_device_id') || '');
+                                            // C2 (2026-09-28): sin acceso directo a device_backups; se borra vía RPC
+                                            // atado al device_id (ver 202609280001_device_backups_hardening.sql).
+                                            await supabaseCloud.rpc('device_backup_delete', { p_device_id: localStorage.getItem('pda_device_id') || '' });
                                             await signOutCloudAccount(supabaseCloud);
                                         } catch (e) { /* ignorar */ }
                                     }

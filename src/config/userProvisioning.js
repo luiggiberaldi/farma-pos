@@ -1,8 +1,19 @@
 import { SEDES } from './sedes.js';
 
 // PIN de fábrica universal: el dueño (6 dígitos) y los cajeros (4 dígitos)
-// arrancan con ceros. La app exige cambiarlo antes de operar con cuenta cloud.
+// arrancan con ceros.
+//
+// DECISIÓN OPERATIVA (2026-09-28): los PINs de fábrica siguen vigentes por ahora
+// para no bloquear la operación. La app muestra un aviso persistente
+// (FactoryPinBanner) hasta que el dueño los cambie. Cuando se decida la
+// rotación, eliminar estos valores y forzar el cambio en el primer arranque.
 export const CASHIER_FACTORY_PIN = '0000';
+
+/** true si el PIN es uno de los PINs de fábrica (inseguro, debe cambiarse).
+ *  OWNER_FACTORY_PIN se declara más abajo en este mismo módulo. */
+export function isFactoryPin(pin) {
+    return pin === CASHIER_FACTORY_PIN || pin === '000000';
+}
 
 // Catálogo base de cuentas: el Dueño (id 1) es la única cuenta permanente
 // del sistema y cada sede arranca con un cajero con PIN de fábrica.

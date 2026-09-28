@@ -3,6 +3,7 @@ import { X, Delete, Loader2, ShieldAlert } from 'lucide-react';
 import LoginAvatar from './LoginAvatar';
 import { useAuthStore } from '../../hooks/store/useAuthStore.js';
 import { canUsePinlessAccess } from '../../utils/operatorSession.js';
+import { isFactoryPin } from '../../config/userProvisioning.js';
 import { captureStorageContext } from '../../config/storageScope.js';
 
 export default function LoginPinModal({ isOpen, onClose, user, onSubmit, forcePin = false, purpose = 'login' }) {
@@ -88,6 +89,7 @@ function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
                     <p className="mt-2 text-xs text-center text-slate-500">{purpose === 'sede' ? 'Autoriza el cambio de sede sin cambiar de usuario' : pinless ? 'Acceso local limitado a la sede asignada' : `Ingresa tu PIN de ${pinLength} dígitos`}</p>
                 </div>
                 {!user.pin && !pinless && <p role="alert" className="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mb-4">El dueño debe configurar un PIN para este usuario. El acceso cloud no permite saltar el PIN.</p>}
+                {user.pin && !user.pinHashed && isFactoryPin(user.pin) && <p role="alert" className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-xl p-3 mb-4">Estás usando el PIN de fábrica. Cámbialo cuanto antes en Ajustes → Usuarios: cualquiera que conozca la app puede entrar con él.</p>}
                 {error && <p role="alert" className="flex items-start gap-2 mb-4 p-3 text-sm font-semibold text-red-700 bg-red-50 rounded-xl"><ShieldAlert size={18} className="shrink-0" />{error}</p>}
                 {pinless && pinlessAttempted && error && <button type="button" disabled={processing} onClick={() => void submit('', true)} className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold">Reintentar acceso local</button>}
                 {!pinless && <>

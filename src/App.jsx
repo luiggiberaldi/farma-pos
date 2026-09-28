@@ -24,6 +24,8 @@ import { useAutoBackup } from './hooks/useAutoBackup';
 import CommandPalette from './components/CommandPalette';
 import SpotlightTour from './components/SpotlightTour';
 import LockScreen from './components/security/LockScreen';
+import FactoryPinBanner from './components/security/FactoryPinBanner';
+import { isFactoryPin } from './config/userProvisioning';
 import CloudAuthModal from './components/security/CloudAuthModal';
 import { useAuthStore } from './hooks/store/useAuthStore';
 import { useAutoLock } from './hooks/useAutoLock';
@@ -41,6 +43,8 @@ import { SUPABASE_FREE_PROFILE } from './config/supabaseFreeTier.js';
 export default function App() {
   const [selectedTab, setActiveTab] = useState('inicio');
   const usuarioActivo = useAuthStore(state => state.usuarioActivo);
+  const usuarios = useAuthStore(state => state.usuarios);
+  const factoryPinUsers = (usuarios || []).filter(u => u && !u.pinHashed && isFactoryPin(u.pin));
   const [workspace, setWorkspace] = useState({ identity: null, mode: 'gestion' });
   const workspaceIdentity = `${getActiveAccountId() || 'local'}:${usuarioActivo?.id || 'locked'}`;
   const appMode = usuarioActivo?.rol === 'CAJERO' ? 'caja' : workspace.identity === workspaceIdentity ? workspace.mode : 'gestion';
@@ -387,6 +391,13 @@ export default function App() {
   return (
     <div className="font-sans antialiased bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-[100dvh] flex flex-col overflow-clip">
 
+
+      {/* Aviso de PINs de fábrica (C3 adaptado): visible mientras algún
+          usuario conserve el PIN de fábrica. Los PINs siguen funcionando. */}
+      <FactoryPinBanner
+        affectedNames={factoryPinUsers.map(u => u.nombre || `Usuario ${u.id}`)}
+        onGoToUsers={usuarioActivo?.rol === 'DUENO' ? () => setActiveTab('ajustes') : undefined}
+      />
 
       {/* Terms and Conditions Overlay (First Use) */}
       <TermsOverlay onAccepted={() => {

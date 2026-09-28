@@ -1,6 +1,6 @@
 # DESVINCULACIÓN COMPLETADA — Fase 1
 
-> El proyecto quedó desvinculado del proyecto Supabase original (`fgzwmwrugerptfqfrsjd`), de los dominios de deploy anteriores y del sistema de licencias. Compila y funciona en **modo local 100% offline** mientras se configuran las credenciales del nuevo proyecto Supabase.
+> El proyecto quedó desvinculado del proyecto Supabase original, de los dominios de deploy anteriores y del sistema de licencias. Compila y funciona en **modo local 100% offline** mientras se configuran las credenciales del nuevo proyecto Supabase.
 
 ## Archivos modificados
 
@@ -41,7 +41,7 @@
 
 - ✅ `npm install` — OK (groq-sdk fuera, sin dependencias rotas)
 - ✅ `npm run build` — OK (`farmacia-cesar-pos@2.0.0`, 2141 módulos, PWA generada)
-- ✅ Sin refs a `fgzwmwrugerptfqfrsjd` en código (solo quedan en `AUDITORIA_TRANSFORMACION.md` como registro histórico)
+- ✅ Sin refs al proyecto anterior en código ni en documentos
 - ✅ Sin refs a `listo-pos-lite`/`tasasaldia` en código (quedan las claves internas de storage documentadas arriba)
 
 ## Pendientes cuando se proporcione el nuevo repo + Supabase

@@ -23,7 +23,7 @@ El repositorio clonado (`listo_pos_lite-`, repo GitHub `luiggiberaldi/listo_pos_
 | Móvil | Capacitor 8 (`android/`) |
 | Otros | `groq-sdk` (IA), `localforage`, `jspdf`+`html2canvas`, `lucide-react`, tests con `node --test` |
 
-## 3. Mapa de referencias a Supabase (proyecto `fgzwmwrugerptfqfrsjd`)
+## 3. Mapa de referencias a Supabase (proyecto original, ya desvinculado)
 
 ### 3.1 Cliente y configuración
 | Archivo | Línea | Tipo | Contenido | Impacto al eliminar |
@@ -36,7 +36,7 @@ El repositorio clonado (`listo_pos_lite-`, repo GitHub `luiggiberaldi/listo_pos_
 ### 3.2 Project ref / URL hardcodeados
 | Archivo | Línea | Contenido |
 |---------|-------|-----------|
-| `api/update-profile.js` | 4 | fallback `https://fgzwmwrugerptfqfrsjd.supabase.co` |
+| `api/update-profile.js` | 4 | fallback con la URL del proyecto original (ya eliminado) |
 | `api/checkout.js` | 6 | ídem |
 | `src/worker.js` | 11 | ídem |
 | `supabase/.temp/pooler-url` | 1 | connection string postgres del pooler |

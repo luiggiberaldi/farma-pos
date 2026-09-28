@@ -28,8 +28,8 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 async function run() {
   console.log("Autenticando en Supabase...");
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email: '***REMOVED***',
-    password: '***REMOVED***'
+    email: envConfig['MIGRATE_EMAIL'] || process.env.MIGRATE_EMAIL,
+    password: envConfig['MIGRATE_PASSWORD'] || process.env.MIGRATE_PASSWORD
   });
 
   if (authError) {
