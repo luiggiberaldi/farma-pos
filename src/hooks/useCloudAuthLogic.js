@@ -12,12 +12,6 @@ import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operati
 import { beginCloudLogin } from '../services/cloudSessionLifecycle.js';
 import { sanitizeBackup } from '../utils/backupSafety.js';
 
-// El Worker local no suele tener SUPABASE_SERVICE_KEY; no lanzar peticiones
-// destinadas al despliegue desde el servidor de desarrollo.
-const PROFILE_SYNC_ENABLED = import.meta.env.PROD
-    && typeof window !== 'undefined'
-    && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
-
 /**
  * Guarda explícitamente un backup completo en la cuenta cloud y espeja sus datos
  * en sync_documents para que la restauración sea visible en los demás equipos.
@@ -88,13 +82,9 @@ export function useCloudAuthLogic() {
     // ─── STATE ──────────────────────────────────────────
     const [inputEmail, setInputEmail] = useState(adminEmail || '');
     const [inputPassword, setInputPassword] = useState(''); // ← Siempre en blanco por seguridad
-    const [inputConfirmPassword, setInputConfirmPassword] = useState('');
-    const [inputBusinessName, setInputBusinessName] = useState(() => localStorage.getItem('business_name') || '');
     const isCloudConfigured = Boolean(adminEmail);
-    const [isCloudLogin, setIsCloudLogin] = useState(true);
 
     const [localDeviceAlias, setLocalDeviceAlias] = useState(() => localStorage.getItem('pda_device_alias') || '');
-    const [inputPhone, setInputPhone] = useState('');
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
@@ -262,12 +252,7 @@ export function useCloudAuthLogic() {
         let hasError = false;
         if (!inputEmail.includes('@')) { setEmailError('Formato no válido'); hasError = true; }
         if (inputPassword.length < 6) { setPasswordError('Mínimo 6 caracteres'); hasError = true; }
-        if (!isCloudLogin) {
-            if (!inputBusinessName.trim()) { showToast('El nombre del negocio es obligatorio', 'error'); hasError = true; }
-            if (inputPassword !== inputConfirmPassword) { setPasswordError('Las contraseñas no coinciden'); hasError = true; }
-            if (!inputPhone.trim()) { showToast('El teléfono es obligatorio', 'error'); hasError = true; }
-        }
-        
+
         if (hasError) return;
 
         const emailToUse = inputEmail.trim().toLowerCase();
@@ -283,33 +268,13 @@ export function useCloudAuthLogic() {
             localStorage.setItem('pda_explicit_login', 'true');
 
             if (supabaseCloud) {
-                if (isCloudLogin) {
-                    const { data: signInData, error: err } = await supabaseCloud.auth.signInWithPassword({
-                        email: emailToUse, password: inputPassword,
-                    });
-                    if (err) throw new Error('Error al iniciar: ' + err.message);
-                    await ensureAuthenticatedSession(signInData?.session);
-                    // Fijar el namespace antes de leer backups o datos locales.
-                    if (signInData?.user?.id) setActiveAccountId(signInData.user.id);
-                } else {
-                    const { data, error: err } = await supabaseCloud.auth.signUp({
-                        email: emailToUse, password: inputPassword,
-                        options: { data: { full_name: inputBusinessName.trim() || 'Negocio', phone: inputPhone } },
-                    });
-                    if (err) {
-                        if (err.message.includes('already registered')) throw new Error('Ya registrado. Entrar.');
-                        throw new Error('Registro falló: ' + err.message);
-                    }
-                    if (data?.user?.identities?.length === 0) throw new Error('Ya registrado. Entrar.');
-                    if (data?.user && !data.session) {
-                        // Guardar el nombre del negocio antes del redirect
-                        if (inputBusinessName.trim()) localStorage.setItem('business_name', inputBusinessName.trim());
-                        showToast('Revisa tu correo y confírmalo.', 'success');
-                        setImportStatus('awaiting_email_confirmation');
-                        return;
-                    }
-                    if (data?.session) await ensureAuthenticatedSession(data.session);
-                }
+                const { data: signInData, error: err } = await supabaseCloud.auth.signInWithPassword({
+                    email: emailToUse, password: inputPassword,
+                });
+                if (err) throw new Error('Error al iniciar: ' + err.message);
+                await ensureAuthenticatedSession(signInData?.session);
+                // Fijar el namespace antes de leer backups o datos locales.
+                if (signInData?.user?.id) setActiveAccountId(signInData.user.id);
             }
 
             setStatusMessage('Verificando dispositivos...');
@@ -319,7 +284,7 @@ export function useCloudAuthLogic() {
 
             // Jalar metadatos del usuario (nombre del negocio y teléfono) desde Supabase
             // y guardarlos en localStorage para que la estación los tenga disponibles
-            if (isCloudLogin && supabaseCloud) {
+            if (supabaseCloud) {
                 try {
                     const { data: { user } } = await supabaseCloud.auth.getUser();
                     if (user?.user_metadata) {
@@ -376,7 +341,7 @@ export function useCloudAuthLogic() {
             const hasLocalData = Object.keys(localBackup.data.idb).length > 0;
             const hasCloudData = cloudBackup && cloudBackup.data;
 
-            if (isCloudLogin && hasCloudData && hasLocalData) {
+            if (hasCloudData && hasLocalData) {
                 setDataConflictPending({ email: emailToUse, cloudBackup, localBackup });
                 await registerDevice(emailToUse);
                 setAdminCredentials(emailToUse);
@@ -387,7 +352,7 @@ export function useCloudAuthLogic() {
                 return;
             }
 
-            if (isCloudLogin && hasCloudData && !hasLocalData) {
+            if (hasCloudData && !hasLocalData) {
                 setStatusMessage('Restaurando nube...');
                 await applyCloudBackup(cloudBackup);
                 await registerDevice(emailToUse);
@@ -413,27 +378,6 @@ export function useCloudAuthLogic() {
 
             setAdminCredentials(emailToUse);
             setInputPassword('');
-            // Guardar datos del negocio en localStorage para la estación
-            if (!isCloudLogin) {
-                if (inputBusinessName.trim()) localStorage.setItem('business_name', inputBusinessName.trim());
-                if (inputPhone.trim()) localStorage.setItem('business_phone', inputPhone.trim());
-
-                // Sincronizar Display name y Phone en auth.users via Admin API (worker)
-                try {
-                    const { data: { session } } = await supabaseCloud.auth.getSession();
-                    if (PROFILE_SYNC_ENABLED && session?.access_token) {
-                        fetch('/api/update-profile', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                accessToken: session.access_token,
-                                businessName: inputBusinessName.trim() || undefined,
-                                phone: inputPhone.trim() || undefined,
-                            }),
-                        }).catch(() => {});
-                    }
-                } catch (e) { /* silencioso */ }
-            }
             await notifyCloudLoginCompleted();
             showToast('Sincronizado', 'success');
             setImportStatus(null);
@@ -471,11 +415,7 @@ export function useCloudAuthLogic() {
     return {
         inputEmail, setInputEmail,
         inputPassword, setInputPassword,
-        inputConfirmPassword, setInputConfirmPassword,
-        inputBusinessName, setInputBusinessName,
-        inputPhone, setInputPhone,
         isCloudConfigured,
-        isCloudLogin, setIsCloudLogin,
         emailError, setEmailError,
         passwordError, setPasswordError,
         isRecoveringPassword, setIsRecoveringPassword,

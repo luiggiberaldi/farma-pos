@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-    Mail, Key, Phone, ArrowRight, ShieldCheck,
-    Smartphone, Database, AlertCircle, X, Download, Eye, EyeOff, Store
+    Mail, Key, ArrowRight,
+    Smartphone, Database, AlertCircle, X, Download, Eye, EyeOff
 } from 'lucide-react';
 import { useCloudAuthLogic } from '../../hooks/useCloudAuthLogic';
 import { useConfirm } from '../../hooks/confirmState.js';
@@ -31,10 +31,6 @@ export default function CloudAuthModal({
     const {
         inputEmail, setInputEmail,
         inputPassword, setInputPassword,
-        inputConfirmPassword, setInputConfirmPassword,
-        inputBusinessName, setInputBusinessName,
-        inputPhone, setInputPhone,
-        isCloudLogin, setIsCloudLogin,
         emailError, setEmailError,
         passwordError, setPasswordError,
         isRecoveringPassword, setIsRecoveringPassword,
@@ -51,7 +47,6 @@ export default function CloudAuthModal({
     } = authLogic;
 
     const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const confirm = useConfirm();
 
     if (!isOpen && !forceLogin) return null;
@@ -190,23 +185,8 @@ export default function CloudAuthModal({
                         </p>
                     </div>
 
-                    {/* Tabs Login / Registro */}
-                    {!isRecoveringPassword && (
-                        <div className="flex p-1 bg-slate-100 rounded-xl mb-5">
-                            <button
-                                onClick={() => { setIsCloudLogin(true); setEmailError(''); setPasswordError(''); }}
-                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isCloudLogin ? 'bg-white text-sky-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                Entrar
-                            </button>
-                            <button
-                                onClick={() => { setIsCloudLogin(false); setEmailError(''); setPasswordError(''); }}
-                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isCloudLogin ? 'bg-white text-sky-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                Registro
-                            </button>
-                        </div>
-                    )}
+                    {/* Sin pestaña de registro: la única cuenta de nube es la del dueño
+                        y se crea por vía administrativa. */}
 
                     <form className="space-y-3" onSubmit={event => {
                         event.preventDefault();
@@ -252,36 +232,12 @@ export default function CloudAuthModal({
                                     {emailError && <p className="text-[11px] text-red-500 font-bold mt-1 ml-1">{emailError}</p>}
                                 </div>
 
-                                {/* Nombre del negocio (solo registro) */}
-                                {!isCloudLogin && (
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Store size={16} className="text-slate-400" /></div>
-                                        <input
-                                            type="text" name="businessName" aria-label="Business name" autoComplete="organization" value={inputBusinessName} onChange={e => setInputBusinessName(e.target.value)}
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
-                                            placeholder="Nombre del negocio"
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Teléfono (solo registro) */}
-                                {!isCloudLogin && (
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Phone size={16} className="text-slate-400" /></div>
-                                        <input
-                                            type="tel" name="phone" aria-label="Business WhatsApp" autoComplete="tel" value={inputPhone} onChange={e => setInputPhone(e.target.value)}
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
-                                            placeholder="WhatsApp del negocio"
-                                        />
-                                    </div>
-                                )}
-
                                 {/* Contraseña */}
                                 <div>
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Key size={16} className="text-slate-400" /></div>
                                         <input
-                                            type={showPassword ? 'text' : 'password'} name="password" aria-label="Password" autoComplete={isCloudLogin ? 'current-password' : 'new-password'} value={inputPassword} onChange={e => setInputPassword(e.target.value)}
+                                            type={showPassword ? 'text' : 'password'} name="password" aria-label="Password" autoComplete="current-password" value={inputPassword} onChange={e => setInputPassword(e.target.value)}
                                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Contraseña"
                                         />
@@ -292,41 +248,22 @@ export default function CloudAuthModal({
                                     {passwordError && <p className="text-[11px] text-red-500 font-bold mt-1 ml-1">{passwordError}</p>}
                                 </div>
 
-                                {/* Confirmar contraseña (solo registro) */}
-                                {!isCloudLogin && (
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Key size={16} className="text-slate-400" /></div>
-                                        <input
-                                            type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword" aria-label="Confirm password" autoComplete="new-password" value={inputConfirmPassword} onChange={e => setInputConfirmPassword(e.target.value)}
-                                            className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
-                                            placeholder="Confirmar contraseña"
-                                        />
-                                        <button type="button" aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'} aria-pressed={showConfirmPassword} onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
-                                            {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
-                                    </div>
-                                )}
-
-                                {/* Alias del equipo (solo login) */}
-                                {isCloudLogin && (
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Smartphone size={16} className="text-slate-400" /></div>
-                                        <input
-                                            type="text" value={localDeviceAlias} onChange={e => setLocalDeviceAlias(e.target.value)}
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
-                                            placeholder="Nombre de esta PC (ej. Mostrador 1)"
-                                        />
-                                    </div>
-                                )}
+                                {/* Alias del equipo */}
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Smartphone size={16} className="text-slate-400" /></div>
+                                    <input
+                                        type="text" value={localDeviceAlias} onChange={e => setLocalDeviceAlias(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
+                                        placeholder="Nombre de esta PC (ej. Mostrador 1)"
+                                    />
+                                </div>
 
                                 {/* Olvidé contraseña */}
-                                {isCloudLogin && (
-                                    <div className="flex justify-end">
-                                        <button type="button" onClick={() => setIsRecoveringPassword(true)} className="text-[11px] font-bold text-sky-600 hover:underline">
-                                            ¿Olvidaste tu contraseña?
-                                        </button>
-                                    </div>
-                                )}
+                                <div className="flex justify-end">
+                                    <button type="button" onClick={() => setIsRecoveringPassword(true)} className="text-[11px] font-bold text-sky-600 hover:underline">
+                                        ¿Olvidaste tu contraseña?
+                                    </button>
+                                </div>
 
                                 {/* Mensaje de estado */}
                                 {statusMessage && importStatus !== 'error' && (
@@ -339,7 +276,7 @@ export default function CloudAuthModal({
                                 <button
                                     type="submit"
                                     disabled={importStatus === 'loading'}
-                                    aria-label={isCloudLogin ? 'Conectar Estación' : 'Crear Cuenta Segura'}
+                                    aria-label="Conectar Estación"
                                     aria-busy={importStatus === 'loading'}
                                     className="w-full py-3.5 bg-primary hover:bg-primary-hover text-white text-sm font-black rounded-xl transition-all shadow-lg shadow-primary/20 active:scale-[0.98] flex items-center justify-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                                 >
@@ -347,7 +284,7 @@ export default function CloudAuthModal({
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                     ) : (
                                         <>
-                                            {isCloudLogin ? 'Conectar Estación' : 'Crear Cuenta Segura'}
+                                            Conectar Estación
                                             <ArrowRight size={16} strokeWidth={3} />
                                         </>
                                     )}
@@ -375,12 +312,6 @@ export default function CloudAuthModal({
                                     </button>
                                 )}
 
-                                {!isCloudLogin && (
-                                    <p className="text-[10px] text-center text-slate-400 mt-1 flex items-center justify-center gap-1">
-                                        <ShieldCheck size={11} />
-                                        Conexión encriptada. 7 días de prueba gratuita.
-                                    </p>
-                                )}
                             </>
                         )}
                     </form>
