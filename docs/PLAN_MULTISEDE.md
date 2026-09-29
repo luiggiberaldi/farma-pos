@@ -46,6 +46,9 @@ Fecha: 2026-09-28. Estado: propuesta aprobada por el usuario, pendiente de ejecu
   una columna, objetivos táctiles ≥44px. El modo oscuro ya existe.
 
 - Guards por rol en el router + navegación adaptativa según rol y sede.
+- **Limpieza del rol ADMIN**: el código aún lo referencia (`getVisibleSedes`,
+  RLS `role IN ('DUENO','ADMIN')`). Como no habrá rol intermedio, eliminar esas
+  referencias y dejar solo `DUENO` (ve todo) y `CAJERO` (solo su sede).
 
 ## 4. Fase 3 — Reportes (DUENO)
 
@@ -82,7 +85,14 @@ Nueva vista **"En vivo"** solo para DUENO:
 
 ## 7. Inputs necesarios del cliente
 
-- **Nombres de las 3 sedes** (obligatorio para el bootstrap).
+- **Nombres de las 3 sedes: RESUELTO** (auditoría del repo, 2026-09-28).
+  Definidas en `src/config/sedes.js` con logo y color propio:
+  - `central` → **C&Y 2025** → `#0B8D63` → `/logos/casa-medica-2025.png`
+  - `norte` → **C&Y 2026** → `#0066CC` → `/logos/casa-medica-2026.png`
+  - `sur` → **Farmacia Las 24 Horas** → `#8B5CF6` → `/logos/farmacia-24horas.png`
+  Los 3 PNG existen y son válidos. Hallazgo: `casa-medica-2025.png` (2.25MB) y
+  `casa-medica-2026.png` (2.6MB) son muy pesados para móvil — optimizarlos
+  (redimensionar/comprimir a <200KB) dentro de la Fase 2.
 - Cantidad de cajeros por sede (para pre-crear usuarios).
 - ¿Monitor en vivo solo en el teléfono del dueño o también en pantalla fija?
 
