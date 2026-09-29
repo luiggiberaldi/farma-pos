@@ -20,3 +20,14 @@
 7. **Alta/baja de operadores:** el dueño crea y elimina; al cambiar un PIN
    sube `credentialVersion` e invalida sesiones. Equipo perdido → revocar
    sesión y dispositivo (ver Runbook).
+8. **Secret keys y User-Agent (hallazgo 2026-09-28):** la documentación
+   oficial de Supabase confirma que una `sb_secret_*` **no funciona desde
+   un navegador**: Supabase inspecciona el header `User-Agent` y responde
+   `401 Unauthorized` por diseño, aunque la clave sea válida. Por eso los
+   validadores web (p. ej. la página del conector de Muse) la rechazan
+   siempre: probar la clave con `curl`/scripts sin User-Agent de navegador.
+   La clave secreta viaja solo en el header `apikey`, nunca en
+   `Authorization: Bearer` (no son JWT). El servidor/gateway debe usar un
+   cliente HTTP sin User-Agent de navegador (fetch/undici por defecto
+   cumplen). La secreta nunca llega al frontend: el cliente usa solo la
+   publishable.
