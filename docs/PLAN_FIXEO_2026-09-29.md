@@ -1,4 +1,4 @@
-# Plan de fixeo completo — Farma POS (2026-09-29)
+# Plan de fixeo completo — Farma POS (2026-09-29) — ✅ EJECUTADO (commit `8afcd97`)
 
 ## Decisiones vigentes
 - **Una sola caja por sede** (confirmado 2026-09-29; un cajero por sede).
