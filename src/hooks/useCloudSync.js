@@ -8,6 +8,7 @@ import { recordSyncMetric } from '../utils/syncMetrics';
 import { REMOTE_OPERATIONS_PAUSED, pausedCloudOperation } from '../config/operationSafety.js';
 import { sanitizeBackup } from '../utils/backupSafety.js';
 import { SUPABASE_FREE_PROFILE, inspectSyncPayload, fingerprintSyncPayload } from '../config/supabaseFreeTier.js';
+import { _trimSalesForSync } from './cloudSync/syncUtils.js';
 import { SYNC_KEYS, LOCAL_KEYS, REALTIME_KEYS, POLLING_ONLY_KEYS, MERGEABLE_KEYS, PULL_IGNORE_KEYS, HEAVY_KEYS, DEBOUNCE_MS, DEBOUNCE_MS_HEAVY } from './cloudSync/syncKeys.js';
 import { _mergeArraysById, _computePushHash, sanitizeForPush } from './cloudSync/syncUtils.js';
 export { broadcastFactoryReset, broadcastForceReload } from './cloudSync/syncBroadcast.js';

@@ -365,6 +365,8 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 searchTerm={searchTerm}
                 handleSetSearchTerm={handleSetSearchTerm}
                 categoryScrollRef={categoryScrollRef}
+                toggleViewMode={toggleViewMode}
+                viewMode={viewMode}
             />
 
             {/* --- ACTION BAR SELECCION --- */}
@@ -405,6 +407,11 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 streetRate={streetRate}
                 categories={categories}
                 salesVelocityMap={salesVelocityMap}
+                adjustPending={adjustPending}
+                cancelPending={cancelPending}
+                confirmPending={confirmPending}
+                pendingDeltas={pendingDeltas}
+                handlePrintSingle={handlePrintSingle}
             />
             {/* ─── Modal Añadir / Editar ───────────────────────── */}
             <ProductFormModal

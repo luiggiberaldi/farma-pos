@@ -1,4 +1,5 @@
-import { Bell, LogOut } from 'lucide-react';
+import { Bell, LogOut, Lock } from 'lucide-react';
+import BrandLogo from '../BrandLogo';
 import SyncStatus from '../SyncStatus';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { supabaseCloud } from '../../config/supabaseCloud';
@@ -24,7 +25,7 @@ export default function DashboardHeader({ requireLogin, isCloudConfigured, usuar
                         {usuarioActivo.nombre.split(' ')[0]}
                     </span>
                     <button onClick={() => { triggerHaptic?.(); authLogout(); }} className={`p-1.5 ml-0.5 transition-all rounded-full active:scale-90 ${usuarioActivo.rol === 'ADMIN' ? 'text-sky-500 hover:bg-sky-100 hover:text-sky-700' : 'text-teal-500 hover:bg-teal-100 hover:text-teal-700'}`}>
-                        <LockIcon size={14} strokeWidth={2.5} />
+                        <Lock size={14} strokeWidth={2.5} />
                     </button>
                 </div>
             )}

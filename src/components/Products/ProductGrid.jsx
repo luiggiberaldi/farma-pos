@@ -17,6 +17,7 @@ export default function ProductGrid(props) {
         currentPage, setCurrentPage, totalPages,
         isCajero, copEnabled, tasaCop, effectiveRate, streetRate, categories,
         salesVelocityMap,
+        adjustPending, cancelPending, confirmPending, pendingDeltas, handlePrintSingle,
     } = props;
     return (
         <>

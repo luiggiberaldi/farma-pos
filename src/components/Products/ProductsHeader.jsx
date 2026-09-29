@@ -1,4 +1,4 @@
-import { Store, ArrowLeftRight, Percent, Trash2, Plus, CheckSquare, RefreshCw, Pencil, Search } from 'lucide-react';
+import { Store, ArrowLeftRight, Percent, Trash2, Plus, CheckSquare, RefreshCw, Pencil, Search, AlertTriangle, LayoutGrid, List } from 'lucide-react';
 
 export default function ProductsHeader(props) {
     const {
@@ -9,6 +9,7 @@ export default function ProductsHeader(props) {
         handleSetActiveCategory, onSyncCatalog,
         categories, activeCategory, setIsCategoryManagerOpen,
         searchTerm, handleSetSearchTerm, categoryScrollRef,
+        toggleViewMode, viewMode,
     } = props;
     return (
     <div className="shrink-0 mb-3 space-y-2">
