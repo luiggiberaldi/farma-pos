@@ -57,7 +57,7 @@ export function prepareSale(options, state, { operationId, operator, context, ti
         const custom = !product && item.kind === 'custom' && id.startsWith('custom_');
         if (!product && !custom) throw new Error(`El producto ${item.name || id} ya no existe en esta sede.`);
         if (custom) {
-            if (!['DUENO', 'ADMIN'].includes(operator.rol)) throw new Error('Solo un administrador puede registrar un monto libre.');
+            if (operator.rol !== 'DUENO') throw new Error('Solo un administrador puede registrar un monto libre.');
             if (!Number.isSafeInteger(item.qty) || item.qty <= 0) throw new Error('Cantidad de monto libre inválida.');
             if (item.exactBs != null && (!Number.isFinite(item.exactBs) || item.exactBs <= 0)) throw new Error('Monto libre en Bs inválido.');
             return { id, productId: id, kind: 'custom', name: item.name || 'Monto libre', qty: item.qty, priceUsd: item.priceUsd,

@@ -5,10 +5,6 @@ const AVATAR_COLORS = {
     bg: 'bg-gradient-to-b from-indigo-500 to-violet-600 border-t-2 border-indigo-300 shadow-[0_6px_0_#4338ca,_0_12px_25px_rgba(79,70,229,0.4)]',
     text: 'text-white font-black'
   },
-  ADMIN: { 
-    bg: 'bg-gradient-to-b from-indigo-500 to-violet-600 border-t-2 border-indigo-300 shadow-[0_6px_0_#4338ca,_0_12px_25px_rgba(79,70,229,0.4)]',
-    text: 'text-white font-black' 
-  },
   CAJERO: { 
     bg: 'bg-gradient-to-b from-teal-400 to-teal-500 border-t-2 border-teal-300 shadow-[0_6px_0_#0f766e,_0_12px_25px_rgba(20,184,166,0.4)]', 
     text: 'text-white font-black' 

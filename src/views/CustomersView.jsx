@@ -30,7 +30,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
     const usuarioActivo = useAuthStore(state => state.usuarioActivo);
-    const isAdmin = ['DUENO', 'ADMIN'].includes(usuarioActivo?.rol);
+    const isAdmin = usuarioActivo?.rol === 'DUENO';
 
     // Modal de Abono / Crédito
     const [transactionModal, setTransactionModal] = useState({ isOpen: false, type: null, customer: null }); // type: 'ABONO' | 'CREDITO'

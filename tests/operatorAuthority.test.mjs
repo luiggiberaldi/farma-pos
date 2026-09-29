@@ -11,7 +11,7 @@ async function fixture(t, exportsFrom = []) {
   const auth = mod.useAuthStore;
   auth.setState({ usuarios: [
     { id: 1, nombre: 'Owner QA', rol: 'DUENO', pin: '908172', pinHashed: false, credentialVersion: 0 },
-    { id: 2, nombre: 'Admin QA', rol: 'ADMIN', pin: '817263', pinHashed: false, credentialVersion: 0 },
+    { id: 2, nombre: 'Dueño QA 2', rol: 'DUENO', pin: '817263', pinHashed: false, credentialVersion: 0 },
     { id: 3, nombre: 'Caja QA', rol: 'CAJERO', pin: '7263', pinHashed: false, sedeId: 'central', sinPin: false, credentialVersion: 0 },
   ], usuarioActivo: null, operatorSession: null });
   return { ...mod, auth, f };

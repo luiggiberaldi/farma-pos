@@ -3,7 +3,7 @@ import { ShieldCheck, ShieldAlert, KeyRound, RefreshCw, LogOut, Link2, Link2Off,
 import { SectionCard } from '../SettingsShared.jsx';
 import { remoteOperatorSession, REMOTE_ROLES } from '../../services/operatorRemoteSession.js';
 
-const ROLE_LABEL = { DUENO: 'Dueño', ADMIN: 'Admin', CAJERO: 'Cajero' };
+const ROLE_LABEL = { DUENO: 'Dueño', CAJERO: 'Cajero' };
 const inputClass = 'w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500/40';
 const buttonClass = 'w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed';
 

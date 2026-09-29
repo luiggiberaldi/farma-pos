@@ -65,7 +65,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     }, [showAlerts]);
     const { deviceId } = useSecurity();
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
-    const isAdmin = usuarioActivo?.rol === 'ADMIN' || usuarioActivo?.rol === 'DUENO';
+    const isAdmin = usuarioActivo?.rol === 'DUENO';
     const isCashierBlindClose = !isAdmin && localStorage.getItem('cajero_puede_cerrar_caja') === 'true';
     const canCloseCash = isAdmin || isCashierBlindClose;
     const authLogout = useAuthStore(s => s.logout);
@@ -511,6 +511,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 paymentBreakdown={paymentBreakdown}
                 bcvRate={bcvRate}
                 tasaCop={tasaCop}
+                copEnabled={copEnabled}
                 todayTotalBs={todayTotalBs}
                 openPaySections={openPaySections}
                 setOpenPaySections={setOpenPaySections}

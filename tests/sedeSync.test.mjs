@@ -11,7 +11,7 @@ async function fixture(t) {
   });
   mod.useAuthStore.setState({ usuarioActivo: null, usuarios: [
     { id: 1, nombre: 'Dueño QA', rol: 'DUENO', pin: '918273', pinHashed: false },
-    { id: 2, nombre: 'Admin QA', rol: 'ADMIN', pin: '827364', pinHashed: false, sedeId: 'central' },
+    { id: 2, nombre: 'Caja QA 2', rol: 'CAJERO', pin: '827364', pinHashed: false, sedeId: 'central' },
     { id: 3, nombre: 'Caja QA', rol: 'CAJERO', pin: '7364', pinHashed: false, sedeId: 'central' },
   ] });
   return { ...mod, f };

@@ -15,7 +15,7 @@ export async function processSaleTransaction(input) {
     const state = useAuthStore.getState();
     const operator = state.usuarioActivo;
     const sessionId = state.operatorSession?.sessionId;
-    if (!operator || !['DUENO', 'ADMIN', 'CAJERO'].includes(operator.rol)) return { success: false, error: 'Selecciona tu usuario antes de vender.' };
+    if (!operator || !['DUENO', 'CAJERO'].includes(operator.rol)) return { success: false, error: 'Selecciona tu usuario antes de vender.' };
     if (operator.rol === 'CAJERO' && operator.sedeId !== context.sedeId) return { success: false, error: 'El cajero no pertenece a la sede activa.' };
     const assertActor = () => {
         assertStorageContextActive(context);

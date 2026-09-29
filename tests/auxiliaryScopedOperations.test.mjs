@@ -198,7 +198,7 @@ for (const operation of ['processCustomerTransaction', ...transferOperations]) {
 }
 
 for (const operation of transferOperations) {
-  for (const role of ['ADMIN', 'DUENO']) {
+  for (const role of ['DUENO']) {
     test(`${operation} preserves real ${role} actor, huella, context and input records`, async t => {
       const f = await fixture(t, operation === 'recibirTransferencia' ? 'norte' : 'central');
       f.user = { ...f.user, rol: role };

@@ -14,11 +14,11 @@ export default function MonitorView({ rates, loading, isOffline, onRefresh, togg
     // Referencia al contenedor del Kiosco (para la foto)
     const kioskRef = useRef(null);
 
-    // Detección de Datos Viejos (> 4 Horas)
+    // Detección de Datos Viejos (> 5 Horas)
     const isOldData = (() => {
         if (!rates || !rates.lastUpdate) return false;
         const diff = new Date() - new Date(rates.lastUpdate);
-        return diff > 4 * 60 * 60 * 1000; // 4 Hours
+        return diff > 5 * 60 * 60 * 1000; // 5 Hours
     })();
 
     // Truco para ver logs (7 clics en el logo)

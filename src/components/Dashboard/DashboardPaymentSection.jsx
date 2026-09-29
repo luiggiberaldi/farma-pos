@@ -3,7 +3,7 @@ import { PAYMENT_ICONS, getPaymentIcon, getPaymentLabel, toTitleCase } from '../
 import { formatBs } from '../../utils/calculatorUtils';
 import CasheaIcon from '../CasheaIcon';
 
-export default function DashboardPaymentSection({ isAdmin, paymentBreakdown, bcvRate, tasaCop, todayTotalBs, openPaySections, setOpenPaySections }) {
+export default function DashboardPaymentSection({ isAdmin, paymentBreakdown, bcvRate, tasaCop, copEnabled, todayTotalBs, openPaySections, setOpenPaySections }) {
     if (!isAdmin || Object.keys(paymentBreakdown).length === 0) return null;
     const entries = Object.entries(paymentBreakdown).filter(([, d]) => d.total > 0);
     const fiadoMethods = entries.filter(([, d]) => d.currency === 'FIADO');

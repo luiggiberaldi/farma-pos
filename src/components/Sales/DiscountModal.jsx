@@ -16,7 +16,7 @@ export default function DiscountModal({
 }) {
     const { usuarioActivo, usuarios, issueApproval, checkApproval } = useAuthStore();
     const isCajero = usuarioActivo?.rol === 'CAJERO';
-    const approvers = usuarios.filter(user => ['DUENO', 'ADMIN'].includes(user.rol) && user.pin);
+    const approvers = usuarios.filter(user => user.rol === 'DUENO' && user.pin);
     const [approverId, setApproverId] = useState(() => approvers[0]?.id ?? null);
 
     const [type, setType] = useState(currentDiscount?.type || 'percentage');

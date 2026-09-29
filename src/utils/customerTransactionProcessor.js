@@ -10,7 +10,7 @@ import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp,
 export async function processCustomerTransaction(input) {
     const options = structuredClone(input);
     const operator = useAuthStore.getState().usuarioActivo;
-    if (!['DUENO', 'ADMIN'].includes(operator?.rol)) throw new Error('No tienes permiso para registrar movimientos de cartera.');
+    if (operator?.rol !== 'DUENO') throw new Error('No tienes permiso para registrar movimientos de cartera.');
     const repo = bindStorageContext(options.storageContext);
     const context = repo.context;
     const { type, customer, currencyMode = 'USD', bcvRate, paymentMethod } = options;

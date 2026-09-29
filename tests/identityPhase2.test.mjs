@@ -15,7 +15,7 @@ async function authFixture(t) {
   const store = mod.useAuthStore;
   store.setState({ usuarioActivo: null, usuarios: [
     { id: 1, nombre: 'Dueño QA', rol: 'DUENO', sedeId: null, pin: '908172', pinHashed: false, permanente: true },
-    { id: 2, nombre: 'Admin QA', rol: 'ADMIN', sedeId: 'norte', pin: '817263', pinHashed: false },
+    { id: 2, nombre: 'Dueño QA 2', rol: 'DUENO', sedeId: null, pin: '817263', pinHashed: false },
     { id: 3, nombre: 'Caja QA', rol: 'CAJERO', sedeId: 'central', pin: '7263', pinHashed: false, sinPin: false },
   ] });
   setActiveSedeId('central');
@@ -65,19 +65,20 @@ test('F08: las credenciales cloud no persisten la contraseña', async t => {
   assert.ok(!localStorage.getItem('abasto-auth-storage').includes('synthetic-do-not-persist'));
 });
 
-test('F09: administrador conserva sede elegida y rol al iniciar por PIN', async t => {
+test('F09: el rol ADMIN heredado ya no puede iniciar sesión', async t => {
   const { store } = await authFixture(t);
+  store.setState({ usuarios: [...store.getState().usuarios,
+    { id: 9, nombre: 'Legacy', rol: 'ADMIN', sedeId: 'norte', pin: '123456', pinHashed: false }] });
   setActiveSedeId('sur');
-  assert.equal(await store.getState().login('817263', 2), true);
-  assert.equal(store.getState().usuarioActivo.rol, 'ADMIN');
-  assert.equal(getActiveSedeId(), 'sur');
+  assert.equal(await store.getState().login('123456', 9), false);
+  assert.equal(store.getState().usuarioActivo, null);
 });
 
-test('F09: dueño y administrador pueden consultar las tres sedes y consolidado', () => {
-  for (const rol of ['DUENO', 'ADMIN']) {
-    assert.equal(canSeeConsolidatedReports({ rol }), true);
-    assert.deepEqual(getVisibleSedes({ rol, sedeId: 'norte' }).map(s => s.id), ['central', 'norte', 'sur']);
-  }
+test('F09: solo el dueño consulta las tres sedes y el consolidado', () => {
+  assert.equal(canSeeConsolidatedReports({ rol: 'DUENO' }), true);
+  assert.deepEqual(getVisibleSedes({ rol: 'DUENO', sedeId: 'norte' }).map(s => s.id), ['central', 'norte', 'sur']);
+  assert.equal(canSeeConsolidatedReports({ rol: 'ADMIN' }), false);
+  assert.deepEqual(getVisibleSedes({ rol: 'ADMIN', sedeId: 'norte' }), []);
   assert.deepEqual(getVisibleSedes(null), []);
   assert.deepEqual(getVisibleSedes({ rol: 'CAJERO', sedeId: 'norte' }).map(s => s.id), ['norte']);
 });

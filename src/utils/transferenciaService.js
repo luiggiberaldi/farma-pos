@@ -16,7 +16,7 @@ async function transfer(kind, input) {
     const context = Object.freeze({ ...(options.storageContext || captureStorageContext()) });
     const operator = useAuthStore.getState().usuarioActivo;
     const sessionId = useAuthStore.getState().operatorSession?.sessionId;
-    if (!['DUENO', 'ADMIN'].includes(operator?.rol)) throw new Error('No tienes permiso para transferir inventario.');
+    if (operator?.rol !== 'DUENO') throw new Error('No tienes permiso para transferir inventario.');
     const verify = () => {
         assertStorageContextActive(context);
         const active = useAuthStore.getState();

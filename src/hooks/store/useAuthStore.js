@@ -24,8 +24,8 @@ async function strongPinRecord(pin) {
     return { pin: await hashPinPbkdf2(pin, pinSalt), pinSalt, pinKdf: 'pbkdf2', pinHashed: true, sinPin: false };
 }
 
-const isAdmin = user => ['DUENO', 'ADMIN'].includes(user?.rol);
-const pinLength = user => isAdmin(user) ? 6 : 4;
+const isOwner = user => user?.rol === 'DUENO';
+const pinLength = user => isOwner(user) ? 6 : 4;
 // Ventana durante la cual un restablecimiento de PIN verificado por identidad
 // cloud puede aplicarse. Expira si el usuario tarda en confirmar el nuevo PIN.
 const PIN_RESET_GRACE_MS = 10 * 60 * 1000;
@@ -81,7 +81,7 @@ export const useAuthStore = create(persist((set, get) => ({
         const context = captureStorageContext();
         const epoch = authEpoch;
         const candidate = get().usuarios.find(u => u.id === userId);
-        if (!candidate || (administrative && !isAdmin(candidate)) || !candidate.pin) return null;
+        if (!candidate || (administrative && !isOwner(candidate)) || !candidate.pin) return null;
         if (!new RegExp(`^\\d{${pinLength(candidate)}}$`).test(String(pinInput))) return null;
         const key = attemptsKey(candidate.id, context);
         if ((readAttempts(key).until || 0) > Date.now()) return null;
@@ -110,7 +110,7 @@ export const useAuthStore = create(persist((set, get) => ({
         const context = captureStorageContext();
         const user = get().usuarios.find(u => u.id === userId);
         set({ lastAuthError: null });
-        if (!user || !['DUENO', 'ADMIN', 'CAJERO'].includes(user.rol)) return false;
+        if (!user || !['DUENO', 'CAJERO'].includes(user.rol)) return false;
         if (user.rol === 'CAJERO' && user.sedeId !== context.sedeId) {
             set({ lastAuthError: 'Este cajero solo puede operar su sede asignada.' });
             return false;
@@ -215,7 +215,7 @@ export const useAuthStore = create(persist((set, get) => ({
         if (epoch !== authEpoch || proof.action !== action || proof.expiresAt <= Date.now()
             || signature !== JSON.stringify(details) || !isStorageContextActive(proof)
             || proof.operatorId !== (actor?.id ?? null) || proof.operatorRole !== (actor?.rol ?? null)
-            || !isAdmin(approver) || (approver.credentialVersion || 0) !== proof.approver.credentialVersion) return null;
+            || !isOwner(approver) || (approver.credentialVersion || 0) !== proof.approver.credentialVersion) return null;
         return structuredClone(proof);
     },
 
@@ -306,7 +306,7 @@ export const useAuthStore = create(persist((set, get) => ({
 
     agregarUsuario: async (nombre, rol, pin, sedeId = getActiveSedeId()) => {
         requireOwner(get().usuarioActivo);
-        if (!nombre?.trim() || !['DUENO', 'ADMIN', 'CAJERO'].includes(rol)) throw new Error('Nombre o rol inválido.');
+        if (!nombre?.trim() || !['DUENO', 'CAJERO'].includes(rol)) throw new Error('Nombre o rol inválido.');
         if (rol === 'CAJERO' && !['central', 'norte', 'sur'].includes(sedeId)) throw new Error('Sede inválida.');
         // Regla de fábrica: un cajero creado sin PIN recibe el PIN de fábrica 0000;
         // no existen usuarios sin PIN. Con cuenta cloud el PIN es obligatorio.
@@ -343,7 +343,7 @@ export const useAuthStore = create(persist((set, get) => ({
         const changes = Object.fromEntries(Object.entries(datos).filter(([key]) => ['nombre', 'rol', 'sedeId'].includes(key)));
         const updated = { ...target, ...changes };
         if (target.id === 1 || target.permanente) updated.rol = 'DUENO';
-        if (!['DUENO', 'ADMIN', 'CAJERO'].includes(updated.rol)
+        if (!['DUENO', 'CAJERO'].includes(updated.rol)
             || (updated.rol === 'CAJERO' && !['central', 'norte', 'sur'].includes(updated.sedeId))) throw new Error('Rol o sede inválido.');
         if (updated.rol !== 'CAJERO') updated.sedeId = null;
         updated.credentialVersion = (target.credentialVersion || 0) + 1;
@@ -367,7 +367,7 @@ export const useAuthStore = create(persist((set, get) => ({
     migrate: (persistedState, fromVersion) => {
         const state = sanitizeBackup(persistedState || {});
         if (fromVersion < 1 && state.usuarios) state.usuarios = state.usuarios.map(u =>
-            isAdmin(u) && u.pin === '1234' ? { ...u, pin: '123456' } : u);
+            isOwner(u) && u.pin === '1234' ? { ...u, pin: '123456' } : u);
         if (fromVersion < 2 && state.usuarios) state.usuarios = state.usuarios.map(u =>
             u.pinHashed === undefined ? { ...u, pinHashed: false } : u);
         if (fromVersion < 3 && state.usuarios) state.usuarios = migrateOwnerPinToFactory(state.usuarios);

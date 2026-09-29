@@ -64,7 +64,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [sedeFilter, setSedeFilter] = useState(canConsolidate ? sedeActivaId : sedeActivaId);
     const effectiveSedeFilter = canConsolidate ? sedeFilter : sedeActivaId;
     const isMerged = canConsolidate && effectiveSedeFilter === 'todas';
-    const canVoidHere = !isMerged && effectiveSedeFilter === sedeActivaId && ['DUENO', 'ADMIN'].includes(usuarioActivo?.rol);
+    const canVoidHere = !isMerged && effectiveSedeFilter === sedeActivaId && usuarioActivo?.rol === 'DUENO';
 
     // ── Void Sale Handler ──
     const confirmVoidSale = async () => {

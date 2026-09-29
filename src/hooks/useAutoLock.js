@@ -8,7 +8,7 @@ const CAJERO_LOCK_MINUTES = 5; // Fijo, no configurable
 export function useAutoLock() {
     const { usuarioActivo, logout, requireLogin } = useAuthStore();
     // Cloud accounts always require operator PIN; cashier lock remains enabled.
-    const isAdmin = ['ADMIN', 'DUENO'].includes(usuarioActivo?.rol);
+    const isAdmin = usuarioActivo?.rol === 'DUENO';
     const isCajero = usuarioActivo?.rol === 'CAJERO';
     const isLoginRequired = Boolean(requireLogin || getActiveAccountId());
     const shouldLock = (isAdmin && isLoginRequired) || isCajero;

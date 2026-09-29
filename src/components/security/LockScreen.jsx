@@ -25,7 +25,7 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
   const secretCount = useRef(0);
   const confirm = useConfirm();
 
-  const visibleUsers = usuarios.filter(user => ['DUENO', 'ADMIN'].includes(user.rol) || user.sedeId === selectedSedeId);
+  const visibleUsers = usuarios.filter(user => user.rol === 'DUENO' || user.sedeId === selectedSedeId);
 
   const handleLogoSecret = () => {
     secretCount.current += 1;

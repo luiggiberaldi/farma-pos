@@ -18,7 +18,16 @@ export function useSedeStats({ isActive, bcvRate, sales, storageService }) {
     const isDueno = canSeeAllSedes(usuarioActivo);
     const [sedeStats, setSedeStats] = useState([]);
     const [isAuditorOpen, setIsAuditorOpen] = useState(false);
+    const [pollTick, setPollTick] = useState(0);
     const sedeActivaId = useSedeStore(s => s.sedeActivaId);
+
+    // Polling del monitor en vivo: refresca cada 12 s aunque no cambien sales/bcvRate,
+    // para que el consolidado del dueño se actualice solo.
+    useEffect(() => {
+        if (!isActive || !isDueno) return;
+        const id = setInterval(() => setPollTick(t => t + 1), 12000);
+        return () => clearInterval(id);
+    }, [isActive, isDueno]);
 
     useEffect(() => {
         if (!isActive || !isDueno) return;
@@ -60,7 +69,7 @@ export function useSedeStats({ isActive, bcvRate, sales, storageService }) {
         };
         loadSedeStats();
         return () => { mounted = false; };
-    }, [isActive, isDueno, bcvRate, sales]);
+    }, [isActive, isDueno, bcvRate, sales, pollTick]);
 
     return { isDueno, sedeStats, isAuditorOpen, setIsAuditorOpen, sedeActivaId };
 }

@@ -4,7 +4,7 @@ import { showToast } from '../Toast';
 import { isPinlessOptedIn, setPinlessOptIn } from '../../utils/operatorSession.js';
 import { captureStorageContext } from '../../config/storageScope.js';
 import {
-    UserPlus, Trash2, KeyRound, Shield, ShoppingCart,
+    UserPlus, Trash2, KeyRound, ShoppingCart,
     Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2, Fingerprint
 } from 'lucide-react';
 
@@ -17,14 +17,6 @@ const ROLE_CONFIG = {
         border: 'border-amber-200 dark:border-amber-800/40',
         icon: Crown,
     },
-    ADMIN: {
-        label: 'Administrador',
-        gradient: 'from-indigo-500 to-purple-500',
-        bg: 'bg-indigo-50 dark:bg-indigo-900/20',
-        text: 'text-indigo-600 dark:text-indigo-400',
-        border: 'border-indigo-200 dark:border-indigo-800/40',
-        icon: Shield,
-    },
     CAJERO: {
         label: 'Cajero',
         gradient: 'from-emerald-500 to-teal-500',
@@ -36,7 +28,7 @@ const ROLE_CONFIG = {
 };
 
 // ─── PIN Length by role ───────────────────────────
-const getPinLength = (rol) => (rol === 'ADMIN' || rol === 'DUENO') ? 6 : 4;
+const getPinLength = (rol) => rol === 'DUENO' ? 6 : 4;
 
 // ─── PIN Input (4 or 6 digits) ─────────────────────────
 function PinInput({ value, onChange, label, length = 4 }) {
@@ -87,7 +79,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
     const roleConf = ROLE_CONFIG[user.rol] || ROLE_CONFIG.CAJERO;
     const RoleIcon = roleConf.icon;
     const isCurrentUser = user.id === currentUserId;
-    const isAdmin = user.rol === 'ADMIN' || user.rol === 'DUENO';
+    const isOwner = user.rol === 'DUENO';
     // A10: el acceso sin PIN requiere opt-in explícito del dueño en este equipo.
     const canOptInPinless = user.rol === 'CAJERO' && user.sinPin === true && !user.pin;
     const [pinlessOn, setPinlessOn] = useState(() => canOptInPinless && isPinlessOptedIn(user.id));
@@ -106,7 +98,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
             {/* Avatar */}
             <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${roleConf.gradient} flex items-center justify-center shrink-0 shadow-sm relative`}>
                 <span className="text-white font-black text-lg">{(user.nombre || 'U')[0].toUpperCase()}</span>
-                {isAdmin && (
+                {isOwner && (
                     <div className="absolute -top-2 left-1/2 -translate-x-1/2">
                         <Crown size={12} className="text-yellow-400 fill-yellow-400 drop-shadow-sm" />
                     </div>
@@ -281,7 +273,7 @@ export default function UsersManager({ triggerHaptic }) {
                     {/* Role Selector */}
                     <div>
                         <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">Rol</label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-2">
                             {Object.entries(ROLE_CONFIG).map(([key, conf]) => {
                                 const Icon = conf.icon;
                                 return (

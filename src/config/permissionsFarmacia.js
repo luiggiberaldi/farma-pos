@@ -1,11 +1,10 @@
 export const FARMACIA_ROLES = {
     DUENO: 'DUENO',
-    ADMIN: 'ADMIN',
     CAJERO: 'CAJERO',
 };
 
 export function canSeeCosts(usuario) {
-    return usuario?.rol === FARMACIA_ROLES.DUENO || usuario?.rol === FARMACIA_ROLES.ADMIN;
+    return usuario?.rol === FARMACIA_ROLES.DUENO;
 }
 
 export function canManageInventory(usuario) {

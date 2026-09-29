@@ -15,7 +15,7 @@ function bytesLabel(bytes) {
 export default function SupabaseFreeStatus() {
     const role = useAuthStore(state => state.usuarioActivo?.rol);
     const [metrics, setMetrics] = useState(getSyncMetricSummary);
-    if (!['DUENO', 'ADMIN'].includes(role)) return null;
+    if (role !== 'DUENO') return null;
     return (
         <SectionCard icon={Cloud} title="Supabase Free" subtitle="Perfil de bajo consumo · diagnóstico local" iconColor="text-emerald-600">
             <div data-testid="supabase-free-status" className="space-y-4">

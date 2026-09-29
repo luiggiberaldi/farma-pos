@@ -13,7 +13,7 @@ export default function LoginPinModal({ isOpen, onClose, user, onSubmit, forcePi
 
 function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
     const requireLogin = useAuthStore(s => s.requireLogin);
-    const pinLength = ['ADMIN', 'DUENO'].includes(user.rol) ? 6 : 4;
+    const pinLength = user.rol === 'DUENO' ? 6 : 4;
     const pinless = !forcePin && canUsePinlessAccess(user, captureStorageContext(), requireLogin);
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');

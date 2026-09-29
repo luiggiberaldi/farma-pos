@@ -419,6 +419,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
     }
     const handleSaveApertura = async (data) => {
         let release;
+        // Una sola caja por sede: si ya hay un turno abierto, la transacción
+        // lo reutiliza (idempotente) y aquí lo informamos en vez de fingir éxito.
+        let reusedExisting = false;
         try {
             storageService.assertActive();
             release = beginLocalOperation('OPEN_CASH', storageContext);
@@ -440,9 +443,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             const opening = await storageService.transaction(ledgerRecords(['sales', 'queue', 'audit'], storageContext), current => {
                 storageService.assertActive();
                 const existing = getOpenCashSession(current.sales);
-                if (existing) return { writes: {}, result: existing.apertura };
+                if (existing) { reusedExisting = true; return { writes: {}, result: existing.apertura }; }
                 const actor = useAuthStore.getState().usuarioActivo;
-                const mayOpen = ['DUENO', 'ADMIN'].includes(actor?.rol) || actor?.rol === 'CAJERO' && actor.sedeId === storageContext.sedeId && localStorage.getItem('cajero_puede_abrir_caja') !== 'false';
+                const mayOpen = actor?.rol === 'DUENO' || actor?.rol === 'CAJERO' && actor.sedeId === storageContext.sedeId && localStorage.getItem('cajero_puede_abrir_caja') !== 'false';
                 if (!mayOpen) throw new Error('No tienes permiso para abrir esta caja.');
                 const id = `apertura_${crypto.randomUUID()}`;
                 const record = { ...aperturaRecord, id, operationId: id, schemaVersion: 3, sedeId: storageContext.sedeId, accountId: storageContext.accountId,
@@ -454,7 +457,11 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             storageService.assertActive();
             setTodayAperturaData(opening);
             setIsAperturaOpen(false);
-            showToast('Caja abierta exitosamente', 'success');
+            if (reusedExisting) {
+                showToast('Ya existe una caja abierta en esta sede. Se mantiene el turno actual.', 'info');
+            } else {
+                showToast('Caja abierta exitosamente', 'success');
+            }
             if (triggerHaptic) triggerHaptic();
 
         } catch (error) {
@@ -486,7 +493,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                     onOpenApertura={() => setIsAperturaOpen(true)}
                     canOpen={
                         !usuarioActivo ||
-                        usuarioActivo.rol === 'ADMIN' ||
+                        usuarioActivo.rol === 'DUENO' ||
                         localStorage.getItem('cajero_puede_abrir_caja') !== 'false'
                     }
                 />

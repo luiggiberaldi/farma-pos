@@ -141,7 +141,7 @@ export default function App() {
   const { rates } = useRates();
   const { deviceId } = useSecurity();
   useAutoBackup(false, false, usuarioActivo ? deviceId : null);
-  useAutoLock(); // Auto-lock for ADMINs
+  useAutoLock(); // Auto-lock tras inactividad
 
   // Purge old audit log entries on startup
   useEffect(() => { purgeOldEntries(); }, []);
@@ -218,7 +218,7 @@ export default function App() {
 
   // Admin Panel Logic (Hidden — 10 clicks on top-left corner)
   const handleLogoClick = () => {
-    if (!['DUENO', 'ADMIN'].includes(usuarioActivo?.rol)) return;
+    if (usuarioActivo?.rol !== 'DUENO') return;
     const now = Date.now();
     if (window.lastClickTime && (now - window.lastClickTime > 1000)) {
       setAdminClicks(1);
@@ -265,9 +265,9 @@ export default function App() {
   const operatorSessionId = useAuthStore(s => s.operatorSession?.sessionId || 'locked');
 
   const isCajero = usuarioActivo?.rol === 'CAJERO';
-  // El dueño opera siempre en Gestión (ve todo desde su perfil); solo el admin
-  // conserva el interruptor Gestión/Caja para atender el mostrador.
-  const canSwitchMode = usuarioActivo?.rol === 'ADMIN';
+  // El dueño opera siempre en Gestión (ve todo desde su perfil); el interruptor
+  // Gestión/Caja queda deshabilitado (antes era solo para el rol ADMIN, eliminado).
+  const canSwitchMode = false;
   const changeWorkspace = mode => {
     if (!canSwitchMode || !['caja', 'gestion'].includes(mode)) return;
     setWorkspace({ identity: workspaceIdentity, mode });

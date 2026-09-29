@@ -5,7 +5,7 @@ import { REMOTE_OPERATIONS_PAUSED } from '../config/operationSafety.js';
 export const REMOTE_OPERATOR_ENDPOINT = '/api/operator-session';
 export const REMOTE_AUTHORITY_KEY = 'farmapos_remote_operator';
 export const REMOTE_DEVICE_KEY = 'farmapos_remote_device';
-export const REMOTE_ROLES = Object.freeze(['DUENO', 'ADMIN', 'CAJERO']);
+export const REMOTE_ROLES = Object.freeze(['DUENO', 'CAJERO']);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROOF = /^[A-Za-z0-9_-]{43}$/;

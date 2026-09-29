@@ -22,7 +22,7 @@ export async function processLocalAdminOperation(command, input) {
     if (!commands[command]) throw new Error('Operación administrativa inválida.');
     const data = structuredClone(input);
     const operator = useAuthStore.getState().usuarioActivo;
-    if (!['DUENO', 'ADMIN'].includes(operator?.rol)) throw new Error('No tienes permiso para esta operación.');
+    if (operator?.rol !== 'DUENO') throw new Error('No tienes permiso para esta operación.');
     const repo = bindStorageContext(data.storageContext);
     const context = repo.context;
     repo.assertActive();

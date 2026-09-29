@@ -362,6 +362,9 @@ export function useRates() {
 
             const newRates = {
                 ...previousRates,
+                // /api/rates marca stale:true cuando sirve la última buena tras
+                // un fallo; SalesHeader lo consume para el indicador ámbar.
+                stale: cacheApiData?.stale === true,
                 bcv: {
                     ...(previousRates.bcv || {}),
                     price: chosenBcv.val,

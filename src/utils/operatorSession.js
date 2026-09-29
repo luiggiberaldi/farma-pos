@@ -45,7 +45,7 @@ export function readOperatorSession(users, context = captureStorageContext(), re
         if (saved?.version !== 2 || typeof saved.sessionId !== 'string' || !saved.sessionId
             || saved.accountId !== context.accountId || saved.sedeId !== context.sedeId) return null;
         const user = users.find(u => u.id === saved.user?.id);
-        if (!user || !['DUENO', 'ADMIN', 'CAJERO'].includes(user.rol)
+        if (!user || !['DUENO', 'CAJERO'].includes(user.rol)
             || user.rol !== saved.user.rol || (user.credentialVersion || 0) !== saved.user.credentialVersion) return null;
         if (user.rol === 'CAJERO' && user.sedeId !== context.sedeId) return null;
         if (saved.pinVerified !== true && !canUsePinlessAccess(user, context, requireLogin)) return null;

@@ -77,7 +77,7 @@ function deviceIdentity(credential) {
 
 function safeAuthority(value) {
   if (!value || !UUID.test(value.operator_id) || !UUID.test(value.tenant_id) || !UUID.test(value.branch_id)
-    || !['DUENO', 'ADMIN', 'CAJERO'].includes(value.role) || typeof value.name !== 'string'
+    || !['DUENO', 'CAJERO'].includes(value.role) || typeof value.name !== 'string'
     || !Number.isFinite(Date.parse(value.expires_at))) return denied();
   return Object.fromEntries(['operator_id', 'tenant_id', 'branch_id', 'role', 'name', 'expires_at']
     .map(key => [key, value[key]]));
@@ -88,7 +88,7 @@ function safeDirectory(value) {
   return {
     operators: value.operators.map(o => {
       if (!o || !UUID.test(o.id) || typeof o.local_code !== 'string' || typeof o.name !== 'string'
-        || !['DUENO', 'ADMIN', 'CAJERO'].includes(o.role) || (o.branch_id !== null && !UUID.test(o.branch_id))) return denied();
+        || !['DUENO', 'CAJERO'].includes(o.role) || (o.branch_id !== null && !UUID.test(o.branch_id))) return denied();
       return { id: o.id, local_code: o.local_code, name: o.name, role: o.role, branch_id: o.branch_id };
     }),
     branches: value.branches.map(b => {

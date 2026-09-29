@@ -8,7 +8,7 @@ export const DEFAULT_SEDE_ID = SEDES[0].id;
 
 
 export function getVisibleSedes(usuario) {
-    if (['DUENO', 'ADMIN'].includes(usuario?.rol)) return SEDES;
+    if (usuario?.rol === 'DUENO') return SEDES;
     return usuario?.rol === 'CAJERO' && usuario?.sedeId
         ? SEDES.filter(sede => sede.id === usuario.sedeId)
         : [];

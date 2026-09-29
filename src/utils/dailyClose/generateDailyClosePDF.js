@@ -5,6 +5,7 @@ import { getPaymentLabel, toTitleCase } from '../../config/paymentMethods';
 import { divR, mulR } from '../dinero';
 import { getBranding } from '../../config/branding';
 import { getActiveSedeId } from '../../config/storageScope';
+import { getLocalISODate } from '../dateHelpers';
 
 /**
  * Genera un PDF de Cierre del Día con reporte detallado.
@@ -37,8 +38,12 @@ export async function generateDailyClosePDF({
         + (paymentRows * 7)
         + (topProdRows * 10)
         + (saleRows * 45);
+    // Tope de página: los promedios se quedan cortos con ventas de muchos
+    // ítems/pagos; si el cursor supera el alto de la página, checkPageBreak
+    // crea páginas nuevas en vez de recortar el contenido.
+    const PAGE_H = Math.min(H, 500);
 
-    const doc = new jsPDF({ unit: 'mm', format: [WIDTH, H] });
+    const doc = new jsPDF({ unit: 'mm', format: [WIDTH, PAGE_H] });
 
     // ── Paleta ──
     const INK = [33, 37, 41];
@@ -50,6 +55,18 @@ export async function generateDailyClosePDF({
     const BLUE = [37, 99, 235];
 
     let y = 6;
+
+    // ── Helper: salto de página ──
+    // Si el cursor más la altura necesaria supera el alto de la página, se
+    // crea una nueva página (mismo formato 80mm) y se continúa dibujando.
+    // La variante carta usa la misma técnica con su propio encabezado.
+    const PAGE_BOTTOM = PAGE_H - 8;
+    const checkPageBreak = (needed = 0) => {
+        if (y + needed > PAGE_BOTTOM) {
+            doc.addPage();
+            y = 6;
+        }
+    };
 
     // ── Helper: línea punteada ──
     const dash = (yy) => {
@@ -114,6 +131,7 @@ export async function generateDailyClosePDF({
     // ════════════════════════════════════
     //  RESUMEN GENERAL
     // ════════════════════════════════════
+    checkPageBreak(50);
     y = sectionTitle('RESUMEN GENERAL', y);
 
     const activeSalesCount = sales.filter(s => !s.relatedVoidId && s.tipo !== 'ANULACION_VENTA').length;
@@ -154,6 +172,7 @@ export async function generateDailyClosePDF({
     //  DESGLOSE POR MÉTODO DE PAGO
     // ════════════════════════════════════
     if (paymentRows > 0) {
+        checkPageBreak(30);
         y = sectionTitle('PAGOS POR MÉTODO', y);
 
         Object.entries(paymentBreakdown).forEach(([methodId, data]) => {
@@ -182,6 +201,7 @@ export async function generateDailyClosePDF({
     //  RECONCILIACIÓN DE CAJA (CUADRE)
     // ════════════════════════════════════
     if (reconData) {
+        checkPageBreak(40);
         y = sectionTitle('CUADRE DE CAJA FISICA', y);
 
         const reconRows = [
@@ -239,6 +259,7 @@ export async function generateDailyClosePDF({
     //  APERTURA DE CAJA
     // ════════════════════════════════════
     if (apertura && (apertura.openingUsd > 0 || apertura.openingBs > 0)) {
+        checkPageBreak(30);
         y = sectionTitle('FONDO INICIAL (APERTURA)', y);
 
         const aperturaRows = [];
@@ -265,9 +286,11 @@ export async function generateDailyClosePDF({
     //  TOP PRODUCTOS
     // ════════════════════════════════════
     if (topProdRows > 0) {
+        checkPageBreak(30);
         y = sectionTitle('PRODUCTOS MÁS VENDIDOS', y);
 
         topProducts.forEach((p, i) => {
+            checkPageBreak(10);
             const rank = `${i + 1}.`;
             const name = p.name.length > 22 ? p.name.substring(0, 22) + '…' : p.name;
             doc.setFont('helvetica', 'bold');
@@ -292,9 +315,28 @@ export async function generateDailyClosePDF({
     // ════════════════════════════════════
     //  DETALLE DE VENTAS
     // ════════════════════════════════════
+    checkPageBreak(30);
     y = sectionTitle('DETALLE DE VENTAS', y);
 
+    // Altura estimada de un bloque de venta, para no cortarla entre páginas.
+    const estimateSaleHeight = (s) => {
+        const isVoidedSale = s.status === 'ANULADA' || !!s.relatedVoidId;
+        const isVoidTransaction = s.tipo === 'ANULACION_VENTA';
+        const isCanceled = isVoidedSale || isVoidTransaction;
+        let h = 4 + 3; // línea cabecera + separación
+        if (s.items && s.items.length > 0 && !isCanceled) {
+            h += s.items.length * 3.5;
+            if (s.discountAmountUsd && s.discountAmountUsd > 0) h += 3.5;
+        }
+        if (!isCanceled && s.payments && s.payments.length > 0) h += s.payments.length * 3.5;
+        else if (!isCanceled && s.paymentMethod) h += 3.5;
+        if (!isCanceled && ((s.changeUsd && s.changeUsd > 0) || (s.changeBs && s.changeBs > 0))) h += 3.5;
+        if (!isCanceled) h += 3.5; // referencia Bs
+        return h;
+    };
+
     allSales.forEach((s) => {
+        checkPageBreak(estimateSaleHeight(s));
         const d = new Date(s.timestamp);
         const hora = d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
         const isVoidedSale = s.status === 'ANULADA' || !!s.relatedVoidId;
@@ -393,6 +435,7 @@ export async function generateDailyClosePDF({
         y += 3;
     });
 
+    checkPageBreak(25);
     y += 2;
     dash(y); y += 6;
 
@@ -410,12 +453,6 @@ export async function generateDailyClosePDF({
     doc.text('Reporte generado automáticamente · Sin valor fiscal', CX, y, { align: 'center' });
 
     // ── DESCARGAR / COMPARTIR ──
-    const getLocalISODate = (d = new Date()) => {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
     const dateStr = getLocalISODate(now);
     const filename = `cierre_${dateStr}.pdf`;
     const blob = doc.output('blob');
