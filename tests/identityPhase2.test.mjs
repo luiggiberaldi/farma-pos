@@ -94,15 +94,20 @@ for (const mutation of ['pin', 'role', 'delete']) {
   test(`login pendiente no restaura credenciales tras cambio de ${mutation}`, async t => {
     const { store } = await authFixture(t);
     assert.equal(await store.getState().login('908172', 1), true);
+    // A3: el KDF real es PBKDF2 (deriveBits); también se intercepta digest por
+    // si el registro verificado usa el formato legado.
     const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const deriveBits = crypto.subtle.deriveBits.bind(crypto.subtle);
     let release, entered;
     const suspended = new Promise(resolve => { entered = resolve; });
     const gate = new Promise(resolve => { release = resolve; });
     let delayed = false;
-    t.mock.method(crypto.subtle, 'digest', async (...args) => {
+    const gateKdf = async (orig, args) => {
       if (!delayed) { delayed = true; entered(); await gate; }
-      return digest(...args);
-    });
+      return orig(...args);
+    };
+    t.mock.method(crypto.subtle, 'digest', async (...args) => gateKdf(digest, args));
+    t.mock.method(crypto.subtle, 'deriveBits', async (...args) => gateKdf(deriveBits, args));
     const pending = store.getState().login('817263', 2);
     await suspended;
     if (mutation === 'pin') await store.getState().cambiarPin(2, '192837');

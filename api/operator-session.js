@@ -1,6 +1,7 @@
 import {
   createOperatorAccess, OperatorAccessError, readOperatorConfig, readSessionCookie, sessionCookie,
 } from '../src/server/operatorAccess.js';
+import { checkRateLimit, clientIp, rateLimitedResponse } from '../src/server/rateLimit.js';
 
 export const config = { api: { bodyParser: false } };
 const BODY_LIMIT = 4096;
@@ -50,6 +51,9 @@ export function createOperatorSessionHandler({ env = process.env, fetchImpl = gl
       res.setHeader('Allow', 'POST');
       return res.status(405).json({ error: 'Method not allowed' });
     }
+    // M5: frena fuerza bruta contra el login de operadores.
+    const rl = checkRateLimit({ key: `login:${clientIp(req)}`, max: 60, windowMs: 60_000 });
+    if (!rl.allowed) return rateLimitedResponse(res, rl.retryAfterMs);
     if (!serverConfig) return res.status(503).json({ error: 'Operator access unavailable' });
     if (req.headers?.origin !== serverConfig.appOrigin
       || (req.headers?.['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin'))

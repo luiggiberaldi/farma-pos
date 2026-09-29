@@ -8,27 +8,35 @@
  */
 
 import { guardLegacyCheckout, readSupabaseServerConfig } from './server/checkoutGate.js';
+import { corsHeadersObject } from './server/cors.js';
+import { readServiceRoleKey } from './server/envKeys.js';
+import { checkRateLimit } from './server/rateLimit.js';
 
-function corsHeaders(request) {
+// A4: orígenes desde APP_ORIGIN (variable del Worker) — ver src/server/cors.js.
+function corsHeaders(request, env) {
     const origin = request.headers.get('Origin') || '';
-    const ALLOWED = [
-        'http://localhost:5173',
-        'http://localhost:4173',
-    ];
-    return {
-        'Access-Control-Allow-Origin': ALLOWED.includes(origin) ? origin : '',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
+    return corsHeadersObject(origin, env);
+}
+
+// M5: rate limit mínimo en el borde del Worker (por isolate).
+function workerRateLimited(request, scope) {
+    const ip = request.headers.get('cf-connecting-ip')
+        || (request.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+        || 'unknown';
+    const rl = checkRateLimit({ key: `${scope}:${ip}`, max: 120, windowMs: 60_000 });
+    return rl.allowed ? null : rl.retryAfterMs;
 }
 
 // ── Update Profile handler (Admin API — service key never exposed al cliente) ─
 async function handleUpdateProfile(request, env) {
-    const headers = corsHeaders(request);
+    const headers = corsHeaders(request, env);
+    const rlMs = workerRateLimited(request, 'profile');
+    if (rlMs !== null) return Response.json({ error: 'Demasiadas solicitudes' }, { status: 429, headers });
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
 
-    const SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
+    // A6: nombre canónico SUPABASE_SERVICE_ROLE_KEY (con fallback transitorio).
+    const SERVICE_KEY = readServiceRoleKey(env);
     const config = readSupabaseServerConfig(env);
     if (!SERVICE_KEY || !config) return Response.json({ error: 'Not configured' }, { status: 503, headers });
     const SUPABASE_URL = config.url;
@@ -63,8 +71,9 @@ async function handleUpdateProfile(request, env) {
     });
 
     if (!updateRes.ok) {
-        const err = await updateRes.text();
-        return Response.json({ error: err }, { status: updateRes.status, headers });
+        // A5: nunca filtrar el texto crudo del upstream al cliente.
+        console.error('[update-profile] Admin API respondió', updateRes.status);
+        return Response.json({ error: 'No se pudo actualizar el perfil' }, { status: 502, headers });
     }
 
     return Response.json({ ok: true }, { headers });
@@ -72,7 +81,9 @@ async function handleUpdateProfile(request, env) {
 
 // ── Checkout proxy handler ─────────────────────────────────────────────────
 async function handleCheckout(request, env) {
-    const headers = corsHeaders(request);
+    const headers = corsHeaders(request, env);
+    const rlMs = workerRateLimited(request, 'checkout');
+    if (rlMs !== null) return Response.json({ error: 'Demasiadas solicitudes' }, { status: 429, headers });
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
@@ -95,8 +106,45 @@ async function handleCheckout(request, env) {
 }
 
 // ── BCV rates proxy ─────────────────────────────────────────────────────────
-async function handleRates(request) {
-    const headers = corsHeaders(request);
+// M6 (2026-09-28): misma banda anti-manipulación que api/rates.js — si el feed
+// salta más de ±30% respecto a la última tasa buena, se sirve la última buena
+// marcada como stale y se alerta en logs.
+const WORKER_RATE_BAND = 0.30;
+let workerLastGood = null; // { usd, eur, validDate, observedAt } por isolate
+
+function workerWithinBand(value, reference) {
+    if (!reference || reference <= 0) return true;
+    return Math.abs(value - reference) / reference <= WORKER_RATE_BAND;
+}
+
+function workerStaleResponse(headers) {
+    return Response.json({
+        bcv: { price: workerLastGood.usd, validDate: workerLastGood.validDate, observedAt: workerLastGood.observedAt, source: 'BCV (cache de última tasa buena)' },
+        euro: { price: workerLastGood.eur, validDate: workerLastGood.validDate, observedAt: workerLastGood.observedAt, source: 'BCV (cache de última tasa buena)' },
+        lastUpdate: new Date().toISOString(),
+        stale: true,
+    }, { status: 200, headers });
+}
+
+async function workerRecordRate(env, usd) {
+    const url = env.SUPABASE_URL;
+    const key = env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key || !usd) return;
+    try {
+        await fetch(`${url}/rest/v1/rpc/pharmacy_record_rate_all`, {
+            method: 'POST',
+            headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p_rate: usd, p_source: 'bcv' }),
+        });
+    } catch (error) {
+        console.error('[rates] No se pudo registrar la tasa observada:', error?.message || error);
+    }
+}
+
+async function handleRates(request, env) {
+    const headers = corsHeaders(request, env);
+    const rlMs = workerRateLimited(request, 'rates');
+    if (rlMs !== null) return Response.json({ error: 'Demasiadas solicitudes' }, { status: 429, headers });
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     if (request.method !== 'GET') return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
 
@@ -116,6 +164,16 @@ async function handleRates(request) {
 
         const validDate = data?.effective_date || data?.effectiveDate || data?.date || null;
         const observedAt = data?.updated_at || data?.updatedAt || null;
+
+        if (workerLastGood && ((usd > 0 && !workerWithinBand(usd, workerLastGood.usd)) || (eur > 0 && !workerWithinBand(eur, workerLastGood.eur)))) {
+            console.error(`[rates] ALERTA: tasa fuera de banda ±${WORKER_RATE_BAND * 100}% (usd ${usd} vs ${workerLastGood.usd}). Sirviendo última buena.`);
+            return workerStaleResponse(headers);
+        }
+
+        if (usd > 0 || eur > 0) {
+            workerLastGood = { usd, eur, validDate, observedAt };
+            if (usd > 0) workerRecordRate(env, usd);
+        }
         return Response.json({
             bcv: { price: usd > 0 ? usd : 0, validDate, observedAt, source: 'BCV (datos bcv.org.ve)' },
             euro: { price: eur > 0 ? eur : 0, validDate, observedAt, source: 'BCV (datos bcv.org.ve)' },
@@ -123,6 +181,7 @@ async function handleRates(request) {
         }, { status: 200, headers });
     } catch (error) {
         console.error('[rates] Error consultando BCV:', error);
+        if (workerLastGood) return workerStaleResponse(headers);
         return Response.json({ error: 'No se pudo consultar la tasa BCV' }, { status: 502, headers });
     }
 }
@@ -137,7 +196,7 @@ export default {
         }
 
         if (url.pathname.startsWith('/api/rates')) {
-            return handleRates(request);
+            return handleRates(request, env);
         }
 
         if (url.pathname.startsWith('/api/checkout')) {

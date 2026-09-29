@@ -359,6 +359,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                             handleImportClick={handleImportClick}
                             setShowFactoryReset={setShowFactoryReset}
                             triggerHaptic={triggerHaptic}
+                            showToast={showToast}
                             isCloudConfigured={isCloudConfigured}
                             handleForceRemoteReload={handleForceRemoteReload}
                         />

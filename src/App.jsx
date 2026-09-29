@@ -44,7 +44,8 @@ export default function App() {
   const [selectedTab, setActiveTab] = useState('inicio');
   const usuarioActivo = useAuthStore(state => state.usuarioActivo);
   const usuarios = useAuthStore(state => state.usuarios);
-  const factoryPinUsers = (usuarios || []).filter(u => u && !u.pinHashed && isFactoryPin(u.pin));
+  // A3: la marca factoryPin persiste aunque el PIN ya esté migrado a PBKDF2.
+  const factoryPinUsers = (usuarios || []).filter(u => u && (u.factoryPin === true || (!u.pinHashed && isFactoryPin(u.pin))));
   const [workspace, setWorkspace] = useState({ identity: null, mode: 'gestion' });
   const workspaceIdentity = `${getActiveAccountId() || 'local'}:${usuarioActivo?.id || 'locked'}`;
   const appMode = usuarioActivo?.rol === 'CAJERO' ? 'caja' : workspace.identity === workspaceIdentity ? workspace.mode : 'gestion';

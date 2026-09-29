@@ -8,7 +8,9 @@ import { formatBs, formatUsd, smartCashRounding } from '../utils/calculatorUtils
 import { generarEtiquetas } from '../utils/ticketGenerator';
 import { useWallet } from '../hooks/useWallet';
 import { BODEGA_CATEGORIES, UNITS, CATEGORY_COLORS } from '../config/categories';
-import { markSeedDone, upgradePharmacyCatalogIfNeeded } from '../config/pharmacySeed.js';
+// B8: el seed (~10.8k líneas) se carga bajo demanda con import() dinámico
+// para no inflar el bundle inicial.
+const loadPharmacySeed = () => import('../config/pharmacySeed.js');
 import ProductCard from '../components/Products/ProductCard';
 import ProductFormModal from '../components/Products/ProductFormModal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -619,7 +621,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                         onClick={async () => { 
                             triggerHaptic && triggerHaptic(); 
                             try {
-                                const upgraded = await upgradePharmacyCatalogIfNeeded(storageService, storageContext, true);
+                                const upgraded = await (await loadPharmacySeed()).upgradePharmacyCatalogIfNeeded(storageService, storageContext, true);
                                 if (upgraded) {
                                     showToast('Catálogo y fotos de estudio sincronizados', 'success');
                                 } else {
@@ -1096,7 +1098,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                                 try { await setProducts([]); } catch { return; }
                                 // El vaciado es permanente: la sede queda marcada y la
                                 // semilla del catálogo no vuelve a ejecutarse jamás aquí.
-                                try { await markSeedDone(storageService, storageContext); } catch { /* No re-siembra aunque falle la marca. */ }
+                                try { await (await loadPharmacySeed()).markSeedDone(storageService, storageContext); } catch { /* No re-siembra aunque falle la marca. */ }
                                 auditLog('INVENTARIO', 'BORRADO_TOTAL', `Borrado total: ${count} productos eliminados`);
                                 setIsDeleteAllModalOpen(false);
                                 setDeleteAllConfirmText('');

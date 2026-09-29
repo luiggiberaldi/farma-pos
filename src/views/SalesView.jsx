@@ -499,14 +499,16 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
 
     const [isProcessingSale, setIsProcessingSale] = useState(false);
+    // B6: la alerta de sobrepago usa ConfirmModal en vez de window.confirm.
+    const [overpayAlert, setOverpayAlert] = useState(null);
     const checkoutInFlight = useRef(false);
-    const handleCheckout = async (payments, changeBreakdown, prescription = null) => {
+    const handleCheckout = async (payments, changeBreakdown, prescription = null, skipOverpayCheck = false) => {
         if (checkoutInFlight.current) return;
         setIsProcessingSale(true);
         triggerHaptic && triggerHaptic();
 
         // ── Overpayment sanity check (3 layers) ──────────────────────────
-        if (cartTotalUsd > 0.5) {
+        if (!skipOverpayCheck && cartTotalUsd > 0.5) {
             const totalPaidUsd = payments.reduce((sum, p) => sum + (p.amountUsd || 0), 0);
             const ratio = totalPaidUsd / cartTotalUsd;
             const diff = totalPaidUsd - cartTotalUsd;
@@ -554,8 +556,9 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
             }
 
             if (alertMsg) {
-                const ok = window.confirm(alertMsg);
-                if (!ok) { setIsProcessingSale(false); return; }
+                setIsProcessingSale(false);
+                setOverpayAlert({ payments, changeBreakdown, prescription, message: alertMsg });
+                return;
             }
         }
 
@@ -920,6 +923,22 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
                 message="Todos los productos serán eliminados de la cesta actual. Esta acción no se puede deshacer."
                 confirmText="Sí, vaciar"
                 variant="cart"
+            />
+
+            {/* Overpayment sanity-check (B6: ConfirmModal en vez de window.confirm) */}
+            <ConfirmModal
+                isOpen={!!overpayAlert}
+                onClose={() => setOverpayAlert(null)}
+                onConfirm={() => {
+                    const pending = overpayAlert;
+                    setOverpayAlert(null);
+                    if (pending) handleCheckout(pending.payments, pending.changeBreakdown, pending.prescription, true);
+                }}
+                title="Revisar monto"
+                message={overpayAlert?.message || ''}
+                confirmText="Sí, continuar"
+                cancelText="Corregir"
+                variant="warning"
             />
 
             {/* Discount Modal */}

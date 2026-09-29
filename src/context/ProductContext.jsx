@@ -5,7 +5,9 @@ import { beginLocalOperation, registerContextBlocker, assertLocalOperationAllowe
 import { showToast } from '../components/Toast';
 import { enqueueSnapshotWrite, drainSnapshotWrites } from '../services/localSnapshotQueue.js';
 import { storageService } from '../utils/storageService';
-import { seedPharmacyInventoryIfEmpty, upgradePharmacyCatalogIfNeeded } from '../config/pharmacySeed.js';
+// B8: el seed (~10.8k líneas) se carga bajo demanda con import() dinámico
+// para no inflar el bundle inicial.
+const loadPharmacySeed = () => import('../config/pharmacySeed.js');
 import { BODEGA_CATEGORIES } from '../config/categories.js';
 
 
@@ -208,9 +210,10 @@ export function ProductProvider({ children, rates }) {
                 await drainSnapshotWrites(storageContext);
                 if (!isMounted) return;
                 // Semilla de farmacia y migración de catálogo a fotos reales de estudio.
-                try { 
-                    await seedPharmacyInventoryIfEmpty(storageService, storageContext); 
-                    await upgradePharmacyCatalogIfNeeded(storageService, storageContext);
+                try {
+                    const seed = await loadPharmacySeed();
+                    await seed.seedPharmacyInventoryIfEmpty(storageService, storageContext);
+                    await seed.upgradePharmacyCatalogIfNeeded(storageService, storageContext);
                 } catch (err) { console.error('[ProductContext] Semilla/Migración omitida:', err); }
                 const revision = writeRevision.current;
                 const savedProducts = await storageService.getItem('bodega_products_v1', [], storageContext);

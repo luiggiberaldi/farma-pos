@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
+import { isPinlessOptedIn, setPinlessOptIn } from '../../utils/operatorSession.js';
+import { captureStorageContext } from '../../config/storageScope.js';
 import {
     UserPlus, Trash2, KeyRound, Shield, ShoppingCart,
-    Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2
+    Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2, Fingerprint
 } from 'lucide-react';
 
 const ROLE_CONFIG = {
@@ -86,6 +88,18 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
     const RoleIcon = roleConf.icon;
     const isCurrentUser = user.id === currentUserId;
     const isAdmin = user.rol === 'ADMIN' || user.rol === 'DUENO';
+    // A10: el acceso sin PIN requiere opt-in explícito del dueño en este equipo.
+    const canOptInPinless = user.rol === 'CAJERO' && user.sinPin === true && !user.pin;
+    const [pinlessOn, setPinlessOn] = useState(() => canOptInPinless && isPinlessOptedIn(user.id));
+    const togglePinless = () => {
+        const next = !pinlessOn;
+        setPinlessOptIn(user.id, captureStorageContext(), next);
+        setPinlessOn(next);
+        triggerHaptic?.();
+        showToast(next
+            ? `Acceso sin PIN activado para ${user.nombre} en este equipo`
+            : `Acceso sin PIN desactivado para ${user.nombre}`, next ? 'success' : 'info');
+    };
 
     return (
         <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isCurrentUser ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-800/30' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
@@ -117,6 +131,17 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
 
             {/* Actions */}
             <div className="flex items-center gap-1 shrink-0">
+                {canOptInPinless && (
+                    <button
+                        onClick={togglePinless}
+                        title={pinlessOn ? 'Desactivar acceso sin PIN en este equipo' : 'Permitir acceso sin PIN en este equipo (solo el dueño)'}
+                        className={`p-2 rounded-lg transition-all active:scale-90 ${pinlessOn
+                            ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                            : 'text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}
+                    >
+                        <Fingerprint size={16} />
+                    </button>
+                )}
                 <button
                     onClick={() => { triggerHaptic?.(); onChangePin(user); }}
                     className="p-2 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all active:scale-90"

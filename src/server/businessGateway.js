@@ -23,6 +23,17 @@ const BUSINESS_REJECTIONS = Object.freeze({
     'Unknown sale': 'UNKNOWN_SALE',
     'Stock cannot become negative': 'NEGATIVE_STOCK',
     'Invalid quantity': 'INVALID_QUANTITY',
+    // C4/M2 (2026-09-28): el servidor recalcula precios, totales e impuesto.
+    'Unit price mismatch': 'PRICE_MISMATCH',
+    'Line total mismatch': 'LINE_TOTAL_MISMATCH',
+    'Sale total mismatch': 'TOTAL_MISMATCH',
+    'Bs total mismatch': 'BS_TOTAL_MISMATCH',
+    'out of band': 'RATE_OUT_OF_BAND',
+    'business_date fuera de rango': 'BUSINESS_DATE_OUT_OF_RANGE',
+});
+// A1 (2026-09-28): rol insuficiente → 403, nunca 409 ni reintentable.
+const AUTHORIZATION_REJECTIONS = Object.freeze({
+    'OPERATION_NOT_AUTHORIZED': 'OPERATION_NOT_AUTHORIZED',
 });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
@@ -76,6 +87,8 @@ export function createBusinessGateway({ env = process.env, fetchImpl = globalThi
             const result = await callRpc(OPERATION_KINDS[kind], { ...scope, p_operation_id: operation.operationId,
                 p_payload_hash: operation.payloadHash, ...args });
             if (!result.ok) {
+                const authz = Object.entries(AUTHORIZATION_REJECTIONS).find(([text]) => result.message.includes(text))?.[1];
+                if (authz) return { status: 403, body: { error: authz } };
                 const code = Object.entries(BUSINESS_REJECTIONS).find(([text]) => result.message.includes(text))?.[1];
                 // A business rejection is permanent for this operation; anything
                 // else is an outage the client should retry with the same id.

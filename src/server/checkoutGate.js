@@ -1,9 +1,11 @@
 // Shared by both HTTP adapters. Phase 1 deliberately exposes no write path:
 // a verified cloud account is not proof of the local PIN operator or branch.
 // Re-enable checkout only with a reviewed server-side operator/branch contract.
+// A6: acepta el nombre canónico primero; el antiguo queda como fallback transitorio.
 export function readSupabaseServerConfig(env = {}) {
   const raw = env.SUPABASE_URL || env.VITE_SUPABASE_URL || '';
-  const apiKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_KEY || '';
+  const apiKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
+    || env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY || '';
   try {
     const url = new URL(raw);
     const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);

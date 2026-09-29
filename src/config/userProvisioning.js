@@ -18,7 +18,7 @@ export function isFactoryPin(pin) {
 // Catálogo base de cuentas: el Dueño (id 1) es la única cuenta permanente
 // del sistema y cada sede arranca con un cajero con PIN de fábrica.
 export const DEFAULT_USERS = [
-    { id: 1, nombre: 'Dueño', rol: 'DUENO', sedeId: null, pin: '000000', pinHashed: false, permanente: true },
+    { id: 1, nombre: 'Dueño', rol: 'DUENO', sedeId: null, pin: '000000', pinHashed: false, permanente: true, factoryPin: true },
     ...SEDES.map((sede, index) => ({
         id: 3 + index,
         nombre: `Cajero ${sede.nombre}`,
@@ -27,6 +27,7 @@ export const DEFAULT_USERS = [
         pin: CASHIER_FACTORY_PIN,
         pinHashed: false,
         sinPin: false,
+        factoryPin: true,
     })),
 ];
 
@@ -51,6 +52,7 @@ export function ensureCashiersPerSede(users) {
                 pin: CASHIER_FACTORY_PIN,
                 pinHashed: false,
                 sinPin: false,
+                factoryPin: true,
             });
         }
         // Existing credentials and the explicit sinPin choice are authoritative.
@@ -70,7 +72,7 @@ export function ensureOwner(users) {
     }
     // Normaliza la cuenta en id 1: rol Dueño, permanente y con PIN usable.
     const owner = { ...list[idx], rol: 'DUENO', permanente: true };
-    if (!owner.pin) { owner.pin = OWNER_FACTORY_PIN; owner.pinHashed = false; }
+    if (!owner.pin) { owner.pin = OWNER_FACTORY_PIN; owner.pinHashed = false; owner.factoryPin = true; }
     if (owner.nombre === 'Administrador') owner.nombre = 'Dueño';
     list[idx] = owner;
     return list;
@@ -91,12 +93,12 @@ export function migrateOwnerPinToFactory(users) {
     const list = (Array.isArray(users) ? users : []).map(u => {
         if (Number(u?.id) !== 1 || u.rol !== 'DUENO') return u;
         const legacy = !u.pin || u.pin === LEGACY_OWNER_PIN || u.pin === LEGACY_OWNER_PIN_HASH;
-        return legacy ? { ...u, pin: OWNER_FACTORY_PIN, pinHashed: false } : u;
+        return legacy ? { ...u, pin: OWNER_FACTORY_PIN, pinHashed: false, factoryPin: true } : u;
     });
     // v4: los cajeros sin PIN (acceso directo heredado) reciben el PIN de
     // fábrica 0000; un PIN personalizado del cajero nunca se toca.
     return list.map(u => u?.rol === 'CAJERO' && !u.pin
-        ? { ...u, pin: CASHIER_FACTORY_PIN, pinHashed: false, sinPin: false }
+        ? { ...u, pin: CASHIER_FACTORY_PIN, pinHashed: false, sinPin: false, factoryPin: true }
         : u);
 }
 

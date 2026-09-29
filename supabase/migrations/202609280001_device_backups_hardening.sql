@@ -14,6 +14,15 @@
 -- Idempotente: puede correrse más de una vez.
 BEGIN;
 
+-- 0. La tabla venía del track legacy; en un proyecto nuevo puede no existir.
+--    Crear la forma mínima que usan los RPCs (idempotente).
+CREATE TABLE IF NOT EXISTS public.device_backups (
+  device_id text PRIMARY KEY,
+  product_id text NOT NULL DEFAULT 'bodega',
+  backup_data jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- 1. Quitar la policy permisiva.
 DROP POLICY IF EXISTS "Dispositivos acceden su propio backup" ON public.device_backups;
 

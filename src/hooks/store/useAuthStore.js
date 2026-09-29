@@ -2,15 +2,26 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 import { captureStorageContext, getActiveSedeId, isStorageContextActive } from '../../config/storageScope.js';
-import { DEFAULT_USERS, migrateOwnerPinToFactory, normalizeUsers, CASHIER_FACTORY_PIN } from '../../config/userProvisioning.js';
+import { DEFAULT_USERS, migrateOwnerPinToFactory, normalizeUsers, CASHIER_FACTORY_PIN, isFactoryPin } from '../../config/userProvisioning.js';
 import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperatorSession, canUsePinlessAccess } from '../../utils/operatorSession.js';
 import { sanitizeBackup } from '../../utils/backupSafety.js';
 import { assertLocalOperationAllowed, hasPendingLocalWrites } from '../../services/localOperationGuard.js';
+import { generatePinSalt, hashPinPbkdf2, isStrongPinRecord } from '../../utils/pinCrypto.js';
 
-export async function hashPin(pin) {
+// A3: SHA-256 sin salt (formato legado). Solo se usa para comparar registros
+// viejos; todo PIN nuevo o verificado se migra a PBKDF2 (ver pinCrypto.js).
+export async function hashPinLegacy(pin) {
     const data = new TextEncoder().encode(String(pin));
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// Alias transitorio por compatibilidad.
+export const hashPin = hashPinLegacy;
+
+// Construye un registro de PIN en el formato fuerte (PBKDF2 + salt).
+async function strongPinRecord(pin) {
+    const pinSalt = await generatePinSalt();
+    return { pin: await hashPinPbkdf2(pin, pinSalt), pinSalt, pinKdf: 'pbkdf2', pinHashed: true, sinPin: false };
 }
 
 const isAdmin = user => ['DUENO', 'ADMIN'].includes(user?.rol);
@@ -19,7 +30,8 @@ const pinLength = user => isAdmin(user) ? 6 : 4;
 // cloud puede aplicarse. Expira si el usuario tarda en confirmar el nuevo PIN.
 const PIN_RESET_GRACE_MS = 10 * 60 * 1000;
 const credentialIdentity = user => user ? JSON.stringify([user.id, user.rol, user.sedeId ?? null,
-    user.pin, user.pinHashed === true, user.sinPin === true, user.credentialVersion || 0]) : null;
+    user.pin, user.pinHashed === true, user.pinKdf || null, user.pinSalt || null,
+    user.sinPin === true, user.credentialVersion || 0]) : null;
 let authEpoch = 0;
 let skipConfigPersistence = false;
 // Solicitud de restablecimiento de PIN vigente (identidad cloud ya verificada).
@@ -28,16 +40,29 @@ const approvals = new Map();
 const APPROVAL_MS = 2 * 60 * 1000;
 
 function attemptsKey(userId, context) {
-    return `operator_pin_attempts_v2:${context.accountId || 'local'}:${userId}`;
+    return `operator_pin_attempts_v3:${context.accountId || 'local'}:${userId}`;
 }
+// A10: los intentos viven en localStorage (otra pestaña ya no reinicia el
+// contador) y el bloqueo crece exponencialmente: 30s, 60s, 120s… tope 15 min.
+const LOCKOUT_BASE_MS = 30_000;
+const LOCKOUT_MAX_MS = 15 * 60_000;
 function readAttempts(key) {
-    try { return JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { return {}; }
+    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+}
+function lockoutMsFor(failures) {
+    if (failures < 3) return 0;
+    return Math.min(LOCKOUT_BASE_MS * 2 ** (failures - 3), LOCKOUT_MAX_MS);
 }
 function noteAttempt(key, success) {
-    if (success) { sessionStorage.removeItem(key); return; }
+    if (success) { try { localStorage.removeItem(key); } catch { /* noop */ } return; }
     const old = readAttempts(key);
-    const count = old.until && old.until <= Date.now() ? 1 : (old.count || 0) + 1;
-    sessionStorage.setItem(key, JSON.stringify({ count, until: count >= 3 ? Date.now() + 30000 : 0 }));
+    const failures = (old.failures || 0) + 1;
+    const until = lockoutMsFor(failures);
+    try {
+        localStorage.setItem(key, JSON.stringify({
+            failures, until: until ? Date.now() + until : 0,
+        }));
+    } catch { /* almacenamiento lleno: se pierde el contador, no el bloqueo en memoria */ }
 }
 function requireOwner(user) {
     if (user?.rol !== 'DUENO') throw new Error('Solo el dueño puede administrar usuarios y credenciales.');
@@ -60,7 +85,11 @@ export const useAuthStore = create(persist((set, get) => ({
         if (!new RegExp(`^\\d{${pinLength(candidate)}}$`).test(String(pinInput))) return null;
         const key = attemptsKey(candidate.id, context);
         if ((readAttempts(key).until || 0) > Date.now()) return null;
-        const matched = candidate.pinHashed ? candidate.pin === await hashPin(pinInput) : candidate.pin === String(pinInput);
+        const matched = isStrongPinRecord(candidate)
+            ? candidate.pin === await hashPinPbkdf2(pinInput, candidate.pinSalt)
+            : candidate.pinHashed
+                ? candidate.pin === await hashPinLegacy(pinInput)
+                : candidate.pin === String(pinInput);
         // A microtask boundary makes cancellation/account changes observable for plaintext too.
         await Promise.resolve();
         const current = get().usuarios.find(u => u.id === userId);
@@ -96,11 +125,12 @@ export const useAuthStore = create(persist((set, get) => ({
         if (!verified || epoch !== authEpoch || !isStorageContextActive(context)) return false;
         let authenticated = get().usuarios.find(u => u.id === userId);
         if (credentialIdentity(authenticated) !== credentialIdentity(user)) return false;
-        if (!pinless && !authenticated.pinHashed) {
-            const hashed = await hashPin(pinInput);
+        if (!pinless && !isStrongPinRecord(authenticated)) {
+            // A3: migración oportunista al formato fuerte en cada login válido.
+            const strong = await strongPinRecord(pinInput);
             if (epoch !== authEpoch || !isStorageContextActive(context)
                 || credentialIdentity(get().usuarios.find(u => u.id === userId)) !== credentialIdentity(authenticated)) return false;
-            authenticated = { ...authenticated, pin: hashed, pinHashed: true, sinPin: false };
+            authenticated = { ...authenticated, ...strong };
             set(state => ({ usuarios: state.usuarios.map(u => u.id === userId ? authenticated : u) }));
         }
         if (epoch !== authEpoch || !isStorageContextActive(context)) return false;
@@ -231,13 +261,13 @@ export const useAuthStore = create(persist((set, get) => ({
         if (!pinResetGrace || !token || pinResetGrace.token !== token) throw new Error('Solicitud de recuperación inválida.');
         if (pinResetGrace.expiresAt <= Date.now()) { pinResetGrace = null; throw new Error('La recuperación expiró. Verifica tu identidad nuevamente.'); }
         if (!new RegExp(`^\\d{${pinLength(owner)}}$`).test(String(nuevoPin))) throw new Error(`El PIN debe tener ${pinLength(owner)} dígitos.`);
-        const hashed = await hashPin(nuevoPin);
+        const strong = await strongPinRecord(nuevoPin);
         if (!pinResetGrace || pinResetGrace.token !== token) throw new Error('La solicitud de recuperación cambió. Reintenta.');
         if (epoch !== authEpoch || !isStorageContextActive(context)) throw new Error('La sesión cambió durante el restablecimiento.');
         approvals.clear();
         pinResetGrace = null;
         set(state => ({ usuarios: state.usuarios.map(u => u.id === owner.id
-            ? { ...u, pin: hashed, pinHashed: true, sinPin: false, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+            ? { ...u, ...strong, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
         const active = get().usuarioActivo;
         if (active?.id === owner.id) {
             get().logout('PIN restablecido');
@@ -265,11 +295,11 @@ export const useAuthStore = create(persist((set, get) => ({
         if (!new RegExp(`^\\d{${pinLength(target)}}$`).test(String(nuevoPin))) throw new Error(`El PIN debe tener ${pinLength(target)} dígitos.`);
         const context = captureStorageContext();
         const epoch = authEpoch;
-        const hashed = await hashPin(nuevoPin);
+        const strong = await strongPinRecord(nuevoPin);
         if (epoch !== authEpoch || !isStorageContextActive(context) || get().usuarioActivo?.id !== actor.id) throw new Error('La sesión cambió durante la actualización del PIN.');
         approvals.clear();
         set(state => ({ usuarios: state.usuarios.map(u => u.id === userId
-            ? { ...u, pin: hashed, pinHashed: true, sinPin: false, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+            ? { ...u, ...strong, factoryPin: isFactoryPin(String(nuevoPin)), credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
         void logEvent('AUTH', 'PIN_CAMBIADO', `PIN cambiado para ${target.nombre || 'usuario'}`, actor, null, context);
         if (actor.id === userId) get().logout('PIN actualizado');
     },
@@ -285,12 +315,12 @@ export const useAuthStore = create(persist((set, get) => ({
         const epoch = authEpoch;
         const context = captureStorageContext();
         const effectivePin = factoryPin ? CASHIER_FACTORY_PIN : pin;
-        const hashed = await hashPin(effectivePin);
+        const strong = await strongPinRecord(effectivePin);
         if (epoch !== authEpoch || !isStorageContextActive(context)) throw new Error('La sesión cambió.');
         requireOwner(get().usuarioActivo);
         set(state => ({ usuarios: [...state.usuarios, {
             id: Math.max(0, ...state.usuarios.map(u => Number(u.id) || 0)) + 1,
-            nombre: nombre.trim(), rol, pin: hashed, pinHashed: true,
+            nombre: nombre.trim(), rol, ...strong, factoryPin: isFactoryPin(String(effectivePin)),
             sedeId: rol === 'CAJERO' ? sedeId : null, credentialVersion: 0,
         }] }));
         void logEvent('USUARIO', 'USUARIO_CREADO', `Usuario ${nombre} (${rol}) creado`, get().usuarioActivo);

@@ -214,7 +214,7 @@ test('acceso maestro embebido no crea sesión ni cambia credenciales', async t =
 });
 
 test('restablecimiento de PIN del dueño: identidad cloud, ventana, nuevo PIN y sesiones cerradas', async t => {
-  const { auth, hashPin } = await fixture(t);
+  const { auth } = await fixture(t);
   // Sin identidad cloud no se concede la ventana.
   await assert.rejects(() => auth.getState().requestOwnerPinReset(''), /inválida/i);
   await assert.rejects(() => auth.getState().requestOwnerPinReset(42), /inválida/i);
@@ -242,7 +242,9 @@ test('restablecimiento de PIN del dueño: identidad cloud, ventana, nuevo PIN y 
   const owner = auth.getState().usuarios.find(u => u.id === 1);
   assert.equal(owner.pinHashed, true);
   assert.notEqual(owner.pin, '550211');
-  assert.equal(owner.pin, await hashPin('550211'));
+  // A3: el PIN queda en PBKDF2 con salt aleatorio; se verifica, no se compara.
+  assert.ok(await auth.getState().verifyPin('550211', 1), 'el nuevo PIN verifica contra el registro fuerte');
+  assert.equal(await auth.getState().verifyPin('908172', 1), null, 'el PIN anterior ya no verifica');
   assert.equal(owner.credentialVersion, 1);
   assert.equal(auth.getState().usuarioActivo?.id, 3);
   // La ventana se consume: el mismo token no reutiliza.

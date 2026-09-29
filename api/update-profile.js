@@ -5,25 +5,24 @@
 // TODO: Configurar VITE_SUPABASE_URL con las credenciales del NUEVO proyecto Supabase.
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 
-const ALLOWED_ORIGINS = new Set([
-    'http://localhost:5173',
-    'http://localhost:4173',
-]);
-
-function applyCors(res, origin) {
-    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS.has(origin) ? origin : '');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
+import { applyCors } from '../src/server/cors.js';
+import { checkRateLimit, clientIp, rateLimitedResponse } from '../src/server/rateLimit.js';
+import { readServiceRoleKey } from '../src/server/envKeys.js';
 
 export default async function handler(req, res) {
-    applyCors(res, req.headers.origin || '');
+    // A4: orígenes desde APP_ORIGIN (ver src/server/cors.js).
+    applyCors(res, req.headers.origin || '', process.env, { methods: 'POST, OPTIONS', headers: 'Content-Type' });
 
     if (req.method === 'OPTIONS') return res.status(204).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-    const serviceKey = process.env.SUPABASE_SERVICE_KEY;
-    if (!serviceKey) return res.status(500).json({ error: 'SUPABASE_SERVICE_KEY not configured' });
+    // M5: este endpoint toca la Admin API: límite estricto.
+    const rl = checkRateLimit({ key: `profile:${clientIp(req)}`, max: 30, windowMs: 60_000 });
+    if (!rl.allowed) return rateLimitedResponse(res, rl.retryAfterMs);
+
+    // A6: nombre canónico SUPABASE_SERVICE_ROLE_KEY (con fallback transitorio).
+    const serviceKey = readServiceRoleKey(process.env);
+    if (!serviceKey) return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY not configured' });
 
     const { accessToken, businessName, phone } = req.body || {};
     if (!accessToken) return res.status(400).json({ error: 'accessToken required' });

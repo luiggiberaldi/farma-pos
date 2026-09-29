@@ -14,7 +14,11 @@ function rejected(status, code, message) {
     return new Response(JSON.stringify({ code, message }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-async function boundedStreamSize(stream, maximum) {
+// Lee el stream hasta el final sin cancelación anticipada: en Node/undici,
+// cancelar a mitad de la serialización multipart deja actividad pendiente
+// que luego rechaza ("ReadableStream is already closed"). El tope se aplica
+// comparando el total; los cuerpos medidos aquí son finitos (JSON, FormData).
+async function streamSize(stream) {
     if (!stream) return 0;
     const reader = stream.getReader();
     let bytes = 0;
@@ -23,12 +27,6 @@ async function boundedStreamSize(stream, maximum) {
             const chunk = await reader.read();
             if (chunk.done) return bytes;
             bytes += chunk.value.byteLength;
-            if (bytes > maximum) {
-                // A cloned Request tees its stream. Awaiting cancel can wait for
-                // the unconsumed original branch; cancel this reader only.
-                void reader.cancel().catch(() => {});
-                return bytes;
-            }
         }
     } finally { reader.releaseLock(); }
 }
@@ -36,14 +34,17 @@ async function boundedStreamSize(stream, maximum) {
 async function bodySize(input, init, maximum) {
     const body = init.body;
     if (body == null) return input instanceof Request && input.body
-        ? boundedStreamSize(input.clone().body, maximum) : 0;
+        ? streamSize(input.clone().body) : 0;
     if (typeof body === 'string' || body instanceof URLSearchParams) return new TextEncoder().encode(String(body)).byteLength;
     if (body instanceof Blob) return body.size;
     if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return body.byteLength;
     if (body instanceof FormData) {
         // Native multipart serialization includes boundaries and headers, not
         // just the file sizes. This disposable Request is never fetched.
-        return boundedStreamSize(new Request('https://transport.invalid', { method: 'POST', body }).body, maximum);
+        // Se lee hasta el final: cancelar a mitad deja actividad pendiente
+        // en undici ("ReadableStream is already closed").
+        const probe = new Request('https://transport.invalid', { method: 'POST', body });
+        return streamSize(probe.body);
     }
     return null; // Unknown streaming bodies must not bypass the local cap.
 }

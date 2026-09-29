@@ -9,6 +9,7 @@ import {
   sessionCookie, readSessionCookie,
 } from '../src/server/operatorAccess.js';
 import { createOperatorSessionHandler, config as apiConfig } from '../api/operator-session.js';
+import { resetRateLimitBuckets } from '../src/server/rateLimit.js';
 
 // No server is started. Every Auth/RPC request uses this synthetic fetch boundary.
 // SQL names/types are checked here, not its locking/RLS behavior (access-contract.mjs).
@@ -134,6 +135,7 @@ function fixture(options = {}) {
 }
 
 async function invoke(handler, body = { action: 'directory' }, extra = {}) {
+  resetRateLimitBuckets(); // el bucket en memoria es global: aislar cada invocación
   const req = { method: 'POST', headers: { origin: ENV.APP_ORIGIN, 'content-type': 'application/json',
     authorization: AUTHORIZATION, 'x-pharmacy-device': DEVICE_CREDENTIAL, 'sec-fetch-site': 'same-origin',
     ...extra.headers }, body };

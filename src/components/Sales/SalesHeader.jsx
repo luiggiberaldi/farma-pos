@@ -6,6 +6,19 @@ import { formatOfficialRate } from '../../utils/rateResolver';
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const formatRate = formatOfficialRate;
 
+// B7: indicador de antigüedad de la tasa ("hace X h") para no operar a ciegas
+// con una tasa offline desactualizada.
+function rateAgeLabel(lastUpdate) {
+    const ts = Date.parse(lastUpdate || '');
+    if (!Number.isFinite(ts)) return null;
+    const mins = Math.max(0, Math.round((Date.now() - ts) / 60000));
+    if (mins < 1) return 'actualizada ahora';
+    if (mins < 60) return `hace ${mins} min`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 48) return `hace ${hours} h`;
+    return `hace ${Math.floor(hours / 24)} d`;
+}
+
 export default function SalesHeader({
     effectiveRate,
     useAutoRate,
@@ -27,6 +40,16 @@ export default function SalesHeader({
         if (isLocked) return;
         setShowRateConfig(!showRateConfig);
     };
+    const ageLabel = rateAgeLabel(rates?.lastUpdate);
+    // B7 móvil: la tasa desactualizada se marca en ámbar (stale del API o >5h).
+    const rateAgeMs = rates?.lastUpdate ? Date.now() - new Date(rates.lastUpdate).getTime() : Infinity;
+    const isStaleRate = rates?.stale === true || rateAgeMs > 5 * 60 * 60 * 1000;
+    const tooltipText = isLocked
+        ? 'Solo los administradores pueden fijar la tasa'
+        : (rateMode === 'bcv' ? 'Usando Tasa Oficial Dólar BCV'
+            : rateMode === 'euro' ? 'Usando Tasa Oficial Euro BCV'
+            : 'Usando Tasa Manual fijada por ti')
+          + (ageLabel ? ` (${ageLabel})` : '');
 
     return (
         <div className="shrink-0 mb-2 lg:mb-1.5 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-3 shadow-sm border border-slate-100 dark:border-slate-800">
@@ -63,6 +86,15 @@ export default function SalesHeader({
                                 </span>
                             )}
                             <strong className="text-[11px] font-black">{formatRate(effectiveRate)}</strong>
+                            {/* B7: antigüedad en móvil + punto ámbar si está desactualizada */}
+                            {ageLabel && (
+                                <span className="flex items-center gap-1">
+                                    {isStaleRate && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                                    <span className={`text-[9px] font-bold ${isStaleRate ? 'text-amber-600 dark:text-amber-400' : 'opacity-70'}`}>
+                                        {ageLabel}
+                                    </span>
+                                </span>
+                            )}
                         </button>
                     </div>
                 </div>
@@ -77,7 +109,7 @@ export default function SalesHeader({
                         <span className="text-xs font-bold">Atajos (PC)</span>
                     </button>
 
-                    <Tooltip text={isLocked ? "Solo los administradores pueden fijar la tasa" : (rateMode === 'bcv' ? "Usando Tasa Oficial Dólar BCV" : rateMode === 'euro' ? "Usando Tasa Oficial Euro BCV" : "Usando Tasa Manual fijada por ti")} position="bottom">
+                    <Tooltip text={tooltipText} position="bottom">
                         <button 
                             onClick={handleRateToggle} 
                             disabled={isLocked}
@@ -115,6 +147,12 @@ export default function SalesHeader({
                             <strong className="text-sm font-black">{formatRate(effectiveRate)} Bs</strong>
                         </button>
                     </Tooltip>
+                    {ageLabel && (
+                        <span className={`flex items-center gap-1 text-[10px] font-bold ${isStaleRate ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                            {isStaleRate && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                            {ageLabel}
+                        </span>
+                    )}
                 </div>
             </div>
 

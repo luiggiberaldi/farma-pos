@@ -4,9 +4,11 @@
 -- el rol del operador; cualquier sesión válida (incluido un CAJERO) podía anular
 -- ventas o ajustar el inventario. El gateway tampoco filtraba por rol.
 --
--- Corrección: ambas funciones exigen rol DUENO o ADMIN en servidor (igual que
--- pharmacy_upsert_catalogue_item). Un rol no autorizado recibe NULL y el gateway
--- lo traduce a OPERATION_NOT_AUTHORIZED (el cliente reintenta solo con dueño/admin).
+-- Corrección: pharmacy_commit_void exige DUENO/ADMIN; pharmacy_commit_stock_movement
+-- exige DUENO/ADMIN solo para reason='ADJUSTMENT' (aperturas y traslados los puede
+-- registrar cualquier sesión válida de la sede). Un rol no autorizado recibe
+-- RAISE EXCEPTION 'OPERATION_NOT_AUTHORIZED' y el gateway lo traduce a 403
+-- no reintentable (ver AUTHORIZATION_REJECTIONS en businessGateway.js).
 BEGIN;
 
 CREATE OR REPLACE FUNCTION public.pharmacy_commit_stock_movement(
@@ -25,9 +27,11 @@ BEGIN
   SELECT * INTO v_session FROM app_private.verified_operator(
     p_auth_uid, p_device_id, p_device_proof_hash, p_token_hash);
   IF NOT FOUND THEN RETURN NULL; END IF;
-  -- A1 (2026-09-28): solo dueño/admin pueden mover inventario
-  -- (aperturas, ajustes, traslados). Un cajero nunca ajusta stock.
-  IF v_session.role NOT IN ('DUENO', 'ADMIN') THEN RETURN NULL; END IF;
+  -- A1 (2026-09-28): solo dueño/admin pueden hacer AJUSTES de inventario.
+  -- Aperturas y traslados los puede registrar cualquier sesión válida de la sede.
+  IF p_reason = 'ADJUSTMENT' AND v_session.role NOT IN ('DUENO', 'ADMIN') THEN
+    RAISE EXCEPTION 'OPERATION_NOT_AUTHORIZED';
+  END IF;
 
   BEGIN
     INSERT INTO app_private.operation_receipts(tenant_id, operation_id, operation_kind, branch_id, payload_hash)
@@ -81,7 +85,10 @@ BEGIN
     p_auth_uid, p_device_id, p_device_proof_hash, p_token_hash);
   IF NOT FOUND THEN RETURN NULL; END IF;
   -- A1 (2026-09-28): solo dueño/admin pueden anular ventas.
-  IF v_session.role NOT IN ('DUENO', 'ADMIN') THEN RETURN NULL; END IF;
+  -- Rechazo ruidoso: la sesión es válida, el rol no alcanza → 403 no reintentable.
+  IF v_session.role NOT IN ('DUENO', 'ADMIN') THEN
+    RAISE EXCEPTION 'OPERATION_NOT_AUTHORIZED';
+  END IF;
 
   BEGIN
     INSERT INTO app_private.operation_receipts(tenant_id, operation_id, operation_kind, branch_id, payload_hash)

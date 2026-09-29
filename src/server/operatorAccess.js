@@ -179,8 +179,9 @@ export function createOperatorAccess({ env = {}, fetchImpl = globalThis.fetch, a
       const args = await scope(authorization, deviceCredential);
       await rpc('pharmacy_revoke_operator_session', { ...args, p_token_hash: await sha256(token) });
     },
-    // Trusted administrative invocation only. expectedOwnerAuthUid must come from
-    // a human-verified owner record, not an HTTP payload or auth metadata.
+    // B3: NO EXPONER VÍA HTTP. Invocación administrativa de confianza únicamente
+    // (CLI de despliegue / consola del operador). expectedOwnerAuthUid debe venir
+    // de un registro de dueño verificado por un humano, nunca de un payload HTTP.
     async bootstrapOwner({ authorization, expectedOwnerAuthUid, tenantName, ownerName, localCode, pin }) {
       const authUid = await administrativeIdentity(authorization, expectedOwnerAuthUid);
       if (![tenantName, ownerName, localCode].every(s => typeof s === 'string' && s.trim() && s.length <= 80))
@@ -192,6 +193,7 @@ export function createOperatorAccess({ env = {}, fetchImpl = globalThis.fetch, a
       if (!result || !UUID.test(result.tenant_id) || !UUID.test(result.operator_id)) return denied();
       return { tenant_id: result.tenant_id, operator_id: result.operator_id };
     },
+    // B3: NO EXPONER VÍA HTTP. Solo invocación administrativa de confianza.
     async enrollDevice({ authorization, expectedOwnerAuthUid, label }) {
       const authUid = await administrativeIdentity(authorization, expectedOwnerAuthUid);
       if (typeof label !== 'string' || !label.trim() || label.length > 120) throw new OperatorAccessError(400);

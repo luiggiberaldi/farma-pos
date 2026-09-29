@@ -1,5 +1,6 @@
 import { createBusinessGateway } from '../src/server/businessGateway.js';
 import { readOperatorConfig, readSessionCookie } from '../src/server/operatorAccess.js';
+import { checkRateLimit, clientIp, rateLimitedResponse } from '../src/server/rateLimit.js';
 
 export const config = { api: { bodyParser: false } };
 const BODY_LIMIT = 64 * 1024;
@@ -47,6 +48,9 @@ export function createBusinessOperationHandler({ env = process.env, fetchImpl = 
             res.setHeader('Allow', 'POST');
             return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
         }
+        // M5: frena abuso del endpoint de commit (reintentos agresivos, spam).
+        const rl = checkRateLimit({ key: `commit:${clientIp(req)}`, max: 120, windowMs: 60_000 });
+        if (!rl.allowed) return rateLimitedResponse(res, rl.retryAfterMs);
         if (!serverConfig) return res.status(503).json({ error: 'UNAVAILABLE' });
         if (req.headers?.origin !== serverConfig.appOrigin
             || (req.headers?.['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin')) {

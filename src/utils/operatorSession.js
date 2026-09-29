@@ -13,9 +13,29 @@ export function publicOperator(user) {
     };
 }
 
+// A10: el acceso sin PIN requiere opt-in explícito del dueño EN ESTE EQUIPO.
+// Sin opt-in, el cajero sin PIN no puede entrar directo aunque su registro lo
+// permita: la decisión queda registrada por dispositivo, no en la nube.
+const PINLESS_OPTIN_PREFIX = 'abasto-pinless-optin:';
+function pinlessOptInKey(userId, context) {
+    return `${PINLESS_OPTIN_PREFIX}${context.accountId || 'local'}:${context.sedeId || 'na'}:${userId}`;
+}
+export function isPinlessOptedIn(userId, context = captureStorageContext()) {
+    try { return localStorage.getItem(pinlessOptInKey(userId, context)) === '1'; }
+    catch { return false; }
+}
+export function setPinlessOptIn(userId, context, enabled) {
+    const key = pinlessOptInKey(userId, context);
+    try {
+        if (enabled) localStorage.setItem(key, '1');
+        else localStorage.removeItem(key);
+    } catch { /* almacenamiento no disponible: el opt-in no persiste */ }
+}
+
 export function canUsePinlessAccess(user, context = captureStorageContext(), requireLogin = false) {
     return !context.accountId && !requireLogin && user?.rol === 'CAJERO'
-        && user.sinPin === true && !user.pin && user.sedeId === context.sedeId;
+        && user.sinPin === true && !user.pin && user.sedeId === context.sedeId
+        && isPinlessOptedIn(user?.id, context);
 }
 
 export function readOperatorSession(users, context = captureStorageContext(), requireLogin = false) {
