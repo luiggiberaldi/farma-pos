@@ -111,6 +111,7 @@ async function buildBranchSnapshot() {
     return {
         tenant_id: TENANT_ID,
         branch_id: BRANCH_IDS[context.sedeId],
+        _debugSedeId: context.sedeId,
         snapshot_date: today,
         total_sales_usd: Math.round(totalUsd * 100) / 100,
         total_sales_bs: Math.round(totalBs * 100) / 100,
@@ -135,11 +136,18 @@ async function buildBranchSnapshot() {
 export async function uploadBranchSnapshot() {
     if (isUploading) return;
     isUploading = true;
+    // Estado observable para depuración (window.__monitorStatus)
+    const setStatus = (s) => {
+        if (typeof window !== 'undefined') {
+            window.__monitorStatus = { ...s, at: new Date().toISOString() };
+        }
+    };
 
     try {
         const snapshot = await buildBranchSnapshot();
         if (!snapshot.branch_id) {
-            console.warn('[Monitor] Sede no mapeada, omitiendo subida');
+            console.warn('[Monitor] Sede no mapeada, omitiendo subida. sedeId:', snapshot._debugSedeId);
+            setStatus({ ok: false, error: 'sede_no_mapeada', sedeId: snapshot._debugSedeId });
             return;
         }
 
@@ -174,9 +182,11 @@ export async function uploadBranchSnapshot() {
 
         const { id } = await response.json();
         console.log('[Monitor] Snapshot subido:', snapshot.snapshot_date, snapshot.branch_id);
+        setStatus({ ok: true, branch_id: snapshot.branch_id, id });
         return id;
     } catch (error) {
         console.error('[Monitor] Error subiendo snapshot:', error.message);
+        setStatus({ ok: false, error: error.message });
         // No bloquear la app si falla la subida
     } finally {
         isUploading = false;

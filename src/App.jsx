@@ -64,16 +64,28 @@ export default function App() {
     syncSedeWithUser();
   }, [usuarioActivo, syncSedeWithUser]);
 
+  // Migración única: clientes globales → central (no borra la clave antigua)
+  useEffect(() => {
+    if (!usuarioActivo) return;
+    import('./utils/migrateCustomersToCentral')
+      .then(({ migrateCustomersToCentral }) => migrateCustomersToCentral())
+      .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
+  }, [usuarioActivo]);
+
   // Monitor: subida periódica de resúmenes de sede (solo upload, no toca ventas)
   useEffect(() => {
     if (!usuarioActivo) return;
     let cancelled = false;
     let stopFn = null;
-    import('./services/monitorSyncService').then(({ startMonitorUpload, stopMonitorUpload }) => {
-      if (cancelled) return;
-      startMonitorUpload();
-      stopFn = stopMonitorUpload;
-    });
+    import('./services/monitorSyncService')
+      .then(({ startMonitorUpload, stopMonitorUpload }) => {
+        if (cancelled) return;
+        startMonitorUpload();
+        stopFn = stopMonitorUpload;
+      })
+      .catch(err => {
+        console.error('[Monitor] No se pudo cargar el servicio de subida:', err?.message);
+      });
     return () => {
       cancelled = true;
       if (stopFn) stopFn();
