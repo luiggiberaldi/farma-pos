@@ -53,6 +53,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // ─── LOTES (F3.6): declarado antes de useProductForm que lo consume ───
     const [lotes, setLotes] = useState([]);
+    const { log: auditLog } = useAudit();
 
     // ─── FORMULARIO PRODUCTO (hook) ─────────────────────────
     const form = useProductForm({
@@ -73,7 +74,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         handleImageUpload, handleSave, handleEdit, handleClose,
         guardarLote, ajustarCantidadLote,
     } = form;
-    const { log: auditLog } = useAudit();
 
     const adjustStock = async (productId, delta) => {
         try {
