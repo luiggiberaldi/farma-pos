@@ -15,15 +15,19 @@ export default function MonitorDashboard({ onExit }) {
 
     const loadData = async () => {
         setLoading(true);
-        // Intentar subir snapshot local antes de leer (si hay datos locales)
         try {
-            const { uploadBranchSnapshot } = await import('../../services/monitorSyncService');
-            await uploadBranchSnapshot();
-        } catch { /* silencioso: la lectura no depende de la subida */ }
-        const data = await fetchBranchSnapshots();
-        setSnapshots(data);
-        setLastUpdate(new Date());
-        setLoading(false);
+            // Intentar subir snapshot local antes de leer (si hay datos locales)
+            try {
+                const { uploadBranchSnapshot } = await import('../../services/monitorSyncService');
+                await uploadBranchSnapshot();
+            } catch { /* silencioso: la lectura no depende de la subida */ }
+            const data = await fetchBranchSnapshots();
+            setSnapshots(data);
+            setLastUpdate(new Date());
+        } finally {
+            // finally garantiza que el spinner nunca quede atascado ante un error
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -110,6 +114,15 @@ export default function MonitorDashboard({ onExit }) {
                     <div className="text-center py-12">
                         <div className="w-8 h-8 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin mx-auto mb-3" />
                         <p className="text-sm text-slate-400">Cargando datos...</p>
+                    </div>
+                ) : snapshots.length === 0 ? (
+                    <div className="text-center py-12">
+                        <Store size={32} className="text-slate-300 mx-auto mb-3" />
+                        <p className="text-sm font-bold text-slate-500">Sin datos de sedes</p>
+                        <p className="text-xs text-slate-400 mt-1 px-8">Verifica tu conexión a internet y que las sedes tengan sesión cloud activa para subir sus resúmenes.</p>
+                        <button onClick={loadData} className="mt-4 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-all active:scale-95 min-h-[44px]">
+                            Reintentar
+                        </button>
                     </div>
                 ) : (
                     <div className="space-y-3">

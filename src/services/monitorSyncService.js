@@ -27,7 +27,7 @@ async function buildBranchSnapshot() {
     const today = getLocalISODate(new Date());
 
     // Leer ventas del día desde el storage local
-    const sales = await storageService.read('sales', context) || [];
+    const sales = await storageService.getItem('sales', [], context) || [];
 
     // Filtrar ventas de hoy (no anuladas)
     const todaySales = sales.filter(s => {
