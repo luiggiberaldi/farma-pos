@@ -27,13 +27,20 @@ import snapshotsHandler from '../api/monitor-snapshots.js';
 // Los handlers leen process.env directamente
 process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key-test';
+process.env.SUPABASE_ANON_KEY = 'anon-key-test';
 process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'publishable-test';
 process.env.APP_ORIGIN = 'https://farma-pos.vercel.app';
 
 const OWNER_AUTH_UID = 'a21b635a-e34b-44fc-9830-9eb1d9254499';
 const TENANT_ID = '17486fbd-a7c5-4b8d-94c0-71688197ad76';
 const BRANCH_CENTRAL = 'ba19ea5d-1320-49b7-8579-4eb743b81993';
+const BRANCH_NORTE = '31b8d4c0-d08a-4f17-b6c7-e74cab33744c';
 const BRANCH_AJENO = '00000000-0000-0000-0000-000000000000';
+// Sesión de operador válida: token de 43 chars, cookie y device credential
+const SESSION_TOKEN = 'A'.repeat(43);
+const DEVICE_ID = '11111111-2222-3333-4444-555555555555';
+const DEVICE_CREDENTIAL = `${DEVICE_ID}.${'B'.repeat(43)}`;
+const SESSION_COOKIE = `__Secure-pharmacy_operator=${SESSION_TOKEN}`;
 
 const ENV = {
     SUPABASE_URL: 'https://test.supabase.co',
@@ -76,10 +83,10 @@ function installFetchStub() {
         if (u.endsWith('/auth/v1/user')) {
             const auth = opts.headers?.Authorization || '';
             if (auth === 'Bearer valid-jwt-owner') {
-                return { ok: true, json: async () => ({ id: OWNER_AUTH_UID }) };
+                return { ok: true, json: async () => ({ id: OWNER_AUTH_UID, is_anonymous: false, role: 'authenticated' }) };
             }
             if (auth === 'Bearer valid-jwt-stranger') {
-                return { ok: true, json: async () => ({ id: '11111111-2222-3333-4444-555555555555' }) };
+                return { ok: true, json: async () => ({ id: '11111111-2222-3333-4444-555555555555', is_anonymous: false, role: 'authenticated' }) };
             }
             return { ok: false, status: 401, json: async () => ({}) };
         }
@@ -89,6 +96,27 @@ function installFetchStub() {
             return {
                 ok: true,
                 json: async () => (p_auth_uid === OWNER_AUTH_UID ? TENANT_ID : null),
+            };
+        }
+
+        if (u.includes('/rpc/pharmacy_validate_operator_session')) {
+            // La sesión del operador define la sede autorizada (server-side).
+            // El stub retorna la sesión de BRANCH_CENTRAL para el token válido.
+            const payload = JSON.parse(opts.body);
+            // Verificar que el token hash corresponde a SESSION_TOKEN (sha256)
+            // En el test aceptamos cualquier llamada como sesión válida de central,
+            // salvo que el test configure lo contrario vía variable global.
+            const branchId = globalThis.__TEST_SESSION_BRANCH || BRANCH_CENTRAL;
+            return {
+                ok: true,
+                json: async () => ({
+                    operator_id: '7fbb0771-2f8f-4889-83f6-61955324876d',
+                    tenant_id: TENANT_ID,
+                    branch_id: branchId,
+                    role: 'DUENO',
+                    name: 'Cesar',
+                    expires_at: new Date(Date.now() + 3600000).toISOString(),
+                }),
             };
         }
 
@@ -164,9 +192,18 @@ test('monitorAuth: JWT del dueño → ok con tenant derivado del servidor', asyn
 
 // ─── /api/monitor-upload ─────────────────────────────────────────────────
 
+// Headers completos para un upload autorizado: JWT del dueño + sesión de operador
+function uploadHeaders() {
+    return {
+        authorization: 'Bearer valid-jwt-owner',
+        cookie: SESSION_COOKIE,
+        'x-pharmacy-device': DEVICE_CREDENTIAL,
+    };
+}
+
 test('upload: anónimo → 401 y cero escrituras', async () => {
     const stub = installFetchStub();
-    const req = mockReq({ method: 'POST', headers: {}, body: { p_branch_id: BRANCH_CENTRAL } });
+    const req = mockReq({ method: 'POST', headers: {}, body: { p_snapshot_date: '2026-09-30' } });
     const res = mockRes();
     await uploadHandler(req, res);
     assert.equal(res.statusCode, 401);
@@ -174,14 +211,28 @@ test('upload: anónimo → 401 y cero escrituras', async () => {
     stub.restore();
 });
 
-test('upload: ignora p_tenant_id del cliente y usa el de la sesión', async () => {
+test('upload: sin sesión de operador → 401', async () => {
     const stub = installFetchStub();
     const req = mockReq({
         method: 'POST',
         headers: { authorization: 'Bearer valid-jwt-owner' },
+        body: { p_snapshot_date: '2026-09-30' },
+    });
+    const res = mockRes();
+    await uploadHandler(req, res);
+    assert.equal(res.statusCode, 401);
+    assert.equal(stub.rpcCalls().filter(c => c.url.includes('upsert')).length, 0);
+    stub.restore();
+});
+
+test('upload: ignora p_tenant_id del cliente y usa el de la sesión', async () => {
+    const stub = installFetchStub();
+    const req = mockReq({
+        method: 'POST',
+        headers: uploadHeaders(),
         body: {
             p_tenant_id: 'tenant-falso-del-cliente',
-            p_branch_id: BRANCH_CENTRAL,
+            p_branch_id: BRANCH_NORTE, // intentando suplantar otra sede
             p_snapshot_date: '2026-09-30',
         },
     });
@@ -193,30 +244,40 @@ test('upload: ignora p_tenant_id del cliente y usa el de la sesión', async () =
     stub.restore();
 });
 
-test('upload: payload sin branch_id → 400', async () => {
+test('upload: la sede la deriva la sesión, no el cliente (anti-suplantación)', async () => {
     const stub = installFetchStub();
     const req = mockReq({
         method: 'POST',
-        headers: { authorization: 'Bearer valid-jwt-owner' },
-        body: { p_snapshot_date: '2026-09-30' },
+        headers: uploadHeaders(),
+        body: {
+            // El cliente intenta subir como BRANCH_NORTE, pero la sesión es de CENTRAL
+            p_branch_id: BRANCH_NORTE,
+            p_snapshot_date: '2026-09-30',
+        },
+    });
+    const res = mockRes();
+    await uploadHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    // Verificar que el RPC recibió el branch_id de la SESIÓN (central), no el del cliente
+    const upsertCalls = stub.calls.filter(c => c.url.includes('pharmacy_upsert_branch_snapshot'));
+    assert.equal(upsertCalls.length, 1);
+    const payload = JSON.parse(upsertCalls[0].body);
+    assert.equal(payload.p_branch_id, BRANCH_CENTRAL, 'la sede debe venir de la sesión validada');
+    assert.equal(payload.p_tenant_id, TENANT_ID, 'el tenant debe venir de la sesión');
+    stub.restore();
+});
+
+test('upload: payload sin fecha → 400', async () => {
+    const stub = installFetchStub();
+    const req = mockReq({
+        method: 'POST',
+        headers: uploadHeaders(),
+        body: {},
     });
     const res = mockRes();
     await uploadHandler(req, res);
     assert.equal(res.statusCode, 400);
     assert.equal(stub.rpcCalls().filter(c => c.url.includes('upsert')).length, 0);
-    stub.restore();
-});
-
-test('upload: sede de otro tenant → 403', async () => {
-    const stub = installFetchStub();
-    const req = mockReq({
-        method: 'POST',
-        headers: { authorization: 'Bearer valid-jwt-owner' },
-        body: { p_branch_id: BRANCH_AJENO, p_snapshot_date: '2026-09-30' },
-    });
-    const res = mockRes();
-    await uploadHandler(req, res);
-    assert.equal(res.statusCode, 403);
     stub.restore();
 });
 

@@ -130,7 +130,7 @@ export function prepareSale(options, state, { operationId, operator, context, ti
     const sale = { id: operationId, operationId, operationIntent: intent, syncQueueId: operationId, schemaVersion: 3, accountId: context.accountId, sedeId: context.sedeId,
         saleNumber: number, tipo: casheaUsd > 0 ? 'VENTA_CASHEA' : fiadoUsd > 0.01 ? 'VENTA_FIADA' : 'VENTA', status: 'PENDIENTE_SYNC', syncMode: 'offline',
         items, cartSubtotalUsd: totals.subtotalUsd, discountType: discount.type, discountValue, discountAmountUsd: totals.discountAmountUsd, discountAuthorization,
-        totalUsd: totals.totalUsd, totalBs: totals.totalBs, totalCop: 0, copEnabled: false, tasaCop: 0,
+        totalUsd: totals.totalUsd, totalBs: totals.totalBs, totalCop: totals.totalCop || 0, copEnabled: !!options.copEnabled, tasaCop: options.copEnabled ? (options.tasaCop || 0) : 0,
         payments, rate: effectiveRate, rateSource: options.rateMode === 'manual' ? 'Manual' : options.rateMode === 'euro' ? 'Euro Auto' : 'BCV Auto',
         timestamp, cashSessionId: openSession?.apertura?.id || null, fechaComercial: openSession?.businessDate || options.businessDate || today, horaComercial: getLocalISOTime(now),
         changeUsd: change.changeUsdGiven, changeBs: change.changeBsGiven,

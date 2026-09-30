@@ -61,7 +61,7 @@ export function useDashboardData({ sales, products, customers, bcvRate, selected
     // Últimas ventas (por defecto las últimas 7, o las del día seleccionado en la gráfica)
     const recentSales = useMemo(() => {
         // Excluir apertura de caja, pagos a proveedores y otros registros internos del historial visible
-        const VISIBLE_TIPOS = ['VENTA', 'VENTA_FIADA', 'COBRO_DEUDA', 'ANULACION_VENTA'];
+        const VISIBLE_TIPOS = ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA', 'COBRO_DEUDA', 'ANULACION_VENTA'];
         if (selectedChartDate) {
             return sales.filter(s => {
                 if (!VISIBLE_TIPOS.includes(s.tipo)) return false;

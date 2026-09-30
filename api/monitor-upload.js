@@ -1,14 +1,16 @@
 // API del Monitor — subida de snapshots de sede.
 // Auth: JWT de Supabase Auth de la estación (Authorization: Bearer).
-// El tenant se deriva del dueño en el servidor; el branch_id se valida
-// contra ese tenant (FK en la BD). Sin sesión válida no hay escritura.
+// El tenant se deriva del dueño en el servidor; la sede (branch_id) se deriva
+// de la sesión del operador validada (cookie + dispositivo). El cliente NUNCA
+// decide ni el tenant ni la sede. Sin sesión válida no hay escritura.
 import { applyCors } from '../src/server/cors.js';
 import { checkRateLimit, clientIp, rateLimitedResponse } from '../src/server/rateLimit.js';
 import { authenticateMonitorRequest } from '../src/server/monitorAuth.js';
+import { createOperatorAccess, readSessionCookie } from '../src/server/operatorAccess.js';
 
 export default async function handler(req, res) {
     const origin = req.headers.origin || '';
-    applyCors(res, origin, process.env, { methods: 'POST, OPTIONS', headers: 'Content-Type, Authorization' });
+    applyCors(res, origin, process.env, { methods: 'POST, OPTIONS', headers: 'Content-Type, Authorization, X-Pharmacy-Device' });
     res.setHeader('Cache-Control', 'no-store, max-age=0');
 
     if (req.method === 'OPTIONS') {
@@ -35,6 +37,31 @@ export default async function handler(req, res) {
         return;
     }
 
+    // La sede se deriva de la sesión del operador (cookie + dispositivo),
+    // nunca del cuerpo de la petición. Una estación no puede suplantar
+    // otra sede del mismo tenant.
+    const access = createOperatorAccess({ env: process.env });
+    const sessionToken = readSessionCookie(req.headers?.cookie || '');
+    const deviceCredential = req.headers?.['x-pharmacy-device'] || req.headers?.['X-Pharmacy-Device'] || '';
+    const authorization = req.headers?.authorization || req.headers?.Authorization || '';
+    let sessionBranchId;
+    try {
+        const authority = await access.validateSession({ authorization, deviceCredential, token: sessionToken });
+        if (!authority || !authority.branch_id) {
+            res.status(401).json({ error: 'Sesión de operador no válida' });
+            return;
+        }
+        // Defensa en profundidad: la sesión debe pertenecer al mismo tenant
+        if (authority.tenant_id !== auth.tenantId) {
+            res.status(403).json({ error: 'Sesión no autorizada' });
+            return;
+        }
+        sessionBranchId = authority.branch_id;
+    } catch {
+        res.status(401).json({ error: 'Sesión de operador no válida' });
+        return;
+    }
+
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
     if (!url || !key) {
@@ -45,7 +72,7 @@ export default async function handler(req, res) {
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
         const {
-            p_branch_id, p_snapshot_date,
+            p_snapshot_date,
             p_total_sales_usd, p_total_sales_bs, p_transaction_count,
             p_cash_usd, p_pos_bs, p_credit_usd,
             p_cash_register_open, p_cashier_name, p_opening_usd, p_opening_bs,
@@ -53,14 +80,16 @@ export default async function handler(req, res) {
             p_payment_breakdown,
         } = body;
 
-        if (!p_branch_id || !p_snapshot_date) {
+        if (!p_snapshot_date) {
             res.status(400).json({ error: 'Faltan campos requeridos' });
             return;
         }
 
         // El tenant SIEMPRE es el derivado de la sesión — se ignora cualquier
-        // p_tenant_id enviado por el cliente. La FK (tenant_id, branch_id)
-        // en branch_snapshots rechaza sedes de otro tenant.
+        // p_tenant_id enviado por el cliente. La sede SIEMPRE es la de la
+        // sesión del operador validada — se ignora cualquier p_branch_id
+        // enviado por el cliente. La FK (tenant_id, branch_id) en
+        // branch_snapshots es defensa adicional.
         const rpcUrl = `${url}/rest/v1/rpc/pharmacy_upsert_branch_snapshot`;
         const response = await fetch(rpcUrl, {
             method: 'POST',
@@ -71,7 +100,7 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 p_tenant_id: auth.tenantId,
-                p_branch_id,
+                p_branch_id: sessionBranchId,
                 p_snapshot_date,
                 p_total_sales_usd: p_total_sales_usd || 0,
                 p_total_sales_bs: p_total_sales_bs || 0,

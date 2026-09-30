@@ -169,14 +169,24 @@ export async function uploadBranchSnapshot() {
             setStatus({ ok: false, error: 'sin_sesion_cloud' });
             return;
         }
+        // La sede la deriva el servidor desde la sesión del operador validada.
+        // Se envía el credential del dispositivo para que el servidor pueda
+        // validar la sesión y derivar el branch_id (nunca se confía en el cliente).
+        let deviceHeader = {};
+        try {
+            const { operatorRemoteSession } = await import('./operatorRemoteSession');
+            const deviceCredential = operatorRemoteSession.getDeviceCredential();
+            if (deviceCredential) deviceHeader = { 'X-Pharmacy-Device': deviceCredential };
+        } catch { /* silencioso */ }
         const response = await fetch(apiUrl, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
                 ...authHeader,
+                ...deviceHeader,
             },
             body: JSON.stringify({
-                p_branch_id: snapshot.branch_id,
                 p_snapshot_date: snapshot.snapshot_date,
                 p_total_sales_usd: snapshot.total_sales_usd,
                 p_total_sales_bs: snapshot.total_sales_bs,
