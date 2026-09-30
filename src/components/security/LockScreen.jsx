@@ -12,8 +12,9 @@ import { useSedeStore } from '../../hooks/store/useSedeStore';
 import BranchPinModal from './BranchPinModal';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { showToast } from '../Toast.js';
+import { Eye } from 'lucide-react';
 
-export default function LockScreen({ installPrompt, onInstall, showIOSButton, onShowIOSInstall }) {
+export default function LockScreen({ installPrompt, onInstall, showIOSButton, onShowIOSInstall, onEnterMonitor }) {
   const { usuarios, login } = useAuthStore();
   const [selectedUser, setSelectedUser] = useState(null);
   // El selector arranca en la sede activa del dispositivo (el cajero de esa
@@ -42,6 +43,17 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
     const selected = usuarios.find(user => user.id === userId);
     if (!selected) return false;
     if (selected.rol === 'CAJERO' && selected.sedeId !== selectedSedeId) return false;
+    // Modo Monitor: verifica PIN del dueño pero no inicia sesión completa
+    if (selectedUser?.isMonitorMode) {
+      const success = await login(pin, userId);
+      if (success) {
+        // Cierra la sesión inmediatamente y entra en modo monitor (solo lectura)
+        useAuthStore.getState().logout('modo monitor');
+        setSelectedUser(null);
+        onEnterMonitor?.();
+      }
+      return success;
+    }
     const success = await login(pin, userId);
     if (success) setSelectedUser(null);
     return success;
@@ -100,6 +112,28 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
           {visibleUsers.map(user => (
             <UserCard key={user.id} user={user} onClick={() => setSelectedUser(user)} />
           ))}
+          {/* Modo Monitor — supervisión del dueño, solo lectura */}
+          <div role="button" tabIndex={0} aria-label="Modo Monitor"
+            onClick={() => {
+              const dueno = usuarios.find(u => u.rol === 'DUENO');
+              if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true });
+            }}
+            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); const dueno = usuarios.find(u => u.rol === 'DUENO'); if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true }); } }}
+            className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 rounded-2xl active:scale-95 transition-transform duration-200">
+            <div className="flex flex-col items-center">
+              <div className="relative">
+                <div className="absolute inset-0 bg-black/40 rounded-3xl translate-y-4 translate-x-4 blur-xl" />
+                <div className="absolute inset-0 rounded-3xl translate-y-2 translate-x-1 bg-violet-500/20" />
+                <div className="relative z-10 w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg hover:scale-105 transition-transform duration-300">
+                  <Eye size={44} className="text-white" strokeWidth={2} />
+                </div>
+              </div>
+              <div className="text-center mt-8 space-y-1">
+                <h3 className="text-lg font-bold text-slate-800 drop-shadow-sm">Monitor</h3>
+                <span className="block text-[9px] font-black uppercase tracking-[0.2em] text-violet-600">Supervisión</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

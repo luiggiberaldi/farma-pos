@@ -1,0 +1,188 @@
+/**
+ * Monitor Upload Service
+ * Sube resúmenes periódicos de la sede a Supabase para el modo Monitor del dueño.
+ * Solo upload — no toca el flujo de ventas ni el sync operacional (pausado por ADR-001).
+ */
+
+import { supabaseCloud } from '../config/supabaseCloud';
+import { captureStorageContext } from '../config/storageScope';
+import { getLocalISODate } from '../utils/dateHelpers';
+import { storageService } from '../utils/storageService';
+
+// Mapeo de sede local → UUID en Supabase (tenant C&Y)
+const BRANCH_IDS = {
+    central: 'ba19ea5d-1320-49b7-8579-4eb743b81993',
+    norte: '31b8d4c0-d08a-4f17-b6c7-e74cab33744c',
+    sur: '426642c3-c423-4264-b243-82a36dddcdc3',
+};
+
+const TENANT_ID = '17486fbd-a7c5-4b8d-94c0-71688197ad76';
+
+let uploadTimer = null;
+let isUploading = false;
+
+/**
+ * Calcula el resumen del día desde los datos locales.
+ */
+async function buildBranchSnapshot() {
+    const context = captureStorageContext();
+    const today = getLocalISODate(new Date());
+
+    // Leer ventas del día desde el storage local
+    const sales = await storageService.read('sales', context) || [];
+
+    // Filtrar ventas de hoy (no anuladas)
+    const todaySales = sales.filter(s => {
+        if (!s || s.tipo === 'ANULACION_VENTA') return false;
+        const saleDate = s.huella?.fechaComercial || s.fecha?.split('T')[0];
+        return saleDate === today && ['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA'].includes(s.tipo);
+    });
+
+    // Calcular totales
+    let totalUsd = 0, totalBs = 0, cashUsd = 0, posBs = 0, creditUsd = 0;
+    let voidsCount = 0, voidsTotalUsd = 0, discountsTotalUsd = 0;
+
+    for (const sale of todaySales) {
+        if (sale.status === 'ANULADA' || sale.estado === 'ANULADA') {
+            voidsCount++;
+            voidsTotalUsd += Number(sale.totalUsd) || 0;
+            continue;
+        }
+
+        totalUsd += Number(sale.totalUsd) || 0;
+        totalBs += Number(sale.totalBs) || 0;
+
+        // Desglose por método de pago
+        for (const payment of (sale.payments || [])) {
+            const method = payment.methodId || payment.metodo || '';
+            if (method.includes('efectivo') || method.includes('cash')) {
+                cashUsd += Number(payment.amountUsd) || 0;
+            } else if (method.includes('punto') || method.includes('pos')) {
+                posBs += Number(payment.amountBs) || 0;
+            } else if (method.includes('fiado') || method.includes('credit')) {
+                creditUsd += Number(payment.amountUsd) || 0;
+            }
+        }
+
+        discountsTotalUsd += Number(sale.discountUsd) || Number(sale.descuentoUsd) || 0;
+    }
+
+    // Estado de caja
+    const aperturas = sales.filter(s => s.tipo === 'APERTURA_CAJA');
+    const lastApertura = aperturas[aperturas.length - 1];
+    const cierres = sales.filter(s => s.tipo === 'CIERRE_CAJA');
+    const lastCierre = cierres[cierres.length - 1];
+
+    const cashRegisterOpen = lastApertura && (!lastCierre ||
+        new Date(lastApertura.huella?.timestamp || 0) > new Date(lastCierre.huella?.timestamp || 0));
+
+    // Nombre del cajero (desde la sesión activa)
+    let cashierName = null;
+    try {
+        const { useAuthStore } = await import('../hooks/store/useAuthStore');
+        const usuario = useAuthStore.getState().usuarioActivo;
+        if (usuario?.rol === 'CAJERO') cashierName = usuario.nombre;
+    } catch { /* silencioso */ }
+
+    return {
+        tenant_id: TENANT_ID,
+        branch_id: BRANCH_IDS[context.sedeId],
+        snapshot_date: today,
+        total_sales_usd: Math.round(totalUsd * 100) / 100,
+        total_sales_bs: Math.round(totalBs * 100) / 100,
+        transaction_count: todaySales.filter(s => s.status !== 'ANULADA' && s.estado !== 'ANULADA').length,
+        cash_usd: Math.round(cashUsd * 100) / 100,
+        pos_bs: Math.round(posBs * 100) / 100,
+        credit_usd: Math.round(creditUsd * 100) / 100,
+        cash_register_open: !!cashRegisterOpen,
+        cashier_name: cashierName,
+        opening_usd: lastApertura ? Number(lastApertura.openingUsd) || 0 : null,
+        voids_count: voidsCount,
+        voids_total_usd: Math.round(voidsTotalUsd * 100) / 100,
+        discounts_total_usd: Math.round(discountsTotalUsd * 100) / 100,
+    };
+}
+
+/**
+ * Sube el snapshot actual a Supabase.
+ */
+export async function uploadBranchSnapshot() {
+    if (isUploading) return;
+    isUploading = true;
+
+    try {
+        const snapshot = await buildBranchSnapshot();
+        if (!snapshot.branch_id) {
+            console.warn('[Monitor] Sede no mapeada, omitiendo subida');
+            return;
+        }
+
+        const { data, error } = await supabaseCloud.rpc('pharmacy_upsert_branch_snapshot', {
+            p_tenant_id: snapshot.tenant_id,
+            p_branch_id: snapshot.branch_id,
+            p_snapshot_date: snapshot.snapshot_date,
+            p_total_sales_usd: snapshot.total_sales_usd,
+            p_total_sales_bs: snapshot.total_sales_bs,
+            p_transaction_count: snapshot.transaction_count,
+            p_cash_usd: snapshot.cash_usd,
+            p_pos_bs: snapshot.pos_bs,
+            p_credit_usd: snapshot.credit_usd,
+            p_cash_register_open: snapshot.cash_register_open,
+            p_cashier_name: snapshot.cashier_name,
+            p_opening_usd: snapshot.opening_usd,
+            p_voids_count: snapshot.voids_count,
+            p_voids_total_usd: snapshot.voids_total_usd,
+            p_discounts_total_usd: snapshot.discounts_total_usd,
+        });
+
+        if (error) throw error;
+        console.log('[Monitor] Snapshot subido:', snapshot.snapshot_date, snapshot.branch_id);
+        return data;
+    } catch (error) {
+        console.error('[Monitor] Error subiendo snapshot:', error.message);
+        // No bloquear la app si falla la subida
+    } finally {
+        isUploading = false;
+    }
+}
+
+/**
+ * Inicia la subida periódica (cada 5 minutos).
+ */
+export function startMonitorUpload(intervalMs = 5 * 60 * 1000) {
+    stopMonitorUpload();
+    // Subida inicial
+    uploadBranchSnapshot();
+    // Subidas periódicas
+    uploadTimer = setInterval(uploadBranchSnapshot, intervalMs);
+    console.log('[Monitor] Subida periódica iniciada');
+}
+
+/**
+ * Detiene la subida periódica.
+ */
+export function stopMonitorUpload() {
+    if (uploadTimer) {
+        clearInterval(uploadTimer);
+        uploadTimer = null;
+    }
+}
+
+/**
+ * Lee los snapshots del día para el monitor (desde Supabase).
+ */
+export async function fetchBranchSnapshots(snapshotDate = null) {
+    try {
+        const date = snapshotDate || getLocalISODate(new Date());
+        const { data, error } = await supabaseCloud.rpc('pharmacy_get_branch_snapshots', {
+            p_tenant_id: TENANT_ID,
+            p_snapshot_date: date,
+        });
+
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('[Monitor] Error leyendo snapshots:', error.message);
+        return [];
+    }
+}

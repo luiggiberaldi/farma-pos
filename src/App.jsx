@@ -39,9 +39,11 @@ import { OPERATOR_SESSION_KEY } from './utils/operatorSession.js';
 import { useSedeStore } from './hooks/store/useSedeStore';
 import { REMOTE_OPERATIONS_PAUSED } from './config/operationSafety.js';
 import { SUPABASE_FREE_PROFILE } from './config/supabaseFreeTier.js';
+import MonitorDashboard from './components/Monitor/MonitorDashboard';
 
 export default function App() {
   const [selectedTab, setActiveTab] = useState('inicio');
+  const [monitorMode, setMonitorMode] = useState(false);
   const usuarioActivo = useAuthStore(state => state.usuarioActivo);
   const usuarios = useAuthStore(state => state.usuarios);
   // A3: la marca factoryPin persiste aunque el PIN ya esté migrado a PBKDF2.
@@ -61,6 +63,15 @@ export default function App() {
   useEffect(() => {
     syncSedeWithUser();
   }, [usuarioActivo, syncSedeWithUser]);
+
+  // Monitor: subida periódica de resúmenes de sede (solo upload, no toca ventas)
+  useEffect(() => {
+    if (!usuarioActivo) return;
+    import('./services/monitorSyncService').then(({ startMonitorUpload, stopMonitorUpload }) => {
+      startMonitorUpload();
+      return () => stopMonitorUpload();
+    });
+  }, [usuarioActivo]);
 
   // Apply saved screen scale on mount
   useEffect(() => {
@@ -378,13 +389,17 @@ export default function App() {
 
   // Every cloud login and every absent/invalid local session requires an
   // explicit operator choice. Never synthesize a privileged owner session.
+  if (monitorMode) {
+    return <MonitorDashboard onExit={() => setMonitorMode(false)} />;
+  }
   if (!usuarioActivo) {
     return (
-      <LockScreen 
-        installPrompt={installPrompt} 
-        onInstall={handleInstall} 
-        showIOSButton={showIOSButton} 
-        onShowIOSInstall={() => setShowIOSInstall(true)} 
+      <LockScreen
+        installPrompt={installPrompt}
+        onInstall={handleInstall}
+        showIOSButton={showIOSButton}
+        onShowIOSInstall={() => setShowIOSInstall(true)}
+        onEnterMonitor={() => setMonitorMode(true)}
       />
     );
   }
