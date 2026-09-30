@@ -125,7 +125,7 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
           <button
             onClick={() => {
               const dueno = usuarios.find(u => u.rol === 'DUENO');
-              if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true });
+              if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true, nombre: 'Supervisión' });
             }}
             className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400/80 hover:text-violet-600 transition-colors underline underline-offset-2"
           >
