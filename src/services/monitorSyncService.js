@@ -166,6 +166,7 @@ export async function uploadBranchSnapshot() {
         const apiUrl = `${window.location.origin}/api/monitor-upload`;
         const authHeader = await getMonitorAuthHeader();
         if (!authHeader) {
+            console.warn('[Monitor] Sin sesión cloud, omitiendo subida. Inicia sesión en la cuenta cloud para activar el monitor.');
             setStatus({ ok: false, error: 'sin_sesion_cloud' });
             return;
         }
