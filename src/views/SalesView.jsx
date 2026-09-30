@@ -392,7 +392,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         selectedCustomerId, discountData, usuarioActivo, bcvRate: effectiveRate,
         customers, products, storageService, tasaCop, copEnabled,
         useAutoRate, rateMode, storageContext, todayAperturaData,
-        checkpointCheckout, adoptCommittedProducts, notifyLowStock,
+        checkpointCheckout, adoptCommittedProducts, notifyLowStock, operationId,
     });
     const { handleCreateCustomer, handleAddCustomAmount } = useSalesHelpers({
         storageService, setCustomers,

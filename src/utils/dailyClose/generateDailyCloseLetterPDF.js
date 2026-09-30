@@ -2,6 +2,13 @@
  * Genera un PDF de Cierre de Caja en tamaño CARTA (Letter) con reporte detallado de operaciones,
  * resumen financiero, cuadre de caja e inclusión del CÓDIGO de cada artículo.
  */
+import { jsPDF } from 'jspdf';
+import { formatBs } from '../calculatorUtils';
+import { formatOfficialRate } from '../rateResolver';
+import { getPaymentLabel, toTitleCase } from '../../config/paymentMethods';
+import { getBranding } from '../../config/branding';
+import { getActiveSedeId } from '../../config/storageScope';
+
 export async function generateDailyCloseLetterPDF({
     sales = [],           // Ventas netas
     allSales = [],        // Todas las transacciones (incluye anuladas)

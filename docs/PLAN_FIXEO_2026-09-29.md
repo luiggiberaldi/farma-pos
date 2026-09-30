@@ -37,3 +37,10 @@ Sin críticos. El diseño de sync es sólido y está correctamente pausado por A
 - Rotar la contraseña expuesta en el historial git y hacer force-push del historial reescrito.
 - Crear tenant/sede/dueño reales con `pharmacy_bootstrap_owner` cuando vaya a operar.
 - Definir si el monitor del dueño será solo móvil o también pantalla fija.
+
+## Bug crítico post-QA 2026-09-30: crash Vender/Inventario (resuelto)
+- **Causa raíz Vender**: `ReferenceError: bcvRate is not defined` en `src/views/SalesView.jsx:392`. El refactor `def3776` introdujo una referencia a `bcvRate` sin definirla en la llamada a `useCheckout`. Es el 8vo bug de la misma clase que los 7 corregidos en `f0aa79b` (esbuild no valida identificadores no resueltos y la suite no cubre ese hook). Fix: `bcvRate: effectiveRate` (commit `5196a2c`).
+- **Inventario**: `ProductsView.jsx:470` hacía `rates.bcv` sin guardia; `useRates()` devolvía `null` en instalación fresca o si el fetch fallaba. Fix doble: guardia en el spread (commit `6db0c66`) + `useRates` ahora nunca devuelve null (fallback a `DEFAULT_RATES`, commit `9f4ce5e`).
+- **ErrorBoundary**: ahora muestra mensaje + stack real en `<details>` colapsable para diagnóstico en producción (commit `6db0c66`).
+- **Overlays**: `TermsOverlay` (z-9999) tapaba el botón Omitir de `OnboardingOverlay` (z-9998). Ahora el tutorial solo se monta tras aceptar términos (commit `6db0c66`).
+- Lección: añadir a la suite una prueba que monte SalesView y ProductsView para detectar ReferenceErrors en render.

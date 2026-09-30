@@ -14,7 +14,7 @@ export function useCheckout(deps) {
         selectedCustomerId, discountData, usuarioActivo, bcvRate,
         customers, products, storageService, tasaCop, copEnabled,
         useAutoRate, rateMode, storageContext, todayAperturaData,
-        checkpointCheckout, adoptCommittedProducts, notifyLowStock,
+        checkpointCheckout, adoptCommittedProducts, notifyLowStock, operationId,
     } = deps;
 
 const handleCheckout = async (payments, changeBreakdown, prescription = null, skipOverpayCheck = false) => {
