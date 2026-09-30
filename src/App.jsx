@@ -510,7 +510,7 @@ export default function App() {
 
       {/* Bottom Nav — the role determines the available workspace */}
       {!isKeyboardOpen && (
-        <div className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 lg:mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed bottom-0 left-0 right-0 px-4 sm:px-6 pb-[env(safe-area-inset-bottom)] pt-0 mb-2 lg:mb-2 max-w-sm sm:max-w-lg md:max-w-2xl mx-auto lg:mx-0 lg:ml-6 z-30 pointer-events-none animate-in slide-in-from-bottom-4 duration-300">
           <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl p-1 flex justify-between items-center shadow-lg shadow-slate-900/10 border border-slate-200 dark:border-slate-700 pointer-events-auto">
             {TABS.map(tab => (
               <TabButton
