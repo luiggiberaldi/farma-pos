@@ -433,7 +433,7 @@ export async function commitNormalClosure({ fechaComercial, tasaBcv, reconData =
     const operator = useAuthStore.getState().usuarioActivo;
     const sessionId = useAuthStore.getState().operatorSession?.sessionId;
     const mayClose = operator?.rol === 'DUENO'
-        || (operator?.rol === 'CAJERO' && operator.sedeId === context.sedeId && localStorage.getItem('cajero_puede_cerrar_caja') === 'true');
+        || (operator?.rol === 'CAJERO' && operator.sedeId === context.sedeId && localStorage.getItem('cajero_puede_cerrar_caja') !== 'false');
     if (!mayClose) throw new Error('No tienes permiso para cerrar esta caja.');
     const assertActor = () => {
         assertStorageContextActive(context);

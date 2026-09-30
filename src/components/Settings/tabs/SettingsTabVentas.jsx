@@ -21,7 +21,7 @@ export default function SettingsTabVentas({
         localStorage.getItem('cajero_puede_abrir_caja') !== 'false'
     );
     const [cajeroCerrarCaja, setCajeroCerrarCaja] = useState(
-        localStorage.getItem('cajero_puede_cerrar_caja') === 'true'
+        localStorage.getItem('cajero_puede_cerrar_caja') !== 'false'
     );
     const [cajeroMaxDescuento, setCajeroMaxDescuento] = useState(
         localStorage.getItem('cajero_max_descuento') ?? '100'
