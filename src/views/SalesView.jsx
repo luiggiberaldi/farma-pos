@@ -389,7 +389,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
         playCheckout, playError, setCart, setCartSelectedIndex,
         setCustomers, setSalesData, setSelectedCustomerId,
         setShowCheckout, setShowConfetti, setShowReceipt, setOverpayAlert,
-        selectedCustomerId, discountData, usuarioActivo, bcvRate,
+        selectedCustomerId, discountData, usuarioActivo, bcvRate: effectiveRate,
         customers, products, storageService, tasaCop, copEnabled,
         useAutoRate, rateMode, storageContext, todayAperturaData,
         checkpointCheckout, adoptCommittedProducts, notifyLowStock,
