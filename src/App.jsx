@@ -440,7 +440,7 @@ export default function App() {
       {/* Remonta el inventario al cambiar de sede/cuenta: sin esta key, el contexto
           mantiene datos de la sede anterior porque captura el storage context una vez. */}
       <ProductProvider key={`${getActiveAccountId() || 'local'}:${sedeActivaId}`} rates={rates}>
-        <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:px-4 xl:px-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-20 lg:pb-16'} flex flex-col overflow-y-auto`}>
+        <main className={`flex-1 min-h-0 w-full max-w-md md:max-w-3xl lg:max-w-none lg:px-4 xl:px-6 mx-auto relative ${isKeyboardOpen ? 'pb-4' : 'pb-20 lg:pb-4'} flex flex-col overflow-y-auto`}>
 
         {canSwitchMode && <div className="shrink-0 flex justify-end px-3 py-2" role="group" aria-label="Modo de trabajo">
           <div className="inline-flex gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1">
