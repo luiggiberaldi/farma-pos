@@ -1,7 +1,7 @@
-import { Download, ArrowUpRight, ShoppingCart, Store, Users, Package, Lock as LockIcon, CheckCircle2 } from 'lucide-react';
+import { Download, ArrowUpRight, Package, Lock as LockIcon, CheckCircle2 } from 'lucide-react';
 import AnimatedCounter from '../AnimatedCounter';
 
-export default function DashboardActions({ installPrompt, showIOSButton, triggerHaptic, onInstall, onShowIOSInstall, onNavigate, isAdmin, todayExpensesUsd, todayExpenses, todayCashFlow, todaySales, canCloseCash, handleDailyClose, todayTotalUsd }) {
+export default function DashboardActions({ installPrompt, showIOSButton, triggerHaptic, onInstall, onShowIOSInstall, isAdmin, todayExpensesUsd, todayExpenses, todayCashFlow, todaySales, canCloseCash, handleDailyClose, todayTotalUsd }) {
     return (
         <>
             {(installPrompt || showIOSButton) && (
@@ -19,30 +19,6 @@ export default function DashboardActions({ installPrompt, showIOSButton, trigger
                     <ArrowUpRight size={18} className="text-white/60" />
                 </button>
             )}
-            
-            <div className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5 px-1">Acciones Rápidas</p>
-                <div className="flex gap-2">
-                    <button onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('ventas'); } }}
-                        className="flex-1 flex flex-col items-center gap-1.5 py-3.5 rounded-xl active:scale-95 transition-all"
-                        style={{ background: 'linear-gradient(135deg, #0B8D63, #0AA577)', boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
-                        <ShoppingCart size={22} className="text-white" />
-                        <span className="text-[11px] font-black text-white">Vender</span>
-                    </button>
-                    <button onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('catalogo'); } }}
-                        className="flex-1 flex flex-col items-center gap-1.5 py-3.5 rounded-xl active:scale-95 transition-all"
-                        style={{ background: 'linear-gradient(135deg, #334155, #1E293B)', boxShadow: '0 4px 12px rgba(51,65,85,0.15)' }}>
-                        <Store size={22} className="text-white" />
-                        <span className="text-[11px] font-black text-white">Inventario</span>
-                    </button>
-                    <button onClick={() => { if (onNavigate) { triggerHaptic(); onNavigate('clientes'); } }}
-                        className="flex-1 flex flex-col items-center gap-1.5 py-3.5 rounded-xl active:scale-95 transition-all"
-                        style={{ background: 'linear-gradient(135deg, #10B981, #059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.2)' }}>
-                        <Users size={22} className="text-white" />
-                        <span className="text-[11px] font-black text-white">Clientes</span>
-                    </button>
-                </div>
-            </div>
             
             {isAdmin && todayExpensesUsd > 0 && (
                 <div className="bg-white rounded-2xl p-4 border border-orange-100 shadow-sm flex items-center justify-between">

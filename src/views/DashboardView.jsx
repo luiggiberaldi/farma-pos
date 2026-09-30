@@ -486,7 +486,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 triggerHaptic={triggerHaptic}
                 onInstall={onInstall}
                 onShowIOSInstall={onShowIOSInstall}
-                onNavigate={onNavigate}
                 isAdmin={isAdmin}
                 todayExpensesUsd={todayExpensesUsd}
                 todayExpenses={todayExpenses}
