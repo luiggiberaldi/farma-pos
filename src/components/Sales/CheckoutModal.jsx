@@ -47,7 +47,7 @@ export default function CheckoutModal({
         {/* --- HEADER --- */}
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 gap-2">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-        <button type="button" aria-label="Cerrar cobro" disabled={isProcessingSale} onClick={onClose} className="p-2 -ml-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0">
+        <button type="button" aria-label="Cerrar cobro" disabled={isProcessingSale} onClick={onClose} className="p-3 -ml-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center">
         <X size={22} />
         </button>
         <div className="min-w-0">

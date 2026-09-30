@@ -107,7 +107,7 @@ export default function CartPanel({
                                     <div className="flex flex-col items-end shrink-0 gap-1.5 sm:gap-2 lg:gap-1">
                                         <p className="text-sm sm:text-base lg:text-xs font-black text-slate-800 dark:text-white">${(item.priceUsd * item.qty).toFixed(2)}</p>
                                         <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
-                                            <button onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors rounded-l-md active:bg-slate-200 dark:active:bg-slate-700"><Minus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
+                                            <button onClick={() => updateQty(item.id, item.isWeight ? -0.1 : -1)} aria-label="Reducir cantidad" className="w-11 h-11 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors rounded-l-md active:bg-slate-200 dark:active:bg-slate-700"><Minus size={16} strokeWidth={3} /></button>
                                             
                                             {isEditing ? (
                                                 <input
@@ -129,11 +129,11 @@ export default function CartPanel({
                                                 </span>
                                             )}
 
-                                            <button onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors rounded-r-md active:bg-slate-200 dark:active:bg-slate-700"><Plus size={14} className="lg:w-[12px] lg:h-[12px]" strokeWidth={3} /></button>
+                                            <button onClick={() => updateQty(item.id, item.isWeight ? 0.1 : 1)} aria-label="Aumentar cantidad" className="w-11 h-11 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors rounded-r-md active:bg-slate-200 dark:active:bg-slate-700"><Plus size={16} strokeWidth={3} /></button>
                                         </div>
                                     </div>
-                                    <button onClick={() => removeFromCart(item.id)} className="absolute -top-1 -right-1 sm:top-2 sm:right-2 lg:top-1.5 lg:right-1.5 w-9 h-9 flex items-center justify-center bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 sm:opacity-70 group-hover:opacity-100 transition-all rounded-full sm:rounded-lg">
-                                        <X size={12} className="sm:w-[14px] sm:h-[14px]" />
+                                    <button onClick={() => removeFromCart(item.id)} aria-label="Eliminar del carrito" className="absolute top-1 right-1 sm:top-2 sm:right-2 w-11 h-11 flex items-center justify-center bg-red-50 dark:bg-red-900/40 text-red-500 sm:bg-transparent sm:text-slate-300 sm:hover:text-red-500 transition-all rounded-full sm:rounded-lg active:scale-90">
+                                        <X size={16} />
                                     </button>
                                 </div>
                             );

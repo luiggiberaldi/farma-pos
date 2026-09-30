@@ -44,9 +44,9 @@ export default function FactoryPinBanner({ affectedNames = [], onGoToUsers }) {
                 type="button"
                 onClick={() => setDismissed(true)}
                 aria-label="Ocultar aviso por esta sesión"
-                className="shrink-0 p-1.5 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 rounded-full"
+                className="shrink-0 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 rounded-full"
             >
-                <X size={16} />
+                <X size={18} />
             </button>
         </div>
     );

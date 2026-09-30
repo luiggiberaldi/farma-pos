@@ -16,10 +16,11 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                 {/* Botón X cerrar — siempre visible */}
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-30 w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-full flex items-center justify-center transition-all active:scale-90"
+                    aria-label="Cerrar recibo"
+                    className="absolute top-3 right-3 z-30 w-11 h-11 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-full flex items-center justify-center transition-all active:scale-90"
                     title="Cerrar"
                 >
-                    <X size={18} />
+                    <X size={20} />
                 </button>
 
                 {/* Contenido scrollable */}
