@@ -27,7 +27,7 @@ import ProductGrid from '../components/Products/ProductGrid';
 
 // Campos que se comparan en la huella de edición (antes/después)
 const PRODUCT_SNAPSHOT_FIELDS = [
-    'name', 'priceUsdt', 'costUsd', 'costBs', 'stock', 'category',
+    'name', 'priceUsd', 'costUsd', 'costBs', 'stock', 'category',
     'genericName', 'laboratorio', 'concentracion', 'presentacion',
     'requiresPrescription', 'isControlled', 'requiresRefrigeration', 'vencimiento'
 ];

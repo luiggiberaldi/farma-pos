@@ -9,6 +9,7 @@ import { storageService } from '../utils/storageService';
 // para no inflar el bundle inicial.
 const loadPharmacySeed = () => import('../config/pharmacySeed.js');
 import { BODEGA_CATEGORIES } from '../config/categories.js';
+import { normalizeProductPrice } from '../utils/productPrice.js';
 
 
 export function ProductProvider({ children, rates }) {
@@ -220,7 +221,9 @@ export function ProductProvider({ children, rates }) {
                     await seed.upgradePharmacyCatalogIfNeeded(storageService, storageContext);
                 } catch (err) { console.error('[ProductContext] Semilla/Migración omitida:', err); }
                 const revision = writeRevision.current;
-                const savedProducts = await storageService.getItem('bodega_products_v1', [], storageContext);
+                const rawProducts = await storageService.getItem('bodega_products_v1', [], storageContext);
+                // Migra precio legado `priceUsdt` → `priceUsd` (el sistema trabaja en USD, no USDT)
+                const savedProducts = Array.isArray(rawProducts) ? rawProducts.map(normalizeProductPrice) : [];
                 const savedCategories = await storageService.getItem('my_categories_v1', BODEGA_CATEGORIES, storageContext);
                 if (isMounted && !dirtyRef.current && revision === writeRevision.current && isStorageContextActive(storageContext)) {
                     productsRef.current = savedProducts;

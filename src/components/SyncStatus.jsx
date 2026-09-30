@@ -190,7 +190,7 @@ export default function SyncStatus() {
             </button>
 
             {REMOTE_OPERATIONS_PAUSED && (
-                <p role="status" className="max-w-xs text-[10px] text-amber-800 dark:text-amber-200">
+                <p role="status" className="hidden sm:block max-w-xs text-[10px] text-amber-800 dark:text-amber-200">
                     Operación local; pendientes conservados en este equipo. Sin envío a la nube.
                 </p>
             )}

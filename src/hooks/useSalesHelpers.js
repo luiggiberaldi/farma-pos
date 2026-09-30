@@ -40,7 +40,7 @@ const handleAddCustomAmount = (amount, currency) => {
     const customProduct = {
         id: `custom_${crypto.randomUUID()}`, kind: 'custom',
         name: 'Venta Libre',
-        priceUsdt: amountUsd, // Usamos priceUsdt para que la validación temprana lo acepte
+        priceUsd: amountUsd, // Usamos priceUsd para que la validación temprana lo acepte
         exactBs: exactBsToStore, // Monto exacto original en Bs, o null si debe flotar
         costBs: 0,
         costUsd: 0,

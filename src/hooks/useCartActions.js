@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { showToast } from '../components/Toast';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { hasValidSalePrice } from '../utils/productPrice.js';
 import { quantityInBase, isBulkProduct, isPackageProduct, packageFactor } from '../utils/inventoryQuantities.js';
 
 export function useCartActions(deps) {
@@ -15,8 +16,9 @@ export function useCartActions(deps) {
 const addToCart = useCallback((product, qtyOverride = null, forceMode = null) => {
     triggerHaptic && triggerHaptic();
 
-    // Validación temprana: rechazar productos sin precio válido
-    if (!product.priceUsdt || isNaN(product.priceUsdt) || product.priceUsdt <= 0) {
+    // Guardarraíl: sin precio válido en USD el producto no entra al carrito.
+    // (El sistema no trabaja con USDT; el precio principal es `priceUsd`.)
+    if (!hasValidSalePrice(product)) {
         playError();
         showToast('Este producto no tiene precio válido. Edítalo primero.', 'warning');
         return;
@@ -43,7 +45,7 @@ const addToCart = useCallback((product, qtyOverride = null, forceMode = null) =>
     if (product.sellByUnit && product.unitPriceUsd && !forceMode && !qtyOverride) { setHierarchyPending(product); return; }
     if ((product.unit === 'kg' || product.unit === 'litro') && !qtyOverride) { setWeightPending(product); return; }
 
-    let priceToUse = parseFloat(product.priceUsdt) || 0;
+    let priceToUse = parseFloat(product.priceUsd) || 0;
     let cartId = product.id;
     let cartName = product.name;
     let qtyToAdd = qtyOverride || 1;

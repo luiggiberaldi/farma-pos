@@ -20,8 +20,8 @@ export default function ProductCard({
     onEdit,
     onDelete
 }) {
-    const valBs = p.priceUsdt * effectiveRate;
-    const valCop = p.priceUsdt * tasaCop;
+    const valBs = p.priceUsd * effectiveRate;
+    const valCop = p.priceUsd * tasaCop;
     const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
     const isVencido = p.vencimiento && p.vencimiento <= new Date().toISOString().slice(0, 10);
     const flags = [p.requiresPrescription && '℞', p.isControlled && '⚠', p.requiresRefrigeration && '❄'].filter(Boolean);
@@ -95,7 +95,7 @@ export default function ProductCard({
                 <div className="flex justify-between items-end mb-3">
                     <div>
                         <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 leading-none">
-                            {formatUsd(p.priceUsdt)} <span className="text-[10px] font-bold text-emerald-600/50 dark:text-emerald-400/50">USD {(p.unit === 'kg' || p.unit === 'litro') ? `/ ${unitInfo?.short || 'ud'}` : ''}</span>
+                            {formatUsd(p.priceUsd)} <span className="text-[10px] font-bold text-emerald-600/50 dark:text-emerald-400/50">USD {(p.unit === 'kg' || p.unit === 'litro') ? `/ ${unitInfo?.short || 'ud'}` : ''}</span>
                         </p>
                         <p className="text-[11px] font-bold text-slate-400 mt-1">{formatBs(valBs)} Bs</p>
                         {copEnabled && (
@@ -104,7 +104,7 @@ export default function ProductCard({
                         {p.unit === 'paquete' && p.sellByUnit && (
                             <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 mt-0.5 flex items-center gap-0.5">
                                 <Layers size={10} />
-                                ${(p.unitPriceUsd ?? p.priceUsdt / (p.unitsPerPackage || 1)).toFixed(2)} / ud
+                                ${(p.unitPriceUsd ?? p.priceUsd / (p.unitsPerPackage || 1)).toFixed(2)} / ud
                             </p>
                         )}
                     </div>

@@ -2,6 +2,7 @@ import { showToast } from '../components/Toast';
 import { processSaleTransaction } from '../utils/checkoutProcessor';
 import { getSaleBusinessDate } from '../utils/closureLogic';
 import { getLocalISODate } from '../utils/dateHelpers';
+import { hasValidSalePrice } from '../utils/productPrice.js';
 import { isStorageContextActive } from '../config/storageScope.js';
 
 export function useCheckout(deps) {
@@ -21,6 +22,17 @@ const handleCheckout = async (payments, changeBreakdown, prescription = null, sk
     if (checkoutInFlight.current) return;
     setIsProcessingSale(true);
     triggerHaptic && triggerHaptic();
+
+    // ── Guardarraíl: ningún item del carrito puede cobrarse en $0 ────
+    // (Segunda capa; la primera está en addToCart. El precio principal es USD.)
+    const sinPrecio = (cart || []).filter(item => !hasValidSalePrice(item));
+    if (sinPrecio.length > 0) {
+        setIsProcessingSale(false);
+        playError();
+        const nombres = sinPrecio.slice(0, 3).map(i => i.name).join(', ');
+        showToast(`No se puede cobrar: ${nombres}${sinPrecio.length > 3 ? ` (+${sinPrecio.length - 3} más)` : ''} no tienen precio válido.`, 'error');
+        return;
+    }
 
     // ── Overpayment sanity check (3 layers) ──────────────────────────
     if (!skipOverpayCheck && cartTotalUsd > 0.5) {

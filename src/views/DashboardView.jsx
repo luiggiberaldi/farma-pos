@@ -33,7 +33,6 @@ import { commitNormalClosure, finalizeHistoricalBatchInOpenSession } from '../ut
 
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import DashboardHero from '../components/Dashboard/DashboardHero';
-import ExecutiveSedeCard from '../components/Dashboard/ExecutiveSedeCard';
 import KpiRow from '../components/Dashboard/KpiRow';
 import DashboardActions from '../components/Dashboard/DashboardActions';
 import PendingDebts from '../components/Dashboard/PendingDebts';
@@ -101,7 +100,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const touchStartY = useRef(0);
 
     // ── F3.9: Consolidado multi-sede (solo DUENO) — hook extraído ──
-    const { isDueno, sedeStats, isAuditorOpen, setIsAuditorOpen, sedeActivaId } = useSedeStats({ isActive, bcvRate, sales, storageService });
+    const { isDueno, isAuditorOpen, setIsAuditorOpen, sedeActivaId } = useSedeStats({ isActive, bcvRate, sales, storageService });
     const scrollRef = useRef(null);
 
     useEffect(() => {
@@ -452,6 +451,10 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 triggerHaptic={triggerHaptic}
                 authLogout={authLogout}
                 isAdmin={isAdmin}
+                isDueno={isDueno}
+                sedeActivaId={sedeActivaId}
+                setSedePinTarget={setSedePinTarget}
+                setIsAuditorOpen={setIsAuditorOpen}
                 showAlerts={showAlerts}
                 setShowAlerts={setShowAlerts}
                 alertCount={alertCount}
@@ -474,16 +477,9 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 todayItemsSold={todayItemsSold}
                 usuarioActivo={usuarioActivo}
             />
-            {/* ── TARJETA EJECUTIVA MULTI-SEDE (DUENO) ── */}
-            <ExecutiveSedeCard
-                isDueno={isDueno}
-                sedeStats={sedeStats}
-                bcvRate={bcvRate}
-                triggerHaptic={triggerHaptic}
-                sedeActivaId={sedeActivaId}
-                setSedePinTarget={setSedePinTarget}
-                setIsAuditorOpen={setIsAuditorOpen}
-            />
+            {/* ── CONSOLIDADO MULTI-SEDE: oculto del dashboard (2026-09-30).
+                El modo Supervisión cubre la vista multi-sede; el cambio de sede
+                y la auditoría viven ahora como controles compactos en el header. ── */}
 
             {/* ── AUDITORÍA CON HUELLA (modal dueño) ── */}
             <HuellaAuditor isOpen={isAuditorOpen} onClose={() => setIsAuditorOpen(false)} />

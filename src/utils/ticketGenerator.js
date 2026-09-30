@@ -400,7 +400,7 @@ export const generarEtiquetas = async (productos, effectiveRate, copEnabled, tas
         doc.setFont("helvetica", "bold");
         doc.setFontSize(26);
         
-        const priceUsdRaw = p.priceUsdt || 0;
+        const priceUsdRaw = p.priceUsd || 0;
         const textUsd = `$${priceUsdRaw.toFixed(2)}`;
         
         doc.text(textUsd, centerX, safeY, { align: "center", baseline: "top" });

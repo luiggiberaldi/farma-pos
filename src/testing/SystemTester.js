@@ -161,7 +161,7 @@ async function suitePatrimonialInventario() {
     for (const p of products) {
         if (p.stock < 0) {
             ghostItems++;
-            totalGhostValueUsd = sumR(totalGhostValueUsd, mulR(Math.abs(p.stock), p.priceUsdt || 0));
+            totalGhostValueUsd = sumR(totalGhostValueUsd, mulR(Math.abs(p.stock), p.priceUsd || 0));
         }
     }
 
@@ -290,8 +290,8 @@ async function suiteMargenNegativo() {
     let totalLossUsd = 0;
 
     for (const p of products) {
-        const priceUsdt = p.priceUsdt || 0;
-        if (priceUsdt <= 0) continue; // Sin precio → no hay venta posible
+        const priceUsd = p.priceUsd || 0;
+        if (priceUsd <= 0) continue; // Sin precio → no hay venta posible
 
         // Costo en USD: usar costUsd directo si existe, o derivar de costBs / tasa
         let costUsd = 0;
@@ -303,11 +303,11 @@ async function suiteMargenNegativo() {
             continue; // Sin costo registrado → no se puede auditar
         }
 
-        if (costUsd > 0 && priceUsdt < costUsd) {
+        if (costUsd > 0 && priceUsd < costUsd) {
             negativeMarginCount++;
-            const lossUsd = round2(costUsd - priceUsdt);
+            const lossUsd = round2(costUsd - priceUsd);
             totalLossUsd = sumR(totalLossUsd, lossUsd);
-            log(`[${p.name || p.id?.slice(-6)}] Precio $${priceUsdt} < Costo $${costUsd} → Pérdida unitaria $${lossUsd}`, 'warn');
+            log(`[${p.name || p.id?.slice(-6)}] Precio $${priceUsd} < Costo $${costUsd} → Pérdida unitaria $${lossUsd}`, 'warn');
         }
     }
 
@@ -315,7 +315,7 @@ async function suiteMargenNegativo() {
         log(`${negativeMarginCount} producto(s) con margen negativo. Pérdida potencial acumulada: $${totalLossUsd.toFixed(2)} por unidad.`, 'error');
         throw new AssertionError(`${negativeMarginCount} productos vendiendo por debajo de su costo (pérdida potencial: $${totalLossUsd.toFixed(2)})`);
     } else {
-        log(`${products.filter(p => (p.priceUsdt || 0) > 0).length} productos con precio auditados. Todos con margen positivo.`, 'success');
+        log(`${products.filter(p => (p.priceUsd || 0) > 0).length} productos con precio auditados. Todos con margen positivo.`, 'success');
     }
 }
 

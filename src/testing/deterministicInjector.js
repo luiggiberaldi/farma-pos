@@ -25,16 +25,16 @@ const TOTAL_SALES = 102;
 
 // 10 productos con precio Y costo conocido (para verificar ganancia)
 const FIXED_PRODUCTS = [
-    { id: 'det-01', name: 'Harina PAN 1kg',       priceUsd: 1.10, priceUsdt: 1.10, costUsd: 0.75, stock: 500 },
-    { id: 'det-02', name: 'Arroz Mary 1kg',        priceUsd: 0.95, priceUsdt: 0.95, costUsd: 0.60, stock: 300 },
-    { id: 'det-03', name: 'Aceite Mazeite 1L',     priceUsd: 2.80, priceUsdt: 2.80, costUsd: 2.10, stock: 200 },
-    { id: 'det-04', name: 'Azucar Montalban 1kg',  priceUsd: 1.25, priceUsdt: 1.25, costUsd: 0.85, stock: 250 },
-    { id: 'det-05', name: 'Pasta Capri 500g',      priceUsd: 0.75, priceUsdt: 0.75, costUsd: 0.50, stock: 400 },
-    { id: 'det-06', name: 'Leche Completa 1L',     priceUsd: 1.50, priceUsdt: 1.50, costUsd: 1.10, stock: 180 },
-    { id: 'det-07', name: 'Huevos Carton 30u',     priceUsd: 3.50, priceUsdt: 3.50, costUsd: 2.80, stock: 100 },
-    { id: 'det-08', name: 'Queso Llanero 1kg',     priceUsd: 4.00, priceUsdt: 4.00, costUsd: 3.20, stock: 80  },
-    { id: 'det-09', name: 'Cafe Madrid 500g',      priceUsd: 3.20, priceUsdt: 3.20, costUsd: 2.50, stock: 150 },
-    { id: 'det-10', name: 'Jabon Las Llaves 3u',   priceUsd: 1.80, priceUsdt: 1.80, costUsd: 1.20, stock: 220 },
+    { id: 'det-01', name: 'Harina PAN 1kg',       priceUsd: 1.10, costUsd: 0.75, stock: 500 },
+    { id: 'det-02', name: 'Arroz Mary 1kg',        priceUsd: 0.95, costUsd: 0.60, stock: 300 },
+    { id: 'det-03', name: 'Aceite Mazeite 1L',     priceUsd: 2.80, costUsd: 2.10, stock: 200 },
+    { id: 'det-04', name: 'Azucar Montalban 1kg',  priceUsd: 1.25, costUsd: 0.85, stock: 250 },
+    { id: 'det-05', name: 'Pasta Capri 500g',      priceUsd: 0.75, costUsd: 0.50, stock: 400 },
+    { id: 'det-06', name: 'Leche Completa 1L',     priceUsd: 1.50, costUsd: 1.10, stock: 180 },
+    { id: 'det-07', name: 'Huevos Carton 30u',     priceUsd: 3.50, priceUsd: 3.50, costUsd: 2.80, stock: 100 },
+    { id: 'det-08', name: 'Queso Llanero 1kg',     priceUsd: 4.00, priceUsd: 4.00, costUsd: 3.20, stock: 80  },
+    { id: 'det-09', name: 'Cafe Madrid 500g',      priceUsd: 3.20, priceUsd: 3.20, costUsd: 2.50, stock: 150 },
+    { id: 'det-10', name: 'Jabon Las Llaves 3u',   priceUsd: 1.80, priceUsd: 1.80, costUsd: 1.20, stock: 220 },
 ];
 
 // 3 clientes fijos para ventas fiadas + 1 para Cashea

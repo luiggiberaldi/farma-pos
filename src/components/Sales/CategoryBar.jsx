@@ -88,7 +88,7 @@ export default function CategoryBar({
                                         }
                                     </div>
                                     <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight line-clamp-2 mb-1">{p.name}</p>
-                                    <p className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">${p.priceUsdt?.toFixed(2)}</p>
+                                    <p className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">${p.priceUsd?.toFixed(2)}</p>
                                     <p className="text-[9px] text-slate-400 font-medium">{isOut ? 'Agotado' : `${p.stock ?? 0} disp.`}</p>
                                 </button>
                             );

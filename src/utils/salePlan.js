@@ -66,7 +66,7 @@ export function prepareSale(options, state, { operationId, operator, context, ti
         const { mode, factor, quantityBase } = quantityInBase(item, product);
         const stock = assertUsableStock(product);
         if (product.vencimiento && (!/^\d{4}-\d{2}-\d{2}$/.test(product.vencimiento) || product.vencimiento <= today)) throw new Error(`${product.name}: producto vencido o vencimiento inválido.`);
-        const packagePrice = Number(product.priceUsdt ?? product.priceUsd);
+        const packagePrice = Number(product.priceUsd);
         const price = mode === 'unit' && isPackageProduct(product) ? Number(product.unitPriceUsd) : packagePrice;
         if (!Number.isFinite(price) || price <= 0 || !samePrice(item.priceUsd, price)) throw new Error(`Cambió el precio de ${product.name}. Actualiza la cesta antes de cobrar.`);
         if ((item.requiresPrescription && !product.requiresPrescription) || (item.isControlled && !product.isControlled)) {

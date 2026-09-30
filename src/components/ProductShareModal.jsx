@@ -7,7 +7,7 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
     const [accountChoice, setSelectedAccountId] = useState('');
     const selectedAccountId = accounts.some(account => account.id === accountChoice) ? accountChoice : accounts[0]?.id || '';
     const [config, setConfig] = useState({
-        showUsdt: true,
+        showUsd: true,
         showEfectivo: true,
         showBs: true,
         showRefBcv: false,
@@ -19,26 +19,26 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
     if (!product) return null;
 
     // Cálculos
-    const valBs = product.priceUsdt * rates.bcv.price;
+    const valBs = product.priceUsd * rates.bcv.price;
 
     // Lógica Street Rate (Calibrada)
     // Si hay tasa calibrada (>0), el precio efectivo es Bs / TasaCalibrada
-    // Si no, asumimos paridad 1:1 con USDT (Precio Efectivo = Precio USDT)
+    // Si no, el precio efectivo en USD es el precio base
     const valEfectivo = streetRate > 0
         ? smartCashRounding(valBs / streetRate)
-        : Math.ceil(product.priceUsdt); // Si no calibra, mantenemos techo simple o redondeo
+        : Math.ceil(product.priceUsd); // Si no calibra, mantenemos techo simple o redondeo
 
     // Presets
     const applyPreset = (type) => {
         switch (type) {
             case 'fiscal':
-                setConfig({ showUsdt: false, showEfectivo: false, showBs: true, showRefBcv: true, showRefEuro: false });
+                setConfig({ showUsd: false, showEfectivo: false, showBs: true, showRefBcv: true, showRefEuro: false });
                 break;
             case 'market':
-                setConfig({ showUsdt: true, showEfectivo: true, showBs: true, showRefBcv: false, showRefEuro: false });
+                setConfig({ showUsd: true, showEfectivo: true, showBs: true, showRefBcv: false, showRefEuro: false });
                 break;
             case 'efectivo':
-                setConfig({ showUsdt: false, showEfectivo: true, showBs: false, showRefBcv: false, showRefEuro: false });
+                setConfig({ showUsd: false, showEfectivo: true, showBs: false, showRefBcv: false, showRefEuro: false });
                 break;
         }
     };
@@ -49,7 +49,7 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
         lines.push('');
 
         lines.push('PRECIO:'); // Plain text header
-        if (config.showUsdt) lines.push(`USDT: ${formatUsd(product.priceUsdt)}`);
+        if (config.showUsd) lines.push(`USD: ${formatUsd(product.priceUsd)}`);
         if (config.showEfectivo) lines.push(`Efectivo: $${valEfectivo}`);
         if (config.showBs) lines.push(`Bs: ${formatBs(valBs)}`);
 

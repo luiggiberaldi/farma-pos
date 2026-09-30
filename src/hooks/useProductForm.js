@@ -7,7 +7,7 @@ import { useAuthStore } from './store/useAuthStore';
 
 // Campos que se comparan en la huella de edición (antes/después)
 const PRODUCT_SNAPSHOT_FIELDS = [
-    'name', 'priceUsdt', 'costUsd', 'costBs', 'stock', 'category',
+    'name', 'priceUsd', 'costUsd', 'costBs', 'stock', 'category',
     'genericName', 'laboratorio', 'concentracion', 'presentacion',
     'requiresPrescription', 'isControlled', 'requiresRefrigeration', 'vencimiento'
 ];
@@ -180,7 +180,7 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
         setName(product.name);
         setBarcode(product.barcode || '');
 
-        const currentPriceUsd = product.priceUsdt || 0;
+        const currentPriceUsd = product.priceUsd || 0;
         setPriceUsd(currentPriceUsd > 0 ? currentPriceUsd.toString() : '');
         setPriceBs(currentPriceUsd > 0 ? (currentPriceUsd * effectiveRate).toFixed(2) : '');
 

@@ -632,9 +632,9 @@ export default function App() {
 
 function TabButton({ icon, label, isActive, onClick, 'data-tour': dataTour }) {
   return (
-    <button type="button" aria-label={label} aria-current={isActive ? 'page' : undefined} data-tour={dataTour} onClick={onClick} className={`flex-1 flex flex-col items-center justify-center gap-1 min-h-[48px] py-2 rounded-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${isActive ? 'bg-primary text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+    <button type="button" aria-label={label} aria-current={isActive ? 'page' : undefined} data-tour={dataTour} onClick={onClick} className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 sm:gap-1 min-h-[48px] py-2 px-0.5 rounded-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${isActive ? 'bg-primary text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
       {icon}
-      <span className="text-[11px] font-bold">{label}</span>
+      <span className="text-[9px] sm:text-[11px] font-bold leading-none truncate max-w-full">{label}</span>
     </button>
   );
 }

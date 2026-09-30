@@ -125,10 +125,10 @@ const SearchBar = forwardRef(function SearchBar({
                                 </div>
                                 <div className="text-right shrink-0">
                                     <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
-                                        ${p.priceUsdt?.toFixed(2)}
+                                        ${p.priceUsd?.toFixed(2)}
                                     </p>
                                     <p className="text-[10px] font-medium text-slate-400">
-                                        {formatBs(p.priceUsdt * effectiveRate)} Bs
+                                        {formatBs(p.priceUsd * effectiveRate)} Bs
                                     </p>
                                 </div>
                             </button>
@@ -159,7 +159,7 @@ const SearchBar = forwardRef(function SearchBar({
                             className="flex flex-col items-center gap-2 p-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all active:scale-95">
                             <Package size={24} className="text-indigo-600 dark:text-indigo-400" />
                             <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase">Caja/Bulto</span>
-                            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">${hierarchyPending.priceUsdt?.toFixed(2)}</span>
+                            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">${hierarchyPending.priceUsd?.toFixed(2)}</span>
                             <span className="text-[9px] text-slate-400 font-bold">{hierarchyPending.unitsPerPackage} uds</span>
                         </button>
                         <button onClick={() => addToCart(hierarchyPending, null, 'unit')}
@@ -182,7 +182,7 @@ const SearchBar = forwardRef(function SearchBar({
                                 <p className="text-xs font-black text-amber-700 dark:text-amber-300 uppercase tracking-wider">
                                     ¿Cuántos {weightPending.unit === 'kg' ? 'kilos' : 'litros'}?
                                 </p>
-                                <p className="text-[11px] text-amber-500/70 dark:text-amber-400/50 font-medium mt-0.5">{weightPending.name} · ${weightPending.priceUsdt?.toFixed(2)}/{weightPending.unit === 'kg' ? 'kg' : 'lt'}</p>
+                                <p className="text-[11px] text-amber-500/70 dark:text-amber-400/50 font-medium mt-0.5">{weightPending.name} · ${weightPending.priceUsd?.toFixed(2)}/{weightPending.unit === 'kg' ? 'kg' : 'lt'}</p>
                             </div>
                             <button onClick={() => setWeightPending(null)} className="p-1 text-amber-400 hover:text-amber-600"><X size={16} /></button>
                         </div>

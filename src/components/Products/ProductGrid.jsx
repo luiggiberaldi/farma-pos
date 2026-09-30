@@ -158,7 +158,7 @@ export default function ProductGrid(props) {
                     {/* Rows */}
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                         {paginatedProducts.map(p => {
-                            const valBs = p.priceUsdt * effectiveRate;
+                            const valBs = p.priceUsd * effectiveRate;
                             const isLowStock = (p.stock ?? 0) <= (p.lowStockAlert ?? 5);
                             const margin = p.costBs > 0 ? ((valBs - p.costBs) / p.costBs * 100) : null;
                             const catInfo = categories.find(c => c.id === p.category);
@@ -182,7 +182,7 @@ export default function ProductGrid(props) {
                                                 )}
                                                 {isLowStock && <span className="text-[9px] font-bold text-amber-500 flex items-center gap-0.5"><AlertTriangle size={9} /> Bajo</span>}
                                                 {/* Mobile: show price inline */}
-                                                <span className="sm:hidden text-[11px] font-black text-emerald-600 dark:text-emerald-400">${(p.priceUsdt || 0).toFixed(2)}</span>
+                                                <span className="sm:hidden text-[11px] font-black text-emerald-600 dark:text-emerald-400">${(p.priceUsd || 0).toFixed(2)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -209,10 +209,10 @@ export default function ProductGrid(props) {
 
                                     {/* Desktop columns */}
                                     <div className="hidden sm:block">
-                                        <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${(p.priceUsdt || 0).toFixed(2)}</p>
+                                        <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${(p.priceUsd || 0).toFixed(2)}</p>
                                         <p className="text-[10px] text-slate-400 font-medium">{formatBs(valBs)} Bs</p>
                                         {copEnabled && (
-                                            <p className="text-[10px] font-bold text-amber-500/80 mt-0.5">{(p.priceUsdt * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP</p>
+                                            <p className="text-[10px] font-bold text-amber-500/80 mt-0.5">{(p.priceUsd * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP</p>
                                         )}
                                     </div>
                                     <div className="hidden sm:block">

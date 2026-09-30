@@ -32,11 +32,11 @@ export function useProductFiltering(products, searchTerm, activeCategory, sortFi
                 let valA, valB;
                 switch (sortField) {
                     case 'name': valA = a.name.toLowerCase(); valB = b.name.toLowerCase(); break;
-                    case 'price': valA = a.priceUsdt || 0; valB = b.priceUsdt || 0; break;
+                    case 'price': valA = a.priceUsd || 0; valB = b.priceUsd || 0; break;
                     case 'stock': valA = a.stock ?? 0; valB = b.stock ?? 0; break;
                     case 'margin':
-                        valA = a.costBs > 0 ? ((a.priceUsdt * effectiveRate - a.costBs) / a.costBs * 100) : -999;
-                        valB = b.costBs > 0 ? ((b.priceUsdt * effectiveRate - b.costBs) / b.costBs * 100) : -999;
+                        valA = a.costBs > 0 ? ((a.priceUsd * effectiveRate - a.costBs) / a.costBs * 100) : -999;
+                        valB = b.costBs > 0 ? ((b.priceUsd * effectiveRate - b.costBs) / b.costBs * 100) : -999;
                         break;
                     default: valA = 0; valB = 0;
                 }

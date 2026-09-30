@@ -94,7 +94,7 @@ test('an ID owned by a customer movement cannot become a sale', async t => {
 });
 
 test('sale fractional unit prices survive snapshot and line-total calculation', async t => {
-    const f = await fixture(t); const product = { ...saleOptions().products[0], priceUsdt: 0.125, priceUsd: 0.125, costUsd: 0 };
+    const f = await fixture(t); const product = { ...saleOptions().products[0], priceUsd: 0.125, costUsd: 0 };
     await f.seed(PRODUCTS, [product]);
     const result = await f.mod.processSaleTransaction(options({ cart: [{ ...product, qty: 3 }], cartTotalUsd: 0.38, cartSubtotalUsd: 0.38, cartTotalBs: 38,
         payments: [{ methodId: 'efectivo_bs', currency: 'BS', amount: 38 }] }));
@@ -111,7 +111,7 @@ test('recorded Bs-only cost is preserved and zero-cost USD does not mask it', as
 for (const change of ['price', 'stock', 'expired', 'removed']) {
     test(`persisted ${change} rejection wins over stale caller inventory`, async t => {
         const f = await fixture(t); const product = saleOptions().products[0];
-        await f.seed(PRODUCTS, change === 'removed' ? [] : [{ ...product, ...(change === 'price' ? { priceUsdt: 12 } : change === 'stock' ? { stock: 0 } : { vencimiento: '2000-01-01' }) }]);
+        await f.seed(PRODUCTS, change === 'removed' ? [] : [{ ...product, ...(change === 'price' ? { priceUsd: 12 } : change === 'stock' ? { stock: 0 } : { vencimiento: '2000-01-01' }) }]);
         const result = await f.mod.processSaleTransaction(options()); assert.equal(result.success, false, change);
         assert.deepEqual(await f.read(SALES), []); assert.deepEqual(await f.read(QUEUE), []);
     });
@@ -127,7 +127,7 @@ test('prescription uses persisted product restrictions and customer evidence', a
 
 async function packageSale(f) {
     const base = saleOptions().products[0];
-    const product = { ...base, priceUsd: 10, priceUsdt: 10, packagingType: 'lote', unit: 'paquete', stockUnit: 'base', stock: 25, unitsPerPackage: 10, sellByUnit: true, unitPriceUsd: 1, tracksLots: true };
+    const product = { ...base, priceUsd: 10, packagingType: 'lote', unit: 'paquete', stockUnit: 'base', stock: 25, unitsPerPackage: 10, sellByUnit: true, unitPriceUsd: 1, tracksLots: true };
     const lots = [{ id: 'lot-first', productoId: product.id, numeroLote: 'QA-A', cantidad: 11, vencimiento: '2090-01-01' }, { id: 'lot-second', productoId: product.id, numeroLote: 'QA-B', cantidad: 14, vencimiento: '2091-01-01' }];
     await f.seed(PRODUCTS, [product]); await f.seed(LOTS, lots);
     const cart = [{ ...product, qty: 1, _mode: 'package' }, { id: `${product.id}_unit`, _originalId: product.id, priceUsd: 1, qty: 2, _mode: 'unit' }];
@@ -218,10 +218,10 @@ async function sentTransfer(f) {
 
 test('receive and stale cancellation serialize to exactly one branch stock outcome, preserving destination prices', async t => {
     const f = await fixture(t); const sent = await sentTransfer(f);
-    setActiveSedeId('norte'); await f.seed(PRODUCTS, [{ ...sent.product, stock: 1, priceUsdt: 17 }]);
+    setActiveSedeId('norte'); await f.seed(PRODUCTS, [{ ...sent.product, stock: 1, priceUsd: 17 }]);
     const received = await f.mod.recibirTransferencia({ transferencia: sent.transferencia });
     const duplicate = await f.mod.recibirTransferencia({ transferencia: sent.transferencia }); assert.equal(duplicate.duplicate, true);
-    assert.equal(received.updatedProducts[0].stock, 4); assert.equal(received.updatedProducts[0].priceUsdt, 17);
+    assert.equal(received.updatedProducts[0].stock, 4); assert.equal(received.updatedProducts[0].priceUsd, 17);
     assert.equal((await f.read(LOTS))[0].cantidad, 3);
     setActiveSedeId('central'); await assert.rejects(f.mod.cancelarTransferencia({ transferencia: sent.transferencia }), /procesada/);
     assert.equal((await f.read(PRODUCTS))[0].stock, 7); assert.equal((await f.read(LOTS))[0].cantidad, 7);
@@ -272,7 +272,7 @@ test('rounding is symmetric for half-cent reversals', async t => {
 });
 
 test('fractional-price sale plus reversal cancels profit exactly', async t => {
-    const f = await fixture(t); const product = { ...saleOptions().products[0], priceUsdt: 0.125, costUsd: 0 };
+    const f = await fixture(t); const product = { ...saleOptions().products[0], priceUsd: 0.125, costUsd: 0 };
     await f.seed(PRODUCTS, [product]);
     const sold = await f.mod.processSaleTransaction(options({ cart: [{ ...product, priceUsd: 0.125, qty: 3 }], cartTotalUsd: 0.38, cartSubtotalUsd: 0.38, cartTotalBs: 38,
         payments: [{ methodId: 'efectivo_bs', currency: 'BS', amount: 38 }] }));

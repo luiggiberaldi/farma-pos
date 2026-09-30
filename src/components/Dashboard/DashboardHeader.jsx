@@ -1,19 +1,52 @@
-import { Bell, LogOut, Lock } from 'lucide-react';
+import { useState } from 'react';
+import { Bell, LogOut, Lock, Search, ChevronDown, Check } from 'lucide-react';
 import BrandLogo from '../BrandLogo';
 import SyncStatus from '../SyncStatus';
+import { SEDES } from '../../config/sedes.js';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
 
-export default function DashboardHeader({ requireLogin, isCloudConfigured, usuarioActivo, triggerHaptic, authLogout, isAdmin, showAlerts, setShowAlerts, alertCount, markAlertsRead, adminAlerts, clearAlerts, confirm }) {
+export default function DashboardHeader({ requireLogin, isCloudConfigured, usuarioActivo, triggerHaptic, authLogout, isAdmin, isDueno, sedeActivaId, setSedePinTarget, setIsAuditorOpen, showAlerts, setShowAlerts, alertCount, markAlertsRead, adminAlerts, clearAlerts, confirm }) {
+    const [showSedePicker, setShowSedePicker] = useState(false);
+    const sedeActiva = SEDES.find(s => s.id === sedeActivaId) || SEDES[0];
     return (
     <div className="flex items-center justify-between px-3 sm:px-6 pt-3 sm:pt-4 lg:pt-3 pb-2 sm:pb-3 lg:pb-2 transition-all z-10 relative min-h-[96px] sm:min-h-[135px] lg:min-h-[130px]">
-        
+
         {/* ====== LATERAL IZQUIERDO: Píldoras (PC/Móvil) ====== */}
         <div className="flex items-center justify-start gap-2 sm:gap-3 z-20">
             {/* Píldoras de Estado */}
             <SyncStatus />
-            
+
+            {/* Selector de sede compacto — solo dueño */}
+            {isDueno && (
+                <div className="relative" data-sede-picker>
+                    <button
+                        onClick={() => { triggerHaptic?.(); setShowSedePicker(v => !v); }}
+                        className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-full pl-2 pr-1.5 py-1.5 shadow-sm active:scale-95 transition-all"
+                        title={`Sede activa: ${sedeActiva.nombre}. Toca para cambiar.`}
+                    >
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: sedeActiva.color }} />
+                        <span className="hidden sm:block text-[11px] font-black text-slate-700 max-w-[90px] truncate">{sedeActiva.nombre}</span>
+                        <ChevronDown size={12} className="text-slate-400" />
+                    </button>
+                    {showSedePicker && (
+                        <div className="absolute left-0 top-10 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                            {SEDES.map(s => (
+                                <button
+                                    key={s.id}
+                                    onClick={() => { triggerHaptic?.(); setShowSedePicker(false); if (s.id !== sedeActivaId) setSedePinTarget(s.id); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left"
+                                >
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
+                                    <span className="text-xs font-bold text-slate-700 flex-1 truncate">{s.nombre}</span>
+                                    {s.id === sedeActivaId && <Check size={14} className="text-emerald-600 shrink-0" />}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
             {/* User Profile Pill */}
             {requireLogin && isCloudConfigured && usuarioActivo && (
                 <div className="flex items-center gap-1.5 bg-teal-50 border-teal-100/50 border rounded-full pl-2 pr-1 sm:pl-3 sm:pr-1.5 py-1 sm:py-1.5 shadow-sm">
@@ -38,6 +71,16 @@ export default function DashboardHeader({ requireLogin, isCloudConfigured, usuar
 
         {/* ====== LATERAL DERECHO: Notificaciones + Botones de Salir ====== */}
         <div className="flex items-center justify-end gap-2 z-20">
+            {/* Auditoría con huella — dueño (discreto; el consolidado multi-sede vive en Supervisión) */}
+            {isDueno && (
+                <button
+                    onClick={() => { triggerHaptic?.(); setIsAuditorOpen(true); }}
+                    className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                    title="Auditoría con huella"
+                >
+                    <Search size={16} className="text-slate-500 dark:text-slate-400" />
+                </button>
+            )}
             {/* Notification Bell — admin only */}
             {isAdmin && (
                 <div className="relative" data-alerts-dropdown>

@@ -67,7 +67,7 @@ function buildSeedProduct(item, index) {
         id: `seed-${index + 1}`,
         name: item.name,
         barcode: m(item.barcode || item.barCode),
-        priceUsdt: d(item.priceUsd, 1),
+        priceUsd: d(item.priceUsd, 1),
         costUsd: d(item.costUsd, 0),
         costBs: 0,
         stock,
@@ -253,7 +253,7 @@ export async function upgradePharmacyCatalogIfNeeded(storageService, context, fo
             presentacion: seed.presentacion || p.presentacion,
             image: `/products/${seed.barcode}.jpg`,
             category: seed.category || p.category,
-            priceUsdt: (p.priceUsdt > 0) ? p.priceUsdt : (seed.priceUsd || 1.0),
+            priceUsd: (p.priceUsd > 0) ? p.priceUsd : (seed.priceUsd || 1.0),
         };
     });
 

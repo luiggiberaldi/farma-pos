@@ -33,7 +33,7 @@ export function buildProductPayload(formData, effectiveRate) {
     const clean = value => typeof value === 'string' && value.trim() ? value.trim() : null;
     return {
         name: name.trim().replace(/(^[\p{L}\p{N}])|(\s+[\p{L}\p{N}])/gu, letter => letter.toUpperCase()),
-        barcode: clean(barcode), priceUsdt: finalPriceUsd, costUsd: finalCostUsd, costBs: finalCostBs,
+        barcode: clean(barcode), priceUsd: finalPriceUsd, costUsd: finalCostUsd, costBs: finalCostBs,
         stock: finalStock, stockUnit: 'base', quantitySchemaVersion: 1,
         unit: isLote ? 'paquete' : packagingType === 'granel' ? granelUnit : 'unidad',
         packagingType, unitsPerPackage: factor, sellByUnit: isLote && Boolean(sellByUnit),

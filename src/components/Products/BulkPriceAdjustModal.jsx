@@ -34,8 +34,8 @@ export default function BulkPriceAdjustModal({
         const shuffled = [...affectedProducts].sort(() => 0.5 - Math.random());
         return shuffled.slice(0, 3).map(p => ({
             name: p.name,
-            oldPrice: p.priceUsdt || 0,
-            newPrice: Math.max(0.01, (p.priceUsdt || 0) * multiplier),
+            oldPrice: p.priceUsd || 0,
+            newPrice: Math.max(0.01, (p.priceUsd || 0) * multiplier),
         }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [affectedProducts.length, multiplier, selectedCategory]);
@@ -54,8 +54,8 @@ export default function BulkPriceAdjustModal({
                     const isTarget = selectedCategory === 'todos' || p.category === selectedCategory;
                     if (!isTarget) return p;
 
-                    const newPrice = Math.max(0.01, (p.priceUsdt || 0) * multiplier);
-                    const updated = { ...p, priceUsdt: parseFloat(newPrice.toFixed(4)) };
+                    const newPrice = Math.max(0.01, (p.priceUsd || 0) * multiplier);
+                    const updated = { ...p, priceUsd: parseFloat(newPrice.toFixed(4)) };
 
                     // Also adjust unitPriceUsd if it exists
                     if (p.unitPriceUsd && p.unitPriceUsd > 0) {
