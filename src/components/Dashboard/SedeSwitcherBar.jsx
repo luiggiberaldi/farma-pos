@@ -1,0 +1,33 @@
+import { SEDES } from '../../config/sedes.js';
+
+/**
+ * Barra de sedes para el dueño — reemplazo compacto y responsive de la
+ * tarjeta "Consolidado multi-sede" (que ahora vive en el modo Supervisión).
+ * Segmento horizontal con scroll si no caben; tocar otra sede pide el PIN.
+ */
+export default function SedeSwitcherBar({ isDueno, sedeActivaId, setSedePinTarget, triggerHaptic }) {
+    if (!isDueno) return null;
+    return (
+        <div className="flex gap-2 overflow-x-auto px-4 sm:px-6 pt-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {SEDES.map(s => {
+                const activa = s.id === sedeActivaId;
+                return (
+                    <button
+                        key={s.id}
+                        onClick={() => { triggerHaptic?.(); if (!activa) setSedePinTarget(s.id); }}
+                        className={`flex items-center gap-1.5 shrink-0 rounded-full pl-2.5 pr-3 py-1.5 text-[11px] font-black border transition-all active:scale-95 ${
+                            activa
+                                ? 'text-white border-transparent shadow-sm'
+                                : 'bg-white text-slate-600 border-slate-200'
+                        }`}
+                        style={activa ? { background: s.color } : undefined}
+                        aria-current={activa ? 'true' : undefined}
+                    >
+                        {!activa && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />}
+                        <span className="whitespace-nowrap">{s.nombre}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}

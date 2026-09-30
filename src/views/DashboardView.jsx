@@ -32,6 +32,7 @@ import {
 import { commitNormalClosure, finalizeHistoricalBatchInOpenSession } from '../utils/closureService';
 
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
+import SedeSwitcherBar from '../components/Dashboard/SedeSwitcherBar';
 import DashboardHero from '../components/Dashboard/DashboardHero';
 import KpiRow from '../components/Dashboard/KpiRow';
 import DashboardActions from '../components/Dashboard/DashboardActions';
@@ -452,8 +453,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 authLogout={authLogout}
                 isAdmin={isAdmin}
                 isDueno={isDueno}
-                sedeActivaId={sedeActivaId}
-                setSedePinTarget={setSedePinTarget}
                 setIsAuditorOpen={setIsAuditorOpen}
                 showAlerts={showAlerts}
                 setShowAlerts={setShowAlerts}
@@ -462,6 +461,14 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 adminAlerts={adminAlerts}
                 clearAlerts={clearAlerts}
                 confirm={confirm}
+            />
+
+            {/* ── BARRA DE SEDES (dueño) — cambio de sede sin dropdowns que choquen con el logo ── */}
+            <SedeSwitcherBar
+                isDueno={isDueno}
+                sedeActivaId={sedeActivaId}
+                setSedePinTarget={setSedePinTarget}
+                triggerHaptic={triggerHaptic}
             />
 
             {/* ── SCROLL CONTENT ── */}
