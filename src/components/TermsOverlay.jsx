@@ -25,7 +25,7 @@ export default function TermsOverlay({ onAccepted }) {
 
     return (
         <div className="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
-            <div className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-500">
+            <div className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col h-[85dvh] animate-in zoom-in-95 duration-500">
 
                 {/* Header */}
                 <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
@@ -52,8 +52,8 @@ export default function TermsOverlay({ onAccepted }) {
                 <div
                     ref={scrollRef}
                     onScroll={handleScroll}
-                    className="flex-1 overflow-y-auto px-6 py-6 prose prose-sm max-w-none"
-                    style={{ scrollbarWidth: 'thin' }}
+                    className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-6 py-6 prose prose-sm max-w-none"
+                    style={{ scrollbarWidth: 'thin', WebkitOverflowScrolling: 'touch' }}
                 >
                     <h1 className="text-2xl font-black text-slate-900 mb-4">Términos y Condiciones de Uso - Farma POS</h1>
                     <p className="text-xs text-slate-500 font-bold mb-6">Última actualización: Febrero 2026</p>

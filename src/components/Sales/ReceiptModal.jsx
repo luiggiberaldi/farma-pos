@@ -11,7 +11,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
 
     return (
         <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
-            <div className="bg-white w-full sm:max-w-sm sm:rounded-[2rem] rounded-t-[2rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden relative flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <div className="bg-white w-full sm:max-w-sm sm:rounded-[2rem] rounded-t-[2rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden relative flex flex-col h-[92dvh] sm:h-[85dvh]">
 
                 {/* Botón X cerrar — siempre visible */}
                 <button
@@ -24,7 +24,7 @@ export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, curren
                 </button>
 
                 {/* Contenido scrollable */}
-                <div className="flex-1 overflow-y-auto overscroll-contain">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
                     {/* Bordes serrados efecto ticket */}
                     <div className="h-4 bg-white shrink-0" style={{ backgroundImage: 'radial-gradient(circle at 10px 0, transparent 10px, white 10px)', backgroundSize: '20px 20px' }}></div>
 
