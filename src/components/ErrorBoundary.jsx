@@ -24,6 +24,15 @@ class ErrorBoundary extends React.Component {
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
               La calculadora no pudo cargar correctamente. Esto puede deberse a datos corruptos o problemas de compatibilidad.
             </p>
+            {this.state.error && (
+              <details className="text-left mb-4 p-3 bg-slate-100 dark:bg-slate-900 rounded-lg">
+                <summary className="text-xs font-bold text-slate-500 cursor-pointer">Detalle técnico</summary>
+                <pre className="text-[11px] text-red-600 dark:text-red-400 whitespace-pre-wrap break-words mt-2 max-h-40 overflow-auto">
+                  {String(this.state.error?.message || this.state.error)}
+                  {this.state.error?.stack ? '\n' + String(this.state.error.stack).split('\n').slice(0, 6).join('\n') : ''}
+                </pre>
+              </details>
+            )}
             <button 
               onClick={() => {
                 localStorage.removeItem('calc_history');

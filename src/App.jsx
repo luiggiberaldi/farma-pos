@@ -79,6 +79,11 @@ export default function App() {
   const [adminClicks, setAdminClicks] = useState(0);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTester, setShowTester] = useState(false);
+  // Terms must be accepted before the onboarding tutorial is shown;
+  // otherwise the Terms overlay (z-9999) covers the tutorial's Omitir button.
+  const [termsAccepted, setTermsAccepted] = useState(() => {
+    try { return localStorage.getItem('pda_terms_accepted') === 'true'; } catch { return false; }
+  });
   
   // Cloud Auth Session State
   const [cloudSession, setCloudSession] = useState(null);
@@ -402,11 +407,12 @@ export default function App() {
 
       {/* Terms and Conditions Overlay (First Use) */}
       <TermsOverlay onAccepted={() => {
+        setTermsAccepted(true);
         useAuthStore.getState().logout('términos aceptados: selecciona operador');
       }} />
 
       {/* Tutorial Onboarding (First Use, after Terms) */}
-      <OnboardingOverlay />
+      {termsAccepted && <OnboardingOverlay />}
 
 
       {/* Tour Spotlight */}

@@ -467,7 +467,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             <ProductShareModal
                 isOpen={!!shareProduct} onClose={() => setShareProduct(null)}
                 product={shareProduct} accounts={accounts} streetRate={streetRate}
-                rates={{ ...rates, bcv: { ...rates.bcv, price: effectiveRate } }}
+                rates={{ ...(rates || {}), bcv: { ...((rates || {}).bcv || {}), price: effectiveRate } }}
             />
 
             {/* Delete Modal */}
