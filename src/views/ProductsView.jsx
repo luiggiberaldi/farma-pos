@@ -65,7 +65,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         name, barcode, priceUsd, priceBs, costUsd, costBs,
         handlePriceUsdChange, handlePriceBsChange, handleCostUsdChange, handleCostBsChange,
         stock, unit, unitsPerPackage, sellByUnit, unitPriceUsd,
-        category, lowStockAlert, image,
+        category, lowStockAlert, image, setImage,
         packagingType, stockInLotes, granelUnit,
         genericName, laboratorio, concentracion, presentacion,
         requiresPrescription, isControlled, requiresRefrigeration, vencimiento,
