@@ -72,6 +72,14 @@ export default function App() {
       .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
   }, [usuarioActivo]);
 
+  // Migración única: productos del inventario físico 2026 → central (no duplica)
+  useEffect(() => {
+    if (!usuarioActivo) return;
+    import('./utils/migrateMissingProducts')
+      .then(({ migrateMissingProducts }) => migrateMissingProducts())
+      .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
+  }, [usuarioActivo]);
+
   // Monitor: subida periódica de resúmenes de sede (solo upload, no toca ventas)
   useEffect(() => {
     if (!usuarioActivo) return;
