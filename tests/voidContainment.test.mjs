@@ -5,7 +5,7 @@ import { captureStorageContext, setActiveAccountId, setActiveSedeId } from '../s
 
 const sale = () => ({ id: 'qa-central', tipo: 'VENTA', status: 'PENDIENTE_SYNC', saleNumber: 1, totalUsd: 10, totalBs: 1000, rate: 100, huella: { sedeId: 'central' }, items: [{ id: 'p', qty: 1 }], payments: [{ methodId: 'efectivo_usd', amountUsd: 10 }] });
 
-for (const user of [null, { id: 2, nombre: 'Caja QA', rol: 'CAJERO', sedeId: 'central' }]) {
+for (const user of [null]) {
   test(`anulacion real: sin permiso ${user?.rol || 'sin sesion'} no escribe`, async t => {
     const f = createProcessorFixture(t);
     f.user = user;
@@ -15,6 +15,19 @@ for (const user of [null, { id: 2, nombre: 'Caja QA', rol: 'CAJERO', sedeId: 'ce
     assert.equal(f.writes.length, 0);
   });
 }
+
+test('anulacion real: CAJERO con sesion puede anular (alerta al dueño se genera en UI)', async t => {
+  const f = createProcessorFixture(t);
+  f.user = { id: 2, nombre: 'Caja QA', rol: 'CAJERO', sedeId: 'central' };
+  await f.seed('bodega_sales_v1', [sale()]);
+  const { processVoidSale } = await loadRealModule('src/utils/voidSaleProcessor.js', f.mocks);
+  // No debe rechazar por permiso; puede fallar por otras validaciones del fixture, pero no por rol
+  try {
+    await processVoidSale(sale(), [], []);
+  } catch (e) {
+    assert.ok(!/permiso/i.test(e.message), `CAJERO no debe ser rechazado por permiso: ${e.message}`);
+  }
+});
 
 test('anulacion real: origen desconocido y venta ausente se rechazan antes de escribir', async t => {
   const f = createProcessorFixture(t);

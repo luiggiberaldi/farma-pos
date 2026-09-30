@@ -14,7 +14,7 @@ export async function processVoidSale(request, _currentSales, _currentProducts, 
     const context = options.storageContext || captureStorageContext();
     const actor = useAuthStore.getState().usuarioActivo;
     const sessionId = useAuthStore.getState().operatorSession?.sessionId;
-    if (actor?.rol !== 'DUENO') throw new Error('No tienes permiso para anular ventas.');
+    if (actor?.rol !== 'DUENO' && actor?.rol !== 'CAJERO') throw new Error('No tienes permiso para anular ventas.');
     if (!request?.id || (request.sedeId || request.huella?.sedeId) !== context.sedeId) throw new Error('Solo puedes anular una venta identificada de la sede activa.');
     const verify = () => {
         assertStorageContextActive(context);
