@@ -310,7 +310,8 @@ export const useAuthStore = create(persist((set, get) => ({
         if (rol === 'CAJERO' && !['central', 'norte', 'sur'].includes(sedeId)) throw new Error('Sede inválida.');
         // Regla: el cajero puede crearse sin PIN (por defecto); el dueño siempre exige PIN.
         // Un cajero sin PIN queda con sinPin=true y sin hash; solo accede si requireLogin=false.
-        const pinlessCashier = rol === 'CAJERO' && !pin && !captureStorageContext().accountId && !get().requireLogin;
+        // Funciona con o sin cuenta cloud (el opt-in pinless es por dispositivo).
+        const pinlessCashier = rol === 'CAJERO' && !pin && !get().requireLogin;
         if (rol === 'DUENO' && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('El dueño requiere un PIN válido.');
         if (!pinlessCashier && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('Configura un PIN válido para este usuario.');
         const epoch = authEpoch;

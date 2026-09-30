@@ -33,7 +33,7 @@ export function setPinlessOptIn(userId, context, enabled) {
 }
 
 export function canUsePinlessAccess(user, context = captureStorageContext(), requireLogin = false) {
-    return !context.accountId && !requireLogin && user?.rol === 'CAJERO'
+    return !requireLogin && user?.rol === 'CAJERO'
         && user.sinPin === true && !user.pin && user.sedeId === context.sedeId
         && isPinlessOptedIn(user?.id, context);
 }
