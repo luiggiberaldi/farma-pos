@@ -308,19 +308,19 @@ export const useAuthStore = create(persist((set, get) => ({
         requireOwner(get().usuarioActivo);
         if (!nombre?.trim() || !['DUENO', 'CAJERO'].includes(rol)) throw new Error('Nombre o rol inválido.');
         if (rol === 'CAJERO' && !['central', 'norte', 'sur'].includes(sedeId)) throw new Error('Sede inválida.');
-        // Regla de fábrica: un cajero creado sin PIN recibe el PIN de fábrica 0000;
-        // no existen usuarios sin PIN. Con cuenta cloud el PIN es obligatorio.
-        const factoryPin = rol === 'CAJERO' && !pin && !captureStorageContext().accountId && !get().requireLogin;
-        if (!factoryPin && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('Configura un PIN válido para este usuario.');
+        // Regla: el cajero puede crearse sin PIN (por defecto); el dueño siempre exige PIN.
+        // Un cajero sin PIN queda con sinPin=true y sin hash; solo accede si requireLogin=false.
+        const pinlessCashier = rol === 'CAJERO' && !pin && !captureStorageContext().accountId && !get().requireLogin;
+        if (rol === 'DUENO' && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('El dueño requiere un PIN válido.');
+        if (!pinlessCashier && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('Configura un PIN válido para este usuario.');
         const epoch = authEpoch;
         const context = captureStorageContext();
-        const effectivePin = factoryPin ? CASHIER_FACTORY_PIN : pin;
-        const strong = await strongPinRecord(effectivePin);
+        const strong = pinlessCashier ? { pin: null, sinPin: true } : await strongPinRecord(pin);
         if (epoch !== authEpoch || !isStorageContextActive(context)) throw new Error('La sesión cambió.');
         requireOwner(get().usuarioActivo);
         set(state => ({ usuarios: [...state.usuarios, {
             id: Math.max(0, ...state.usuarios.map(u => Number(u.id) || 0)) + 1,
-            nombre: nombre.trim(), rol, ...strong, factoryPin: isFactoryPin(String(effectivePin)),
+            nombre: nombre.trim(), rol, ...strong, factoryPin: pinlessCashier ? false : isFactoryPin(String(pin)),
             sedeId: rol === 'CAJERO' ? sedeId : null, credentialVersion: 0,
         }] }));
         void logEvent('USUARIO', 'USUARIO_CREADO', `Usuario ${nombre} (${rol}) creado`, get().usuarioActivo);
