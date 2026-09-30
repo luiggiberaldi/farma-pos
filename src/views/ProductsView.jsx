@@ -51,6 +51,9 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     } = useProductContext();
     const isCajero = useAuthStore(s => s.usuarioActivo)?.rol === 'CAJERO';
 
+    // ─── LOTES (F3.6): declarado antes de useProductForm que lo consume ───
+    const [lotes, setLotes] = useState([]);
+
     // ─── FORMULARIO PRODUCTO (hook) ─────────────────────────
     const form = useProductForm({
         products, setProducts, effectiveRate, storageService, storageContext,
@@ -180,8 +183,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
     const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
     const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
 
-    // ─── LOTES (F3.6): por producto y lista global para vencimientos ───
-    const [lotes, setLotes] = useState([]);
+    // ─── LOTES: carga inicial y sincronización (declaración movida arriba) ───
 
     useEffect(() => {
         let alive = true;
