@@ -3,16 +3,18 @@
  * que no están en el catálogo del sistema → sede central.
  *
  * Contexto: el inventario manuscrito de la sede central contiene ~1710 filas.
- * Tras comparar contra el catálogo del POS, ~920 medicamentos no tienen
- * equivalente en el sistema. Esta migración los agrega UNA sola vez.
+ * Lote 1: ~920 medicamentos sin equivalente en el sistema.
+ * Lote 2: 271 insumos, filas dudosas y resto no cubierto (nombres tal cual
+ *         aparecen en las hojas, precios en Bs convertidos a USD).
  *
  * Reglas de seguridad:
  * - Solo aplica a la sede central (C&Y 2025), nunca a norte/sur.
- * - No duplica: omite productos cuyo nombre normalizado ya existe en el
- *   catálogo (el inventario manuscrito usa nombres comerciales distintos,
- *   ej. "Anaxen fem" vs "Amaremfem" del sistema).
- * - No borra ni modifica productos existentes.
- * - Idempotente: usa bandera `farmacia_products_inv2026_migrated_v1`.
+ * - No duplica: omite productos cuyo nombre ya existe en el catálogo
+ *   (comparación por similitud, ej. "Anaxen fem" vs "Amaremfem").
+ * - No borra ni modifica productos existentes del sistema.
+ * - Corrige precios de productos del propio lote inv2026 si el dato
+ *   fue ajustado (ej. precios en Bs convertidos a USD).
+ * - Idempotente: usa bandera `farmacia_products_inv2026_migrated_v2`.
  */
 
 import { getActiveAccountId } from '../config/storageScope.js';
@@ -20,62 +22,77 @@ import { storageService } from './storageService.js';
 import { isSameProduct } from './productNameMatch.js';
 import { SEED_PRODUCTS_INV01 } from '../config/seed/seedProductsInv01.js';
 import { SEED_PRODUCTS_INV02 } from '../config/seed/seedProductsInv02.js';
+import { SEED_PRODUCTS_INV03 } from '../config/seed/seedProductsInv03.js';
 
-const MIGRATION_FLAG = 'farmacia_products_inv2026_migrated_v1';
+const MIGRATION_FLAG = 'farmacia_products_inv2026_migrated_v2';
 const PRODUCTS_KEY = 'bodega_products_v1';
+const INV_ID_PREFIX = 'inv2026-';
 
 /**
  * Ejecuta la migración si no se ha hecho antes.
- * @returns {Promise<{migrated: boolean, added: number, skipped: number, reason: string}>}
+ * @returns {Promise<{migrated: boolean, added: number, fixed: number, skipped: number, reason: string}>}
  */
 export async function migrateMissingProducts() {
+    const empty = (reason) => ({ migrated: false, added: 0, fixed: 0, skipped: 0, reason });
     try {
-        const done = localStorage.getItem(MIGRATION_FLAG);
-        if (done === '1') {
-            return { migrated: false, added: 0, skipped: 0, reason: 'ya_migrado' };
+        if (localStorage.getItem(MIGRATION_FLAG) === '1') {
+            return empty('ya_migrado');
         }
     } catch {
-        return { migrated: false, added: 0, skipped: 0, reason: 'sin_localstorage' };
+        return empty('sin_localstorage');
     }
 
     const accountId = getActiveAccountId();
     if (!accountId) {
-        return { migrated: false, added: 0, skipped: 0, reason: 'sin_cuenta' };
+        return empty('sin_cuenta');
     }
 
     try {
-        // Productos actuales de central (sede-scoped)
         const context = { accountId, sedeId: 'central' };
         const current = await storageService.getItem(PRODUCTS_KEY, [], context).catch(() => []);
         const currentList = Array.isArray(current) ? current : [];
 
-        const incoming = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02];
+        const incoming = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+        // Mapa barcode → datos corregidos (para corregir precios del lote 1 si ya se migró)
+        const byBarcode = new Map(incoming.map(p => [p.barcode, p]));
+
+        let fixed = 0;
+        // 1) Corregir precios de productos ya migrados del lote inv2026
+        //    (ej. los 8 precios que venían en Bs y se convirtieron a USD)
+        const updatedList = currentList.map(p => {
+            if (typeof p.id === 'string' && p.id.startsWith(INV_ID_PREFIX)) {
+                const ref = byBarcode.get(p.barcode);
+                if (ref && (p.priceUsd !== ref.priceUsd || p.costUsd !== ref.costUsd)) {
+                    fixed++;
+                    return { ...p, priceUsd: ref.priceUsd, costUsd: ref.costUsd };
+                }
+            }
+            return p;
+        });
+
+        // 2) Agregar los que falten (con deduplicación por similitud)
         const toAdd = [];
         let skipped = 0;
-
         for (const prod of incoming) {
-            // Omitir si ya existe un producto igual o similar en el catálogo
-            // o en el lote ya aceptado (evita duplicados por nombres
-            // comerciales distintos del mismo medicamento)
-            const exists = currentList.some(p => isSameProduct(p.name, prod.name))
+            const exists = updatedList.some(p => isSameProduct(p.name, prod.name))
                 || toAdd.some(p => isSameProduct(p.name, prod.name));
             if (exists) {
                 skipped++;
                 continue;
             }
-            toAdd.push({ ...prod, id: `inv2026-${prod.barcode}` });
+            toAdd.push({ ...prod, id: `${INV_ID_PREFIX}${prod.barcode}` });
         }
 
-        if (toAdd.length > 0) {
-            await storageService.setItem(PRODUCTS_KEY, [...currentList, ...toAdd], context);
+        if (toAdd.length > 0 || fixed > 0) {
+            await storageService.setItem(PRODUCTS_KEY, [...updatedList, ...toAdd], context);
         }
 
         localStorage.setItem(MIGRATION_FLAG, '1');
-        console.log(`[Migración] ${toAdd.length} productos del inventario 2026 agregados a central, ${skipped} omitidos por duplicado.`);
+        console.log(`[Migración] Inventario 2026: ${toAdd.length} agregados, ${fixed} precios corregidos, ${skipped} omitidos por duplicado.`);
 
-        return { migrated: toAdd.length > 0, added: toAdd.length, skipped, reason: 'ok' };
+        return { migrated: toAdd.length > 0 || fixed > 0, added: toAdd.length, fixed, skipped, reason: 'ok' };
     } catch (error) {
         console.error('[Migración] Error migrando productos del inventario 2026:', error.message);
-        return { migrated: false, added: 0, skipped: 0, reason: 'error:' + error.message };
+        return empty('error:' + error.message);
     }
 }

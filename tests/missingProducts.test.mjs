@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { normalizeName, similarity, isSameProduct } from '../src/utils/productNameMatch.js';
 import { SEED_PRODUCTS_INV01 } from '../src/config/seed/seedProductsInv01.js';
 import { SEED_PRODUCTS_INV02 } from '../src/config/seed/seedProductsInv02.js';
+import { SEED_PRODUCTS_INV03 } from '../src/config/seed/seedProductsInv03.js';
 
 test('normalizeName: minúsculas, sin acentos, sin laboratorio, une número+unidad', () => {
     assert.equal(normalizeName('Ácido Fólico 5 mg (PlusAndex)'), 'acido folico 5mg');
@@ -45,4 +46,34 @@ test('datos del inventario 2026: 920 productos con campos válidos y barcodes ú
     const sorted = [...barcodes].sort();
     assert.equal(sorted[0], '7590000000667');
     assert.equal(sorted[sorted.length - 1], '7590000001586');
+});
+
+test('lote 2: 271 productos (insumos + dudosos), barcodes únicos y continuos', () => {
+    const all = [...SEED_PRODUCTS_INV03];
+    assert.equal(all.length, 271);
+    const barcodes = new Set(all.map(p => p.barcode));
+    assert.equal(barcodes.size, 271);
+    const sorted = [...barcodes].sort();
+    assert.equal(sorted[0], '7590000001587');
+    assert.equal(sorted[sorted.length - 1], '7590000001857');
+    for (const p of all) {
+        assert.ok(p.name && p.name.length > 0, 'nombre requerido');
+        assert.ok(typeof p.priceUsd === 'number' && p.priceUsd >= 0, `precio válido: ${p.name}`);
+        assert.ok(typeof p.stock === 'number' && p.stock >= 0, `stock válido: ${p.name}`);
+    }
+    // Sin colisión con el lote 1
+    const lote1 = new Set([...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02].map(p => p.barcode));
+    for (const bc of barcodes) {
+        assert.ok(!lote1.has(bc), `barcode no colisiona con lote 1: ${bc}`);
+    }
+});
+
+test('precios en Bs convertidos a USD (ningún producto del lote 1 supera $200)', () => {
+    const all = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+    const sospechosos = all.filter(p => p.priceUsd >= 300);
+    assert.deepEqual(sospechosos.map(p => p.name), [], 'no quedan precios en Bs sin convertir');
+    // Verificar conversiones conocidas
+    const porNombre = new Map(all.map(p => [p.name, p]));
+    assert.equal(porNombre.get('Anfotericina B ampolla').priceUsd, 58.82);
+    assert.equal(porNombre.get('Tom Toston pqño').priceUsd, 0.47);
 });
