@@ -43,24 +43,24 @@ export default function MonitorDashboard({ onExit }) {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-8">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-8 overflow-y-auto">
             {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-6 shadow-lg">
-                <div className="flex items-center justify-between max-w-4xl mx-auto">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-white/20 p-2.5 rounded-2xl">
+            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-4 sm:py-6 shadow-lg">
+                <div className="flex items-center justify-between max-w-4xl mx-auto gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="bg-white/20 p-2.5 rounded-2xl shrink-0">
                             <Eye size={24} />
                         </div>
-                        <div>
-                            <h1 className="text-xl font-black">Monitor de Supervisión</h1>
+                        <div className="min-w-0">
+                            <h1 className="text-lg sm:text-xl font-black truncate">Monitor de Supervisión</h1>
                             <p className="text-xs text-white/70">Solo lectura · {getLocalISODate(new Date())}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={loadData} className="p-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all" title="Actualizar">
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={loadData} className="p-2.5 bg-white/20 rounded-xl hover:bg-white/30 transition-all min-w-[44px] min-h-[44px] flex items-center justify-center" title="Actualizar" aria-label="Actualizar datos">
                             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                         </button>
-                        <button onClick={onExit} className="p-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all" title="Salir">
+                        <button onClick={onExit} className="p-2.5 bg-white/20 rounded-xl hover:bg-white/30 transition-all min-w-[44px] min-h-[44px] flex items-center justify-center" title="Salir" aria-label="Salir del monitor">
                             <LogOut size={18} />
                         </button>
                     </div>
@@ -112,15 +112,15 @@ export default function MonitorDashboard({ onExit }) {
                             <button
                                 key={branch.branch_id}
                                 onClick={() => setSelectedBranch(branch)}
-                                className="w-full bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-800 flex items-center justify-between hover:shadow-md transition-all active:scale-[0.99] text-left"
+                                className="w-full bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 hover:shadow-md transition-all active:scale-[0.99] text-left min-h-[44px]"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className={`p-3 rounded-2xl ${branch.cash_register_open ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className={`p-3 rounded-2xl shrink-0 ${branch.cash_register_open ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-slate-100 dark:bg-slate-800'}`}>
                                         <Store size={20} className={branch.cash_register_open ? 'text-emerald-600' : 'text-slate-400'} />
                                     </div>
-                                    <div>
-                                        <p className="font-bold text-slate-800 dark:text-white">{branch.branch_name}</p>
-                                        <p className="text-xs text-slate-400">
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-slate-800 dark:text-white truncate">{branch.branch_name}</p>
+                                        <p className="text-xs text-slate-400 truncate">
                                             {branch.cash_register_open ? (
                                                 <span className="text-emerald-600 font-bold">● Caja abierta</span>
                                             ) : (
@@ -130,12 +130,12 @@ export default function MonitorDashboard({ onExit }) {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                                     <div className="text-right">
-                                        <p className="font-black text-slate-800 dark:text-white">${Number(branch.total_sales_usd || 0).toFixed(2)}</p>
-                                        <p className="text-[10px] text-slate-400">{branch.transaction_count || 0} ventas</p>
+                                        <p className="font-black text-slate-800 dark:text-white whitespace-nowrap">${Number(branch.total_sales_usd || 0).toFixed(2)}</p>
+                                        <p className="text-[10px] text-slate-400 whitespace-nowrap">{branch.transaction_count || 0} ventas</p>
                                     </div>
-                                    <ChevronRight size={18} className="text-slate-300" />
+                                    <ChevronRight size={18} className="text-slate-300 shrink-0" />
                                 </div>
                             </button>
                         ))}
@@ -157,14 +157,14 @@ export default function MonitorDashboard({ onExit }) {
  */
 function MonitorBranchDetail({ branch, onBack }) {
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-8">
-            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-6">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-8 overflow-y-auto">
+            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-4 sm:py-6">
                 <div className="max-w-4xl mx-auto">
-                    <button onClick={onBack} className="text-xs text-white/70 hover:text-white mb-3 flex items-center gap-1">
+                    <button onClick={onBack} className="text-xs text-white/70 hover:text-white mb-3 flex items-center gap-1 min-h-[44px]" aria-label="Volver al resumen">
                         ← Volver al resumen
                     </button>
-                    <h1 className="text-xl font-black">{branch.branch_name}</h1>
-                    <p className="text-xs text-white/70">
+                    <h1 className="text-lg sm:text-xl font-black truncate">{branch.branch_name}</h1>
+                    <p className="text-xs text-white/70 truncate">
                         {branch.cash_register_open ? '● Caja abierta' : '○ Caja cerrada'}
                         {branch.cashier_name && ` · Cajero: ${branch.cashier_name}`}
                     </p>
