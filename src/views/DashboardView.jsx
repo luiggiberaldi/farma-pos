@@ -157,6 +157,17 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
             // Opcional: triggerHaptic()
             showToast('Venta anulada con éxito', 'success');
 
+            // Alerta al dueño si la anulación la hizo un cajero (no admin)
+            if (!isAdmin && usuarioActivo) {
+                const total = sale.totalUsd ? `$${sale.totalUsd.toFixed(2)}` : 'monto no disponible';
+                createNotification(
+                    NOTIF_TYPES.VENTA_ANULADA,
+                    'Venta anulada por cajero',
+                    `${usuarioActivo.nombre || 'Cajero'} anuló la venta #${sale.id?.substring(0, 6).toUpperCase() || ''} por ${total}`,
+                    { saleId: sale.id, cashier: usuarioActivo.nombre, totalUsd: sale.totalUsd }
+                );
+            }
+
             // Ofrecer reciclar la venta
             setRecycleOffer(sale);
         } catch (error) {

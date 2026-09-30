@@ -279,7 +279,7 @@ export default function SalesHistory({
                                                 <Printer size={14} />
                                             </button>
                                         )}
-                                        {isAdmin && !isCanceled && (!s.cajaCerrada || localStorage.getItem('allow_void_after_cierre') === 'true') && s.tipo !== 'ANULACION_VENTA' && (
+                                        {!isCanceled && (!s.cajaCerrada || localStorage.getItem('allow_void_after_cierre') === 'true') && s.tipo !== 'ANULACION_VENTA' && (
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); onVoidSale(s); }}
                                                 className="py-2 px-3 bg-slate-100 dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 hover:dark:bg-red-900/30 font-bold rounded-lg transition-colors flex justify-center items-center gap-1.5 text-xs border border-slate-200 dark:border-slate-800 shadow-sm active:scale-95">
