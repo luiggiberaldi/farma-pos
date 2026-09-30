@@ -67,10 +67,17 @@ export default function App() {
   // Monitor: subida periódica de resúmenes de sede (solo upload, no toca ventas)
   useEffect(() => {
     if (!usuarioActivo) return;
+    let cancelled = false;
+    let stopFn = null;
     import('./services/monitorSyncService').then(({ startMonitorUpload, stopMonitorUpload }) => {
+      if (cancelled) return;
       startMonitorUpload();
-      return () => stopMonitorUpload();
+      stopFn = stopMonitorUpload;
     });
+    return () => {
+      cancelled = true;
+      if (stopFn) stopFn();
+    };
   }, [usuarioActivo]);
 
   // Apply saved screen scale on mount
