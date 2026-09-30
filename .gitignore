@@ -41,6 +41,8 @@ api/*.js
 !api/rates.js
 !api/operator-session.js
 !api/business-operation.js
+!api/monitor-upload.js
+!api/monitor-snapshots.js
 
 # Backups y datos locales
 backup_*.json

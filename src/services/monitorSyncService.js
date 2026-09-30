@@ -16,8 +16,6 @@ const BRANCH_IDS = {
     sur: '426642c3-c423-4264-b243-82a36dddcdc3',
 };
 
-const TENANT_ID = '17486fbd-a7c5-4b8d-94c0-71688197ad76';
-
 let uploadTimer = null;
 let isUploading = false;
 
@@ -109,7 +107,6 @@ async function buildBranchSnapshot() {
     } catch { /* silencioso */ }
 
     return {
-        tenant_id: TENANT_ID,
         branch_id: BRANCH_IDS[context.sedeId],
         _debugSedeId: context.sedeId,
         snapshot_date: today,
@@ -128,6 +125,20 @@ async function buildBranchSnapshot() {
         discounts_total_usd: Math.round(discountsTotalUsd * 100) / 100,
         payment_breakdown: paymentBreakdown,
     };
+}
+
+/**
+ * Obtiene el JWT de la sesión cloud de la estación para autenticar
+ * las llamadas al Monitor. Sin sesión no hay subida/lectura.
+ */
+async function getMonitorAuthHeader() {
+    try {
+        const { data } = await supabaseCloud.auth.getSession();
+        const token = data?.session?.access_token;
+        return token ? { Authorization: `Bearer ${token}` } : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -153,14 +164,18 @@ export async function uploadBranchSnapshot() {
 
         // Usar URL absoluta para evitar problemas con base path en PWA
         const apiUrl = `${window.location.origin}/api/monitor-upload`;
+        const authHeader = await getMonitorAuthHeader();
+        if (!authHeader) {
+            setStatus({ ok: false, error: 'sin_sesion_cloud' });
+            return;
+        }
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-monitor-key': import.meta.env.VITE_MONITOR_API_KEY || '',
+                ...authHeader,
             },
             body: JSON.stringify({
-                p_tenant_id: snapshot.tenant_id,
                 p_branch_id: snapshot.branch_id,
                 p_snapshot_date: snapshot.snapshot_date,
                 p_total_sales_usd: snapshot.total_sales_usd,
@@ -229,11 +244,14 @@ export function stopMonitorUpload() {
 export async function fetchBranchSnapshots(snapshotDate = null) {
     try {
         const date = snapshotDate || getLocalISODate(new Date());
-        const apiUrl = `${window.location.origin}/api/monitor-snapshots?tenant_id=${TENANT_ID}&date=${date}`;
+        // El tenant lo deriva el servidor desde la sesión; no se envía.
+        const apiUrl = `${window.location.origin}/api/monitor-snapshots?date=${date}`;
+        const authHeader = await getMonitorAuthHeader();
+        if (!authHeader) return [];
         const response = await fetch(
             apiUrl,
             {
-                headers: { 'x-monitor-key': import.meta.env.VITE_MONITOR_API_KEY || '' },
+                headers: { ...authHeader },
                 signal: AbortSignal.timeout(10000),
             }
         );
