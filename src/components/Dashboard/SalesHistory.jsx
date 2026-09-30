@@ -135,9 +135,11 @@ export default function SalesHistory({
                                     </p>
                                     <p className="text-[10px] text-slate-400 font-medium">{(() => {
                                         const bs = s.totalBs;
-                                        const safeRate = s.rate || bcvRate || 0;
+                                        const safeRate = (typeof s.rate === 'number' && !isNaN(s.rate) ? s.rate : 0) || (typeof bcvRate === 'number' && !isNaN(bcvRate) ? bcvRate : 0);
                                         const isNegative = bs < 0 || (s.totalUsd < 0);
-                                        const absBs = Math.abs(typeof bs === 'number' && !isNaN(bs) ? bs : (s.totalUsd || 0) * safeRate);
+                                        const usdVal = typeof s.totalUsd === 'number' && !isNaN(s.totalUsd) ? s.totalUsd : 0;
+                                        const rawBs = typeof bs === 'number' && !isNaN(bs) ? bs : usdVal * safeRate;
+                                        const absBs = Math.abs(typeof rawBs === 'number' && !isNaN(rawBs) ? rawBs : 0);
                                         return `${isNegative ? '-' : ''}${formatBs(absBs)}`;
                                     })()} Bs</p>
                                     <div className="flex justify-end mt-0.5">
@@ -174,7 +176,7 @@ export default function SalesHistory({
                                         {/* Total en Bs */}
                                         <div className="flex justify-between items-center text-[11px]">
                                             <span className="text-slate-500">Total en Bs</span>
-                                            <span className="font-bold text-slate-700 dark:text-slate-200">{formatBs(s.totalBs)} Bs</span>
+                                            <span className="font-bold text-slate-700 dark:text-slate-200">{formatBs(typeof s.totalBs === 'number' && !isNaN(s.totalBs) ? s.totalBs : 0)} Bs</span>
                                         </div>
 
                                         {/* Tasa aplicada */}

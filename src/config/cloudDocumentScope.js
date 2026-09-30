@@ -9,6 +9,7 @@ export const CLOUD_SEDE_SCOPED_KEYS = Object.freeze(new Set([
     'bodega_cierres_v1',
     'bodega_payment_methods_v1',
     'bodega_accounts_v2',
+    'bodega_customers_v1',
     'farmacia_stock_v1',
     'farmacia_lotes_v1',
     'farmacia_caja_v1',
@@ -24,7 +25,6 @@ export const CLOUD_SEDE_SCOPED_KEYS = Object.freeze(new Set([
 export const CLOUD_ACCOUNT_SCOPED_KEYS = Object.freeze(new Set([
     'abasto-auth-storage',
     'my_categories_v1',
-    'bodega_customers_v1',
     'farmacia_transferencias_v1',
     // Preferencias de cuenta que ya forman parte del contrato local sync.
     'monitor_rates_v12',

@@ -10,6 +10,7 @@ export const ACTIVE_SEDE_STORAGE_KEY = 'farmacia_active_sede_id';
 const SEDE_SCOPED_KEYS = new Set([
     'bodega_products_v1', 'bodega_sales_v1', 'bodega_cierres_v1',
     'bodega_payment_methods_v1', 'bodega_accounts_v2',
+    'bodega_customers_v1',
     'farmacia_stock_v1', 'farmacia_lotes_v1', 'farmacia_caja_v1',
     'farmacia_correlativos_v1', 'farmacia_seed_done_v1',
     // Transferencias son eventos account-scoped con origen/destino explícitos:

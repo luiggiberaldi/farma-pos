@@ -150,6 +150,8 @@ for (const branch of ['central', 'norte', 'sur']) {
             await f.seed(PRODUCTS, [{ ...saleOptions().products[0], stock: 77 }], context(other));
         }
         setActiveSedeId(branch);
+        // El cliente debe existir en la sede activa (ahora los clientes son por sede)
+        await f.seed(CUSTOMERS, [customer], context(branch));
         const sold = await packageSale(f);
         assert.equal(sold.sale.sedeId, branch);
         assert.equal(sold.sale.huella.sedeId, branch);

@@ -73,9 +73,9 @@ test('storage keys are isolated by account and by sede', () => {
   assert.notEqual(productsCentral, productsNorte);
   assert.notEqual(productsCentral, productsOtherAccount);
 
-  // Claves globales: solo se aíslan por cuenta, no por sede
+  // Clientes: ahora se aíslan por sede (cada sede gestiona sus propios clientes/deudas)
   const customers = getScopedStorageKey('bodega_customers_v1');
-  assert.equal(customers, 'account:account-b:bodega_customers_v1');
+  assert.equal(customers, 'account:account-b:sede:central:bodega_customers_v1');
 
   setActiveSedeId('central');
 });
