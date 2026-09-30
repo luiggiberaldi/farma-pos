@@ -187,10 +187,15 @@ export async function uploadBranchSnapshot() {
 export function startMonitorUpload(intervalMs = 5 * 60 * 1000) {
     stopMonitorUpload();
     // Subida inicial
-    uploadBranchSnapshot();
+    uploadBranchSnapshot().catch(() => {});
     // Subidas periódicas
-    uploadTimer = setInterval(uploadBranchSnapshot, intervalMs);
+    uploadTimer = setInterval(() => uploadBranchSnapshot().catch(() => {}), intervalMs);
     console.log('[Monitor] Subida periódica iniciada');
+}
+
+// Exponer globalmente para depuración manual desde la consola
+if (typeof window !== 'undefined') {
+    window.__monitorUpload = uploadBranchSnapshot;
 }
 
 /**

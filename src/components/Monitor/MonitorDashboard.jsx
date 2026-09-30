@@ -15,6 +15,11 @@ export default function MonitorDashboard({ onExit }) {
 
     const loadData = async () => {
         setLoading(true);
+        // Intentar subir snapshot local antes de leer (si hay datos locales)
+        try {
+            const { uploadBranchSnapshot } = await import('../../services/monitorSyncService');
+            await uploadBranchSnapshot();
+        } catch { /* silencioso: la lectura no depende de la subida */ }
         const data = await fetchBranchSnapshots();
         setSnapshots(data);
         setLastUpdate(new Date());
