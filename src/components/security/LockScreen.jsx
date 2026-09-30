@@ -80,13 +80,13 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
   };
 
   return (
-    <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-hidden flex flex-col">
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+    <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-y-auto flex flex-col">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[30%] -left-[15%] w-[600px] h-[600px] bg-sky-500/10 rounded-full blur-[120px]" />
         <div className="absolute -bottom-[30%] -right-[15%] w-[600px] h-[600px] bg-teal-400/10 rounded-full blur-[120px]" />
       </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-6">
+      <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-6 my-auto">
         <div className="text-center mb-10">
           <div className="flex justify-center mb-6">
             <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-28 sm:h-36 w-auto drop-shadow-lg cursor-default" />
