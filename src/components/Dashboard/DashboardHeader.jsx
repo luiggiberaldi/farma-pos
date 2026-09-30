@@ -1,11 +1,11 @@
-import { Bell, LogOut, Lock, Search } from 'lucide-react';
+import { Bell, LogOut, Lock } from 'lucide-react';
 import BrandLogo from '../BrandLogo';
 import SyncStatus from '../SyncStatus';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
 
-export default function DashboardHeader({ requireLogin, isCloudConfigured, usuarioActivo, triggerHaptic, authLogout, isAdmin, isDueno, setIsAuditorOpen, showAlerts, setShowAlerts, alertCount, markAlertsRead, adminAlerts, clearAlerts, confirm }) {
+export default function DashboardHeader({ requireLogin, isCloudConfigured, usuarioActivo, triggerHaptic, authLogout, isAdmin, showAlerts, setShowAlerts, alertCount, markAlertsRead, adminAlerts, clearAlerts, confirm }) {
     return (
     <div className="flex items-center justify-between px-3 sm:px-6 pt-3 sm:pt-4 lg:pt-3 pb-2 sm:pb-3 lg:pb-2 transition-all z-10 relative min-h-[96px] sm:min-h-[135px] lg:min-h-[130px]">
 
@@ -38,16 +38,6 @@ export default function DashboardHeader({ requireLogin, isCloudConfigured, usuar
 
         {/* ====== LATERAL DERECHO: Notificaciones + Botones de Salir ====== */}
         <div className="flex items-center justify-end gap-2 z-20">
-            {/* Auditoría con huella — dueño (discreto; el consolidado multi-sede vive en Supervisión) */}
-            {isDueno && (
-                <button
-                    onClick={() => { triggerHaptic?.(); setIsAuditorOpen(true); }}
-                    className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
-                    title="Auditoría con huella"
-                >
-                    <Search size={16} className="text-slate-500 dark:text-slate-400" />
-                </button>
-            )}
             {/* Notification Bell — admin only */}
             {isAdmin && (
                 <div className="relative" data-alerts-dropdown>

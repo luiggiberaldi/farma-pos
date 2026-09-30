@@ -234,7 +234,7 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
             <div className="shrink-0 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
                 <div className="px-4 pt-4 pb-0">
                     {/* Title row */}
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
                         <div>
                             <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Configuración</h1>
                             <p className="text-[11px] text-slate-400 font-medium mt-0.5">
@@ -261,12 +261,12 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
                                         window.location.reload();
                                     }
                                 }}
-                                className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-2.5 pr-3 py-1.5 group hover:border-rose-300 dark:hover:border-rose-700 transition-colors"
+                                className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-2.5 pr-3 py-1.5 group hover:border-rose-300 dark:hover:border-rose-700 transition-colors self-start sm:self-auto"
                             >
-                                <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center">
+                                <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shrink-0">
                                     <span className="text-[8px] font-black text-white uppercase">{adminEmail[0]}</span>
                                 </div>
-                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 max-w-[80px] truncate group-hover:text-rose-500 transition-colors">{adminEmail}</span>
+                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 max-w-[200px] sm:max-w-[80px] truncate group-hover:text-rose-500 transition-colors">{adminEmail}</span>
                                 <LogOut size={11} className="text-slate-400 group-hover:text-rose-500 transition-colors" />
                             </button>
                         )}

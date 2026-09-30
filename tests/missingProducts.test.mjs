@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeName, similarity, isSameProduct } from '../src/utils/productNameMatch.js';
+import { INITIAL_PHARMACY_PRODUCTS } from '../src/config/pharmacySeed.js';
 import { SEED_PRODUCTS_INV01 } from '../src/config/seed/seedProductsInv01.js';
 import { SEED_PRODUCTS_INV02 } from '../src/config/seed/seedProductsInv02.js';
 import { SEED_PRODUCTS_INV03 } from '../src/config/seed/seedProductsInv03.js';
@@ -76,4 +77,38 @@ test('precios en Bs convertidos a USD (ningún producto del lote 1 supera $200)'
     const porNombre = new Map(all.map(p => [p.name, p]));
     assert.equal(porNombre.get('Anfotericina B ampolla').priceUsd, 58.82);
     assert.equal(porNombre.get('Tom Toston pqño').priceUsd, 0.47);
+});
+
+test('migración: deduplicación determinista contra el seed base (666 + 894 = 1560)', () => {
+    // Reproduce el núcleo de migrateMissingProducts: agrega los del lote cuyo
+    // nombre no sea similar a uno del catálogo base ni a otro ya agregado.
+    const base = INITIAL_PHARMACY_PRODUCTS.map(p => p.name);
+    const incoming = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+    assert.equal(incoming.length, 1191);
+    const toAdd = [];
+    for (const prod of incoming) {
+        const exists = base.some(n => isSameProduct(n, prod.name))
+            || toAdd.some(p => isSameProduct(p.name, prod.name));
+        if (!exists) toAdd.push(prod);
+    }
+    assert.equal(toAdd.length, 894, 'productos nuevos que debe agregar la migración');
+    assert.equal(base.length + toAdd.length, 1560, 'total esperado en central tras migrar');
+});
+
+test('migración v3: re-ejecución idempotente no duplica', () => {
+    // Simula un inventario ya migrado (base + 894 agregados) y verifica que
+    // una segunda pasada agrega 0.
+    const base = INITIAL_PHARMACY_PRODUCTS.map(p => p.name);
+    const incoming = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+    const first = [];
+    for (const prod of incoming) {
+        if (base.some(n => isSameProduct(n, prod.name)) || first.some(p => isSameProduct(p.name, prod.name))) continue;
+        first.push(prod);
+    }
+    const current = [...base, ...first.map(p => p.name)];
+    let second = 0;
+    for (const prod of incoming) {
+        if (!current.some(n => isSameProduct(n, prod.name))) second++;
+    }
+    assert.equal(second, 0, 'segunda pasada no agrega nada');
 });

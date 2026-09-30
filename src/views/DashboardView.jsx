@@ -452,8 +452,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 triggerHaptic={triggerHaptic}
                 authLogout={authLogout}
                 isAdmin={isAdmin}
-                isDueno={isDueno}
-                setIsAuditorOpen={setIsAuditorOpen}
                 showAlerts={showAlerts}
                 setShowAlerts={setShowAlerts}
                 alertCount={alertCount}

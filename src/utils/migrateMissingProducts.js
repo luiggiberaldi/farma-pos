@@ -14,7 +14,9 @@
  * - No borra ni modifica productos existentes del sistema.
  * - Corrige precios de productos del propio lote inv2026 si el dato
  *   fue ajustado (ej. precios en Bs convertidos a USD).
- * - Idempotente: usa bandera `farmacia_products_inv2026_migrated_v2`.
+ * - Idempotente: usa bandera `farmacia_products_inv2026_migrated_v3`.
+ *   v3 re-ejecuta la deduplicación contra el inventario actual y agrega
+ *   los productos del lote que falten (repara migraciones parciales).
  */
 
 import { getActiveAccountId } from '../config/storageScope.js';
@@ -24,7 +26,7 @@ import { SEED_PRODUCTS_INV01 } from '../config/seed/seedProductsInv01.js';
 import { SEED_PRODUCTS_INV02 } from '../config/seed/seedProductsInv02.js';
 import { SEED_PRODUCTS_INV03 } from '../config/seed/seedProductsInv03.js';
 
-const MIGRATION_FLAG = 'farmacia_products_inv2026_migrated_v2';
+const MIGRATION_FLAG = 'farmacia_products_inv2026_migrated_v3';
 const PRODUCTS_KEY = 'bodega_products_v1';
 const INV_ID_PREFIX = 'inv2026-';
 

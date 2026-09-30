@@ -94,10 +94,10 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
     };
 
     return (
-        <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isCurrentUser ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-800/30' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
+        <div className={`flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-xl border transition-all ${isCurrentUser ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-800/30' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
             {/* Avatar */}
-            <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${roleConf.gradient} flex items-center justify-center shrink-0 shadow-sm relative`}>
-                <span className="text-white font-black text-lg">{(user.nombre || 'U')[0].toUpperCase()}</span>
+            <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br ${roleConf.gradient} flex items-center justify-center shrink-0 shadow-sm relative`}>
+                <span className="text-white font-black text-base sm:text-lg">{(user.nombre || 'U')[0].toUpperCase()}</span>
                 {isOwner && (
                     <div className="absolute -top-2 left-1/2 -translate-x-1/2">
                         <Crown size={12} className="text-yellow-400 fill-yellow-400 drop-shadow-sm" />
@@ -108,9 +108,9 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
             {/* Info */}
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{user.nombre}</p>
+                    <p className="text-[13px] sm:text-sm font-bold text-slate-800 dark:text-white line-clamp-2 leading-snug">{user.nombre}</p>
                     {isCurrentUser && (
-                        <span className="text-[8px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 px-1.5 py-0.5 rounded-full">Tu</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 px-1.5 py-0.5 rounded-full shrink-0">Tu</span>
                     )}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -122,7 +122,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                 {canOptInPinless && (
                     <button
                         onClick={togglePinless}

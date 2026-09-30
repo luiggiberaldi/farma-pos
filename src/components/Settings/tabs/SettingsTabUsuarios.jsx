@@ -127,8 +127,8 @@ export default function SettingsTabUsuarios({
             )}
 
             <SectionCard icon={Lock} title="Seguridad Local" subtitle="Protección física del dispositivo" iconColor="text-rose-500">
-                <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-                    <div>
+                <div className="flex items-center justify-between gap-3 mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Pedir PIN al iniciar</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">La cuenta cloud siempre exige PIN. Desactivar solo permite cajeros sin PIN en modo local; nunca inicia un administrador automáticamente.</p>
                     </div>
