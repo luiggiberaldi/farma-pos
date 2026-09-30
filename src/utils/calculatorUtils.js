@@ -14,13 +14,6 @@ export const smartCashRounding = (amount) => {
     return decimal <= 0.2001 ? integer : integer + 1; // Usamos 0.2001 para margen de error flotante
 };
 
-import { MessageService } from '../services/MessageService';
-
-/** @deprecated Use MessageService.buildPaymentMessage() directly */
-export const generatePaymentMessage = (params) => {
-    return MessageService.buildPaymentMessage(params);
-};
-
 // Normaliza número venezolano al formato internacional para wa.me
 // Acepta: 04121234567 → 584121234567
 //         4121234567  → 584121234567
