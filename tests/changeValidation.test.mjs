@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateChangeBreakdown } from '../src/utils/changeValidation.js';
+import { validateChangeInBs } from '../src/utils/tenderMath.js';
 
 for (const [name, usd, bs] of [['USD', 10, 0], ['Bs', 0, 1000], ['mixto', 4, 600]]) {
   test(`vuelto fisico ${name}: reparto unico equivalente a 10 USD`, () => {
@@ -47,4 +48,26 @@ test('vuelto: tampoco permite duplicar un centavo ni registrar un centavo de dif
   assert.equal(validateChangeBreakdown(10, { changeUsdGiven: 9.99, changeBsGiven: 0 }, 100).valid, false);
   assert.equal(validateChangeBreakdown(10, { changeUsdGiven: 10.01, changeBsGiven: 0 }, 100).valid, false);
   assert.equal(validateChangeBreakdown(0.01, { changeUsdGiven: 0, changeBsGiven: 1 }, 100).valid, true);
+});
+
+test('vuelto: boton Todo $ usa floor y remanente en Bs para cuadrar exacto', () => {
+  // Simula el cálculo del botón "Todo $" corregido
+  const computeTodoDollar = (changeBs, rate) => {
+    const changeUsd = changeBs / rate;
+    const usd = Math.floor(changeUsd * 100) / 100;
+    const remainderBs = Math.max(0, Math.round((changeBs - usd * rate) * 100) / 100);
+    return { usd: usd.toFixed(2), bs: remainderBs.toFixed(2) };
+  };
+
+  // Caso del bug: 100 Bs con tasa 857.89
+  // Antes: toFixed(2) daba 0.12 → 0.12*857.89=102.95 ≠ 100 → validación fallaba
+  const { usd, bs } = computeTodoDollar(100, 857.89);
+  assert.equal(usd, '0.11'); // floor(0.1165...) = 0.11
+  const r = validateChangeInBs(100, { changeUsdGiven: usd, changeBsGiven: bs }, 857.89);
+  assert.equal(r.valid, true, `Todo $ debe validar: usd=${usd} bs=${bs}`);
+
+  // Caso exacto: sin remanente
+  const exact = computeTodoDollar(857.89, 857.89);
+  assert.equal(exact.usd, '1.00');
+  assert.equal(validateChangeInBs(857.89, { changeUsdGiven: exact.usd, changeBsGiven: exact.bs }, 857.89).valid, true);
 });

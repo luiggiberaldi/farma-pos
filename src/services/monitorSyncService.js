@@ -155,7 +155,10 @@ export async function uploadBranchSnapshot() {
         const apiUrl = `${window.location.origin}/api/monitor-upload`;
         const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-monitor-key': import.meta.env.VITE_MONITOR_API_KEY || '',
+            },
             body: JSON.stringify({
                 p_tenant_id: snapshot.tenant_id,
                 p_branch_id: snapshot.branch_id,
@@ -229,7 +232,10 @@ export async function fetchBranchSnapshots(snapshotDate = null) {
         const apiUrl = `${window.location.origin}/api/monitor-snapshots?tenant_id=${TENANT_ID}&date=${date}`;
         const response = await fetch(
             apiUrl,
-            { signal: AbortSignal.timeout(10000) }
+            {
+                headers: { 'x-monitor-key': import.meta.env.VITE_MONITOR_API_KEY || '' },
+                signal: AbortSignal.timeout(10000),
+            }
         );
 
         if (!response.ok) throw new Error(`API respondió ${response.status}`);

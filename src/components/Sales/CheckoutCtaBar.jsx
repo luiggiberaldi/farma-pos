@@ -102,7 +102,13 @@ export default function CheckoutCtaBar(props) {
 
                     <div className="flex gap-2">
                         <button
-                            onClick={() => selectChange(changeUsd.toFixed(2), '0')}
+                            onClick={() => {
+                                // "Todo $": usar floor para no exceder el vuelto en Bs por redondeo.
+                                // El remanente (centavos de Bs) va en Bs para que la validación cuadre exacto.
+                                const usd = Math.floor(changeUsd * 100) / 100;
+                                const remainderBs = Math.max(0, Math.round((changeBs - usd * effectiveRate) * 100) / 100);
+                                selectChange(usd.toFixed(2), remainderBs.toFixed(2));
+                            }}
                             className="flex-1 min-h-[44px] py-2.5 rounded-lg text-[10px] font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 active:scale-95 transition-all border border-emerald-200 dark:border-emerald-800"
                         >
                             Todo $
