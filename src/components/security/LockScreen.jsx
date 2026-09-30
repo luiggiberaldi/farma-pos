@@ -112,28 +112,6 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
           {visibleUsers.map(user => (
             <UserCard key={user.id} user={user} onClick={() => setSelectedUser(user)} />
           ))}
-          {/* Modo Monitor — supervisión del dueño, solo lectura */}
-          <div role="button" tabIndex={0} aria-label="Modo Monitor"
-            onClick={() => {
-              const dueno = usuarios.find(u => u.rol === 'DUENO');
-              if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true });
-            }}
-            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); const dueno = usuarios.find(u => u.rol === 'DUENO'); if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true }); } }}
-            className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 rounded-2xl active:scale-95 transition-transform duration-200">
-            <div className="flex flex-col items-center">
-              <div className="relative">
-                <div className="absolute inset-0 bg-black/40 rounded-3xl translate-y-4 translate-x-4 blur-xl" />
-                <div className="absolute inset-0 rounded-3xl translate-y-2 translate-x-1 bg-violet-500/20" />
-                <div className="relative z-10 w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg hover:scale-105 transition-transform duration-300">
-                  <Eye size={44} className="text-white" strokeWidth={2} />
-                </div>
-              </div>
-              <div className="text-center mt-8 space-y-1">
-                <h3 className="text-lg font-bold text-slate-800 drop-shadow-sm">Monitor</h3>
-                <span className="block text-[9px] font-black uppercase tracking-[0.2em] text-violet-600">Supervisión</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -141,7 +119,19 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         {installPrompt && <button onClick={onInstall} className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1">Instalar App en este equipo</button>}
         {showIOSButton && <button onClick={onShowIOSInstall} className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1">Instalar App (iOS)</button>}
         <p className="text-[10px] text-slate-600 font-medium tracking-wider">Selecciona tu usuario para continuar</p>
-        <button onClick={() => setShowSuperAdmin(true)} className="text-[10px] font-bold text-slate-400/80 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">Olvidé mi PIN</button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setShowSuperAdmin(true)} className="text-[10px] font-bold text-slate-400/80 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">Olvidé mi PIN</button>
+          <span className="text-slate-300">·</span>
+          <button
+            onClick={() => {
+              const dueno = usuarios.find(u => u.rol === 'DUENO');
+              if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true });
+            }}
+            className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400/80 hover:text-violet-600 transition-colors underline underline-offset-2"
+          >
+            <Eye size={11} /> Supervisión
+          </button>
+        </div>
         <div className="flex items-center gap-4">
           <button onClick={() => window.location.reload()} className="text-[10px] font-bold text-slate-400/70 hover:text-slate-500 transition-colors">Recargar</button>
           {isCloudConfigured && <button type="button" onClick={handleCloudLogout} disabled={isLoggingOut} aria-busy={isLoggingOut} className="text-[10px] font-bold text-rose-500/60 hover:text-rose-400 transition-colors disabled:opacity-50 disabled:cursor-wait">{isLoggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</button>}
