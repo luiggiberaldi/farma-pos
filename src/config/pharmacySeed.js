@@ -1,5 +1,6 @@
 import { BODEGA_CATEGORIES } from './categories.js';
 import { getActiveSedeId } from './storageScope.js';
+import { TEST_SEED_PRODUCTS } from './seed/testSeedProducts.js';
 import { SEED_PRODUCTS_01 } from './seed/seedProducts01.js';
 import { SEED_PRODUCTS_02 } from './seed/seedProducts02.js';
 import { SEED_PRODUCTS_03 } from './seed/seedProducts03.js';
@@ -142,6 +143,11 @@ export async function seedPharmacyInventoryIfEmpty(storageService, context) {
     }
     const savedProducts = await storageService.getItem('bodega_products_v1', null, context);
     if (Array.isArray(savedProducts) && savedProducts.length > 0) return false;
+    // Sedes norte/sur: inventario de PRUEBA (30 productos) para validar flujos.
+    // Solo se aplica una vez; si el dueño vacía con "Borrar Todo", queda vacío.
+    if (sedeId === 'norte' || sedeId === 'sur') {
+        return await seedTestInventory(storageService, context, sedeId);
+    }
     // Solo la sede matriz recibe el catálogo base; las demás nacen vacías y
     // quedan marcadas para que el vaciado del dueño sea permanente.
     if (sedeId !== SEED_HOME_SEDE_ID) {
@@ -161,6 +167,38 @@ export async function seedPharmacyInventoryIfEmpty(storageService, context) {
         { name: 'seedDone', key: SEED_DONE_KEY, fallback: null },
     ], current => {
         // Doble verificación dentro de la transacción: otra pestaña pudo sembrar.
+        if (Array.isArray(current.products) && current.products.length > 0) return { writes: {} };
+        const priorSeedState = current.seedDone && typeof current.seedDone === 'object' ? current.seedDone : {};
+        return {
+            writes: {
+                products,
+                categories: isLegacyCategories(current.categories) ? BODEGA_CATEGORIES : current.categories,
+                lots: Array.isArray(current.lots) && current.lots.length > 0 ? current.lots : lots,
+                seedDone: { ...priorSeedState, [sedeId]: true },
+            },
+        };
+    }, context);
+    return true;
+}
+
+// ─── Inventario de prueba para sedes norte/sur ───
+// Siembra 30 productos de prueba una sola vez por sede. Si la sede ya tiene
+// productos o fue marcada como seed done, no hace nada.
+async function seedTestInventory(storageService, context, sedeId) {
+    const seedState = await storageService.getItem(SEED_DONE_KEY, null, context);
+    if (seedState?.[sedeId] === true) return false;
+    const products = TEST_SEED_PRODUCTS.map((item, index) => ({
+        ...buildSeedProduct(item, index),
+        id: `test-${sedeId}-${index + 1}`,
+    }));
+    const seedDate = new Date();
+    const lots = buildSeedLots(products, seedDate);
+    await storageService.transaction([
+        { name: 'products', key: 'bodega_products_v1', fallback: [] },
+        { name: 'categories', key: 'my_categories_v1', fallback: BODEGA_CATEGORIES },
+        { name: 'lots', key: 'farmacia_lotes_v1', fallback: [] },
+        { name: 'seedDone', key: SEED_DONE_KEY, fallback: null },
+    ], current => {
         if (Array.isArray(current.products) && current.products.length > 0) return { writes: {} };
         const priorSeedState = current.seedDone && typeof current.seedDone === 'object' ? current.seedDone : {};
         return {

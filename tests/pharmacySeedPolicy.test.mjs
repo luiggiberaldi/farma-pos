@@ -52,13 +52,19 @@ test('las colecciones operativas locales quedan aisladas y las transferencias so
   }
 });
 
-test('solo la sede matriz recibe el catalogo; las demas nacen vacias y marcadas', async t => {
+test('sede matriz recibe catalogo completo; norte/sur reciben inventario de prueba', async t => {
   const { seedPharmacyInventoryIfEmpty, storage, records, SEED_HOME_SEDE_ID, SEED_DONE_KEY } = await seedFixture(t);
-  // Sede no matriz: no se siembra y queda marcada como configurada.
+  // Sede norte: se siembra inventario de prueba (30 productos) y queda marcada.
   setActiveSedeId('norte');
-  assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('norte')), false);
-  assert.equal(records.get(`unscoped:sede:norte:bodega_products_v1`), undefined);
+  assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('norte')), true);
+  const norteProducts = records.get(`unscoped:sede:norte:bodega_products_v1`);
+  assert.ok(Array.isArray(norteProducts) && norteProducts.length === 30);
   assert.equal(records.get(`unscoped:sede:norte:${SEED_DONE_KEY}`)?.norte, true);
+  // Sede sur: igual que norte.
+  setActiveSedeId('sur');
+  assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('sur')), true);
+  const surProducts = records.get(`unscoped:sede:sur:bodega_products_v1`);
+  assert.ok(Array.isArray(surProducts) && surProducts.length === 30);
   // Sede matriz: se siembra el catalogo completo y queda marcada.
   setActiveSedeId('central');
   const seeded = await seedPharmacyInventoryIfEmpty(storage, ctxOf('central'));
@@ -79,15 +85,18 @@ test('borrar todo es permanente: la sede matriz vaciada no se re-siembra', async
   assert.deepEqual(records.get('unscoped:sede:central:bodega_products_v1'), []);
 });
 
-test('la migracion de categorias legacy corre en cualquier sede sin sembrar inventario', async t => {
+test('la migracion de categorias legacy corre en cualquier sede (con inventario de prueba en sur)', async t => {
   const { seedPharmacyInventoryIfEmpty, storage, records } = await seedFixture(t);
   records.set('unscoped:sede:sur:my_categories_v1', [{ id: 'motor', label: 'Motor' }, { id: 'cauchos', label: 'Cauchos' }]);
   setActiveSedeId('sur');
-  assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('sur')), false);
+  // Ahora sur recibe inventario de prueba (true), pero la migración de categorías sigue corriendo.
+  assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('sur')), true);
   const cats = records.get('unscoped:sede:sur:my_categories_v1');
   assert.equal(cats.some(c => c.id === 'motor'), false);
   assert.equal(cats.some(c => c.id === 'analgesicos'), true);
-  assert.equal(records.get('unscoped:sede:sur:bodega_products_v1'), undefined);
+  // El inventario de prueba sí se sembró (30 productos).
+  const products = records.get('unscoped:sede:sur:bodega_products_v1');
+  assert.ok(Array.isArray(products) && products.length === 30);
 });
 
 test('nunca re-siembra sobre inventario existente en la sede matriz', async t => {
