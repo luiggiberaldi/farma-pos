@@ -104,7 +104,7 @@ async function buildBranchSnapshot() {
 }
 
 /**
- * Sube el snapshot actual a Supabase.
+ * Sube el snapshot actual a Supabase (vía API server-side).
  */
 export async function uploadBranchSnapshot() {
     if (isUploading) return;
@@ -117,27 +117,34 @@ export async function uploadBranchSnapshot() {
             return;
         }
 
-        const { data, error } = await supabaseCloud.rpc('pharmacy_upsert_branch_snapshot', {
-            p_tenant_id: snapshot.tenant_id,
-            p_branch_id: snapshot.branch_id,
-            p_snapshot_date: snapshot.snapshot_date,
-            p_total_sales_usd: snapshot.total_sales_usd,
-            p_total_sales_bs: snapshot.total_sales_bs,
-            p_transaction_count: snapshot.transaction_count,
-            p_cash_usd: snapshot.cash_usd,
-            p_pos_bs: snapshot.pos_bs,
-            p_credit_usd: snapshot.credit_usd,
-            p_cash_register_open: snapshot.cash_register_open,
-            p_cashier_name: snapshot.cashier_name,
-            p_opening_usd: snapshot.opening_usd,
-            p_voids_count: snapshot.voids_count,
-            p_voids_total_usd: snapshot.voids_total_usd,
-            p_discounts_total_usd: snapshot.discounts_total_usd,
+        const response = await fetch('/api/monitor-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                p_tenant_id: snapshot.tenant_id,
+                p_branch_id: snapshot.branch_id,
+                p_snapshot_date: snapshot.snapshot_date,
+                p_total_sales_usd: snapshot.total_sales_usd,
+                p_total_sales_bs: snapshot.total_sales_bs,
+                p_transaction_count: snapshot.transaction_count,
+                p_cash_usd: snapshot.cash_usd,
+                p_pos_bs: snapshot.pos_bs,
+                p_credit_usd: snapshot.credit_usd,
+                p_cash_register_open: snapshot.cash_register_open,
+                p_cashier_name: snapshot.cashier_name,
+                p_opening_usd: snapshot.opening_usd,
+                p_voids_count: snapshot.voids_count,
+                p_voids_total_usd: snapshot.voids_total_usd,
+                p_discounts_total_usd: snapshot.discounts_total_usd,
+            }),
+            signal: AbortSignal.timeout(10000),
         });
 
-        if (error) throw error;
+        if (!response.ok) throw new Error(`API respondió ${response.status}`);
+
+        const { id } = await response.json();
         console.log('[Monitor] Snapshot subido:', snapshot.snapshot_date, snapshot.branch_id);
-        return data;
+        return id;
     } catch (error) {
         console.error('[Monitor] Error subiendo snapshot:', error.message);
         // No bloquear la app si falla la subida
@@ -169,18 +176,20 @@ export function stopMonitorUpload() {
 }
 
 /**
- * Lee los snapshots del día para el monitor (desde Supabase).
+ * Lee los snapshots del día para el monitor (vía API server-side).
  */
 export async function fetchBranchSnapshots(snapshotDate = null) {
     try {
         const date = snapshotDate || getLocalISODate(new Date());
-        const { data, error } = await supabaseCloud.rpc('pharmacy_get_branch_snapshots', {
-            p_tenant_id: TENANT_ID,
-            p_snapshot_date: date,
-        });
+        const response = await fetch(
+            `/api/monitor-snapshots?tenant_id=${TENANT_ID}&date=${date}`,
+            { signal: AbortSignal.timeout(10000) }
+        );
 
-        if (error) throw error;
-        return data || [];
+        if (!response.ok) throw new Error(`API respondió ${response.status}`);
+
+        const { snapshots } = await response.json();
+        return snapshots || [];
     } catch (error) {
         console.error('[Monitor] Error leyendo snapshots:', error.message);
         return [];
