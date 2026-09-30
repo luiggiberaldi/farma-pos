@@ -187,7 +187,13 @@ function isTrustedOfficialEuro(source, validDate) {
 }
 
 export function useRates() {
-    const [rates, setRates] = useState(readSavedRates);
+    // rates nunca es null: si no hay caché y el fetch falla, se usan los
+    // valores por defecto (precio 0) para que las vistas no tumben.
+    const [rates, setRates] = useState(() => readSavedRates() || {
+        ...DEFAULT_RATES,
+        bcv: { ...DEFAULT_RATES.bcv },
+        euro: { ...DEFAULT_RATES.euro },
+    });
     const [loading, setLoading] = useState(false);
     const [isOffline, setIsOffline] = useState(false);
     const [logs, setLogs] = useState([]);
