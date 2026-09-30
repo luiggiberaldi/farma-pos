@@ -143,7 +143,9 @@ export async function uploadBranchSnapshot() {
             return;
         }
 
-        const response = await fetch('/api/monitor-upload', {
+        // Usar URL absoluta para evitar problemas con base path en PWA
+        const apiUrl = `${window.location.origin}/api/monitor-upload`;
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -214,8 +216,9 @@ export function stopMonitorUpload() {
 export async function fetchBranchSnapshots(snapshotDate = null) {
     try {
         const date = snapshotDate || getLocalISODate(new Date());
+        const apiUrl = `${window.location.origin}/api/monitor-snapshots?tenant_id=${TENANT_ID}&date=${date}`;
         const response = await fetch(
-            `/api/monitor-snapshots?tenant_id=${TENANT_ID}&date=${date}`,
+            apiUrl,
             { signal: AbortSignal.timeout(10000) }
         );
 
