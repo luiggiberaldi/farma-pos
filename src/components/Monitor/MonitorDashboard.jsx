@@ -156,6 +156,47 @@ export default function MonitorDashboard({ onExit }) {
  * Detalle por sede.
  */
 function MonitorBranchDetail({ branch, onBack }) {
+    // Desglose dinámico de métodos de pago
+    const breakdown = branch.payment_breakdown || {};
+
+    // Etiquetas legibles para métodos conocidos
+    const methodLabels = {
+        efectivo_usd: 'Efectivo USD',
+        efectivo_bs: 'Efectivo Bs',
+        pago_movil: 'Pago Móvil',
+        punto_venta: 'Punto de Venta',
+        efectivo_cop: 'Efectivo COP',
+        transferencia_cop: 'Transferencia COP',
+        fiado: 'Fiado',
+    };
+    const methodLabel = (id) => methodLabels[id] || id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    // Formatear monto según moneda del método
+    const formatMethodAmount = (id, data) => {
+        const usd = Number(data.usd) || 0;
+        const bs = Number(data.bs) || 0;
+        if (id.includes('bs') || id === 'pago_movil' || id === 'punto_venta') {
+            return `Bs ${bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`;
+        }
+        if (id.includes('cop')) {
+            return `$${usd.toFixed(2)} + COP ${bs.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
+        }
+        if (usd > 0 && bs > 0) return `$${usd.toFixed(2)} / Bs ${bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`;
+        if (bs > 0) return `Bs ${bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`;
+        return `$${usd.toFixed(2)}`;
+    };
+
+    // Efectivo esperado = fondo inicial + ventas en efectivo
+    const cashUsdSales = Number(breakdown.efectivo_usd?.usd) || 0;
+    const cashBsSales = Number(breakdown.efectivo_bs?.bs) || 0;
+    const openingUsd = Number(branch.opening_usd) || 0;
+    const openingBs = Number(branch.opening_bs) || 0;
+    const expectedUsd = openingUsd + cashUsdSales;
+    const expectedBs = openingBs + cashBsSales;
+    const hasCashData = branch.cash_register_open || openingUsd > 0 || openingBs > 0 || cashUsdSales > 0 || cashBsSales > 0;
+
+    const methodIds = Object.keys(breakdown).sort();
+
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-8 overflow-y-auto">
             <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-4 sm:py-6">
@@ -172,6 +213,38 @@ function MonitorBranchDetail({ branch, onBack }) {
             </div>
 
             <div className="max-w-4xl mx-auto px-4 -mt-4 space-y-3">
+                {/* Efectivo esperado en vivo */}
+                {hasCashData && (
+                    <div className="bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-800 rounded-2xl p-5 shadow-sm">
+                        <p className="text-xs font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-3">💵 Efectivo esperado en caja</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300">${expectedUsd.toFixed(2)}</p>
+                                <p className="text-xs text-emerald-600/70">USD (fondo ${openingUsd.toFixed(2)} + ventas ${cashUsdSales.toFixed(2)})</p>
+                            </div>
+                            <div>
+                                <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300">Bs {expectedBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-xs text-emerald-600/70">Bs (fondo {openingBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} + ventas {cashBsSales.toLocaleString('es-VE', { minimumFractionDigits: 2 })})</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Fondo de apertura */}
+                {(openingUsd > 0 || openingBs > 0) && (
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-800">
+                        <p className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3">Fondo de apertura</p>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Efectivo USD</span>
+                            <span className="font-bold text-slate-800 dark:text-white">${openingUsd.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm mt-2">
+                            <span className="text-slate-500">Efectivo Bs</span>
+                            <span className="font-bold text-slate-800 dark:text-white">Bs {openingBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                    </div>
+                )}
+
                 {/* Ventas */}
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-800">
                     <p className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3">Ventas de hoy</p>
@@ -190,23 +263,21 @@ function MonitorBranchDetail({ branch, onBack }) {
                     </div>
                 </div>
 
-                {/* Métodos de pago */}
+                {/* Métodos de pago (todos los registrados) */}
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-slate-100 dark:border-slate-800">
                     <p className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3">Métodos de pago</p>
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-500">Efectivo USD</span>
-                            <span className="font-bold text-slate-800 dark:text-white">${Number(branch.cash_usd || 0).toFixed(2)}</span>
+                    {methodIds.length === 0 ? (
+                        <p className="text-sm text-slate-400">Sin movimientos hoy</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {methodIds.map(id => (
+                                <div key={id} className="flex justify-between text-sm gap-2">
+                                    <span className="text-slate-500 truncate">{methodLabel(id)} <span className="text-slate-300">({breakdown[id].count})</span></span>
+                                    <span className="font-bold text-slate-800 dark:text-white whitespace-nowrap">{formatMethodAmount(id, breakdown[id])}</span>
+                                </div>
+                            ))}
                         </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-500">Punto de venta (Bs)</span>
-                            <span className="font-bold text-slate-800 dark:text-white">Bs {Number(branch.pos_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-slate-500">Fiado (USD)</span>
-                            <span className="font-bold text-slate-800 dark:text-white">${Number(branch.credit_usd || 0).toFixed(2)}</span>
-                        </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Anulaciones y descuentos */}
@@ -221,12 +292,6 @@ function MonitorBranchDetail({ branch, onBack }) {
                             <span className="text-slate-500 flex items-center gap-1.5"><TrendingUp size={14} className="text-amber-400" /> Descuentos</span>
                             <span className="font-bold text-slate-800 dark:text-white">${Number(branch.discounts_total_usd || 0).toFixed(2)}</span>
                         </div>
-                        {branch.opening_usd != null && (
-                            <div className="flex justify-between text-sm">
-                                <span className="text-slate-500">Fondo inicial</span>
-                                <span className="font-bold text-slate-800 dark:text-white">${Number(branch.opening_usd).toFixed(2)}</span>
-                            </div>
-                        )}
                     </div>
                 </div>
 

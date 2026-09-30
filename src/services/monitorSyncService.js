@@ -42,6 +42,19 @@ async function buildBranchSnapshot() {
     let totalUsd = 0, totalBs = 0, cashUsd = 0, posBs = 0, creditUsd = 0;
     let voidsCount = 0, voidsTotalUsd = 0, discountsTotalUsd = 0;
 
+    // Desglose flexible por método de pago: { methodId: { usd, bs, count } }
+    const paymentBreakdown = {};
+
+    const addToBreakdown = (methodId, amountUsd, amountBs) => {
+        if (!methodId) return;
+        if (!paymentBreakdown[methodId]) {
+            paymentBreakdown[methodId] = { usd: 0, bs: 0, count: 0 };
+        }
+        paymentBreakdown[methodId].usd += Number(amountUsd) || 0;
+        paymentBreakdown[methodId].bs += Number(amountBs) || 0;
+        paymentBreakdown[methodId].count += 1;
+    };
+
     for (const sale of todaySales) {
         if (sale.status === 'ANULADA' || sale.estado === 'ANULADA') {
             voidsCount++;
@@ -52,19 +65,30 @@ async function buildBranchSnapshot() {
         totalUsd += Number(sale.totalUsd) || 0;
         totalBs += Number(sale.totalBs) || 0;
 
-        // Desglose por método de pago
+        // Desglose por método de pago (todos los registrados)
         for (const payment of (sale.payments || [])) {
-            const method = payment.methodId || payment.metodo || '';
-            if (method.includes('efectivo') || method.includes('cash')) {
-                cashUsd += Number(payment.amountUsd) || 0;
-            } else if (method.includes('punto') || method.includes('pos')) {
-                posBs += Number(payment.amountBs) || 0;
-            } else if (method.includes('fiado') || method.includes('credit')) {
-                creditUsd += Number(payment.amountUsd) || 0;
+            const method = payment.methodId || payment.metodo || 'desconocido';
+            const amtUsd = Number(payment.amountUsd) || 0;
+            const amtBs = Number(payment.amountBs) || 0;
+            addToBreakdown(method, amtUsd, amtBs);
+
+            // Totales legacy para compatibilidad
+            if (method.includes('efectivo') && !method.includes('bs') && !method.includes('cop')) {
+                cashUsd += amtUsd;
+            } else if (method.includes('punto') || method === 'punto_venta') {
+                posBs += amtBs;
+            } else if (method.includes('fiado')) {
+                creditUsd += amtUsd;
             }
         }
 
         discountsTotalUsd += Number(sale.discountUsd) || Number(sale.descuentoUsd) || 0;
+    }
+
+    // Redondear desglose
+    for (const key of Object.keys(paymentBreakdown)) {
+        paymentBreakdown[key].usd = Math.round(paymentBreakdown[key].usd * 100) / 100;
+        paymentBreakdown[key].bs = Math.round(paymentBreakdown[key].bs * 100) / 100;
     }
 
     // Estado de caja
@@ -97,9 +121,11 @@ async function buildBranchSnapshot() {
         cash_register_open: !!cashRegisterOpen,
         cashier_name: cashierName,
         opening_usd: lastApertura ? Number(lastApertura.openingUsd) || 0 : null,
+        opening_bs: lastApertura ? Number(lastApertura.openingBs) || 0 : null,
         voids_count: voidsCount,
         voids_total_usd: Math.round(voidsTotalUsd * 100) / 100,
         discounts_total_usd: Math.round(discountsTotalUsd * 100) / 100,
+        payment_breakdown: paymentBreakdown,
     };
 }
 
@@ -133,9 +159,11 @@ export async function uploadBranchSnapshot() {
                 p_cash_register_open: snapshot.cash_register_open,
                 p_cashier_name: snapshot.cashier_name,
                 p_opening_usd: snapshot.opening_usd,
+                p_opening_bs: snapshot.opening_bs,
                 p_voids_count: snapshot.voids_count,
                 p_voids_total_usd: snapshot.voids_total_usd,
                 p_discounts_total_usd: snapshot.discounts_total_usd,
+                p_payment_breakdown: snapshot.payment_breakdown,
             }),
             signal: AbortSignal.timeout(10000),
         });
