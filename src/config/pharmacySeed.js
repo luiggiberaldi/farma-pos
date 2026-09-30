@@ -182,11 +182,13 @@ export async function seedPharmacyInventoryIfEmpty(storageService, context) {
 }
 
 // ─── Inventario de prueba para sedes norte/sur ───
-// Siembra 30 productos de prueba una sola vez por sede. Si la sede ya tiene
-// productos o fue marcada como seed done, no hace nada.
+// Siembra 30 productos de prueba una sola vez por sede. Usa bandera propia
+// (TEST_SEED_DONE_KEY) para no chocar con el marcado anterior que las dejaba vacías.
+const TEST_SEED_DONE_KEY = 'farmacia_test_seed_done_v1';
+export { TEST_SEED_DONE_KEY };
 async function seedTestInventory(storageService, context, sedeId) {
-    const seedState = await storageService.getItem(SEED_DONE_KEY, null, context);
-    if (seedState?.[sedeId] === true) return false;
+    const testSeedState = await storageService.getItem(TEST_SEED_DONE_KEY, null, context);
+    if (testSeedState?.[sedeId] === true) return false;
     const products = TEST_SEED_PRODUCTS.map((item, index) => ({
         ...buildSeedProduct(item, index),
         id: `test-${sedeId}-${index + 1}`,
@@ -197,16 +199,16 @@ async function seedTestInventory(storageService, context, sedeId) {
         { name: 'products', key: 'bodega_products_v1', fallback: [] },
         { name: 'categories', key: 'my_categories_v1', fallback: BODEGA_CATEGORIES },
         { name: 'lots', key: 'farmacia_lotes_v1', fallback: [] },
-        { name: 'seedDone', key: SEED_DONE_KEY, fallback: null },
+        { name: 'testSeedDone', key: TEST_SEED_DONE_KEY, fallback: null },
     ], current => {
         if (Array.isArray(current.products) && current.products.length > 0) return { writes: {} };
-        const priorSeedState = current.seedDone && typeof current.seedDone === 'object' ? current.seedDone : {};
+        const priorTestSeedState = current.testSeedDone && typeof current.testSeedDone === 'object' ? current.testSeedDone : {};
         return {
             writes: {
                 products,
                 categories: isLegacyCategories(current.categories) ? BODEGA_CATEGORIES : current.categories,
                 lots: Array.isArray(current.lots) && current.lots.length > 0 ? current.lots : lots,
-                seedDone: { ...priorSeedState, [sedeId]: true },
+                testSeedDone: { ...priorTestSeedState, [sedeId]: true },
             },
         };
     }, context);

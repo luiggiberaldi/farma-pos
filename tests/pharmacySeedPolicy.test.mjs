@@ -53,18 +53,19 @@ test('las colecciones operativas locales quedan aisladas y las transferencias so
 });
 
 test('sede matriz recibe catalogo completo; norte/sur reciben inventario de prueba', async t => {
-  const { seedPharmacyInventoryIfEmpty, storage, records, SEED_HOME_SEDE_ID, SEED_DONE_KEY } = await seedFixture(t);
+  const { seedPharmacyInventoryIfEmpty, storage, records, SEED_HOME_SEDE_ID, SEED_DONE_KEY, TEST_SEED_DONE_KEY } = await seedFixture(t);
   // Sede norte: se siembra inventario de prueba (30 productos) y queda marcada.
   setActiveSedeId('norte');
   assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('norte')), true);
   const norteProducts = records.get(`unscoped:sede:norte:bodega_products_v1`);
   assert.ok(Array.isArray(norteProducts) && norteProducts.length === 30);
-  assert.equal(records.get(`unscoped:sede:norte:${SEED_DONE_KEY}`)?.norte, true);
+  assert.equal(records.get(`unscoped:sede:norte:${TEST_SEED_DONE_KEY}`)?.norte, true);
   // Sede sur: igual que norte.
   setActiveSedeId('sur');
   assert.equal(await seedPharmacyInventoryIfEmpty(storage, ctxOf('sur')), true);
   const surProducts = records.get(`unscoped:sede:sur:bodega_products_v1`);
   assert.ok(Array.isArray(surProducts) && surProducts.length === 30);
+  assert.equal(records.get(`unscoped:sede:sur:${TEST_SEED_DONE_KEY}`)?.sur, true);
   // Sede matriz: se siembra el catalogo completo y queda marcada.
   setActiveSedeId('central');
   const seeded = await seedPharmacyInventoryIfEmpty(storage, ctxOf('central'));
