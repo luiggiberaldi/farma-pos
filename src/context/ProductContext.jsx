@@ -168,8 +168,12 @@ export function ProductProvider({ children, rates }) {
     });
 
     // AUTO COP LOGIC
-    const [copEnabled, setCopEnabled] = useState(false);
-    const [autoCopEnabled, setAutoCopEnabled] = useState(false);
+    const [copEnabled, setCopEnabled] = useState(() => {
+        return localStorage.getItem('cop_enabled') === 'true';
+    });
+    const [autoCopEnabled, setAutoCopEnabled] = useState(() => {
+        return localStorage.getItem('auto_cop_enabled') === 'true';
+    });
     const [tasaCopManual, setTasaCopManual] = useState(() => {
         return localStorage.getItem('tasa_cop') || '';
     });

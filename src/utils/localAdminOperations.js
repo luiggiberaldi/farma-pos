@@ -87,7 +87,7 @@ export async function processLocalAdminOperation(command, input) {
                 writes.suppliers = state.suppliers.map(item => item.id === supplier.id ? { ...item, deuda: round2((item.deuda || 0) + invoice.amountUsd) } : item);
             } else if (command === 'SUPPLIER_PAYMENT') {
                 const supplier = state.suppliers.find(item => item.id === data.supplierId);
-                const payment = normalizeTender(data.payment, data.rate);
+                const payment = normalizeTender(data.payment, data.rate, data.tasaCop || 0);
                 const debt = Number(supplier?.deuda || 0);
                 if (!supplier || !finiteMoney(debt) || payment.amountUsd <= 0 || payment.amountUsd > debt || ['fiado', 'cashea', 'saldo_favor'].includes(payment.methodId)) throw new Error('El pago debe ser recibido por un medio válido y no exceder la deuda del proveedor.');
                 writes.suppliers = state.suppliers.map(item => item.id === supplier.id ? { ...item, deuda: round2(debt - payment.amountUsd) } : item);

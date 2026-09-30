@@ -115,7 +115,7 @@ test('customer payment uses real financial logic and preserves both customer rec
   assert.deepEqual(sales[0].customerDelta, { netDelta: 25, casheaDelta: 0 });
   assert.equal(sales[0].fiadoCollectedUsd, 25);
   assert.deepEqual(sales[0].payments, [{
-    methodId: 'efectivo_bs', amount: 2500, amountInput: 2500, amountInputCurrency: 'BS', currency: 'BS', amountUsd: 25, amountBs: 2500,
+    methodId: 'efectivo_bs', amount: 2500, amountInput: 2500, amountInputCurrency: 'BS', currency: 'BS', amountUsd: 25, amountBs: 2500, amountCop: 100000,
   }]);
   assert.equal(f.stored(QUEUE)[0].sync_status, 'pending');
   assert.equal(f.stored(AUDIT).length, 1);

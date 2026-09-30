@@ -1,4 +1,5 @@
 import { Ban, ChevronDown, ChevronUp, Clock, DollarSign, Recycle, Send, Shuffle } from 'lucide-react';
+import CasheaIcon from '../CasheaIcon';
 import { PAYMENT_ICONS, getPaymentLabel } from '../../config/paymentMethods';
 import { formatBs } from '../../utils/calculatorUtils';
 import { formatOfficialRate } from '../../utils/rateResolver';

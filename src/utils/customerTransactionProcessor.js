@@ -13,11 +13,11 @@ export async function processCustomerTransaction(input) {
     if (operator?.rol !== 'DUENO') throw new Error('No tienes permiso para registrar movimientos de cartera.');
     const repo = bindStorageContext(options.storageContext);
     const context = repo.context;
-    const { type, customer, currencyMode = 'USD', bcvRate, paymentMethod } = options;
+    const { type, customer, currencyMode = 'USD', bcvRate, paymentMethod, tasaCop = 0 } = options;
     if (!customer?.id || !['ABONO', 'CREDITO'].includes(type)) throw new Error('Cliente o tipo de movimiento inválido.');
     const raw = Number(options.transactionAmount);
     if (!Number.isFinite(raw) || raw <= 0 || raw !== round2(raw)) throw new Error('El importe debe ser positivo con hasta dos decimales.');
-    const payment = normalizeTender({ methodId: paymentMethod || 'efectivo_usd', currency: currencyMode, amountInput: raw }, bcvRate);
+    const payment = normalizeTender({ methodId: paymentMethod || 'efectivo_usd', currency: currencyMode, amountInput: raw }, bcvRate, tasaCop);
     if (payment.amountUsd <= 0) throw new Error('El importe es menor a la precisión admitida para cartera.');
     if (type === 'ABONO' && ['saldo_favor', 'cashea', 'fiado'].includes(payment.methodId)) throw new Error('El abono requiere un medio de pago recibido, no otra deuda.');
     const operationId = options.operationId || crypto.randomUUID();

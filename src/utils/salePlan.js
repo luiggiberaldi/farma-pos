@@ -97,7 +97,7 @@ export function prepareSale(options, state, { operationId, operator, context, ti
         || options.cartTotalBs != null && !closeMoney(options.cartTotalBs, totals.totalBs)) throw new Error('Los totales cambiaron. Revisa la cesta antes de cobrar.');
     if (operator.rol === 'CAJERO' && totals.discountAmountUsd > 0 && !discountAuthorization) throw new Error('Solicita autorización administrativa para el descuento.');
     if (!Array.isArray(options.payments)) throw new Error('Pagos inválidos.');
-    const payments = options.payments.map(payment => normalizeTender(payment, effectiveRate)).filter(payment => payment.amount > 0);
+    const payments = options.payments.map(payment => normalizeTender(payment, effectiveRate, options.copEnabled ? options.tasaCop : 0)).filter(payment => payment.amount > 0);
     const balance = tenderBalance(payments, totals.totalBs, effectiveRate);
     const fiadoUsd = balance.remainingUsd;
     if (balance.remainingBs > 0 && fiadoUsd <= 0.01) throw new Error('Queda un remanente en Bs. Completa el pago exacto.');
