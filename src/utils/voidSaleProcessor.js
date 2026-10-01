@@ -108,6 +108,8 @@ export async function processVoidSale(request, _currentSales, _currentProducts, 
             const huella = movementStamp('ANULACION_VENTA', id, context, actor, timestamp, { ventaId: sale.id, skipRestock: Boolean(options.skipRestock) });
             const reversal = { ...sale, id, operationId: id, syncQueueId: id, schemaVersion: 3, tipo: 'ANULACION_VENTA', status: 'PENDIENTE_SYNC', syncMode: 'offline',
                 originSaleId: sale.id, originSaleType: sale.tipo, relatedVoidId: null, voidedAt: null, operationIntent: null,
+                // Override del dueño (cajero anula con PIN del dueño): quién autorizó queda en la venta.
+                voidAuthorization: options.voidAuthorization || null,
                 timestamp, fechaComercial: getOpenCashSession(hotSales)?.businessDate || getLocalISODate(now), horaComercial: getLocalISOTime(now), cajaCerrada: false, cierreId: null,
                 huella, skipRestock: Boolean(options.skipRestock), skipRevertMoney: false,
                 items: (sale.items || []).map(item => ({ ...item, qty: -Math.abs(item.qty), ...(item.quantityBase != null ? { quantityBase: -item.quantityBase } : {}) })),
@@ -118,7 +120,8 @@ export async function processVoidSale(request, _currentSales, _currentProducts, 
             const sales = [reversal, ...hotSales.map(item => item.id === sale.id ? { ...item, relatedVoidId: id, voidedAt: timestamp, voidedBy: actor.id } : item)];
             const queue = [...state.queue.map(entry => entry.queue_id === sale.syncQueueId ? { ...entry, relatedVoidId: id } : entry), pendingOperation(id, 'VOID', reversal, context, actor, timestamp)];
             const controlled = state.controlled.some(item => item.ventaId === sale.id) ? [{ id, ventaId: sale.id, tipo: 'ANULACION', ...huella }, ...state.controlled] : state.controlled;
-            const auditSplit = splitByAge([ledgerAudit(id, 'VENTA_ANULADA', context, actor, timestamp, { saleId: sale.id }), ...state.audit], auditTimestampMs, AUDIT_HOT_DAYS, Date.parse(timestamp));
+            const auditSplit = splitByAge([ledgerAudit(id, 'VENTA_ANULADA', context, actor, timestamp, { saleId: sale.id,
+                voidAuthorization: options.voidAuthorization || null }), ...state.audit], auditTimestampMs, AUDIT_HOT_DAYS, Date.parse(timestamp));
             return { writes: { sales, salesArchive, products, lots, customers, queue, controlled, audit: auditSplit.hot, auditArchive: appendToArchive(auditSplit.archived, state.auditArchive) },
                 result: { updatedSales: sales, updatedProducts: products, updatedCustomers: customers, reversal } };
         }, context);

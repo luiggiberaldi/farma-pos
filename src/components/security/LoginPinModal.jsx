@@ -20,6 +20,7 @@ function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
     const [error, setError] = useState('');
     const [processing, setProcessing] = useState(false);
     const [pinlessAttempted, setPinlessAttempted] = useState(false);
+    const [shakeKey, setShakeKey] = useState(0);
     const inputRef = useRef(null);
     const pinRef = useRef('');
     const processingRef = useRef(false);
@@ -37,12 +38,14 @@ function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
             const success = await onSubmitRef.current(value, user.id);
             if (mounted.current && !success) {
                 setError(useAuthStore.getState().lastAuthError || 'PIN incorrecto o acceso temporalmente bloqueado.');
+                setShakeKey(k => k + 1);
                 pinRef.current = '';
                 setPin('');
             }
         } catch (err) {
             if (mounted.current) {
                 setError(err.message || 'No se pudo verificar el acceso.');
+                setShakeKey(k => k + 1);
                 pinRef.current = '';
                 setPin('');
             }
@@ -98,11 +101,18 @@ function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
                     <label className="block text-xs font-bold text-slate-500 mb-2" htmlFor="operator-pin">PIN de {pinLength} dígitos</label>
                     <input id="operator-pin" aria-label={`PIN de ${pinLength} dígitos`} ref={inputRef} type="password" inputMode="numeric" autoComplete="off" maxLength={pinLength}
                         value={pin} onChange={event => changePin(event.target.value)} disabled={processing}
-                        className="w-full mb-5 p-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-center text-xl tracking-[0.5em] text-slate-800 dark:text-white bg-white dark:bg-slate-800 focus:border-emerald-500 outline-none" />
-                    <div className="grid grid-cols-3 gap-2">
+                        className="w-full mb-4 p-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-center text-xl tracking-[0.5em] text-slate-800 dark:text-white bg-white dark:bg-slate-800 focus:border-emerald-500 outline-none" />
+                    {/* Puntos de progreso del PIN */}
+                    <div className="flex justify-center gap-2.5 mb-5" aria-hidden="true">
+                        {Array.from({ length: pinLength }).map((_, i) => (
+                            <span key={i} className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${i < pin.length ? 'bg-emerald-500 border-emerald-500 scale-110' : 'border-slate-300 dark:border-slate-600'}`} />
+                        ))}
+                    </div>
+                    <div key={shakeKey} className={`grid grid-cols-3 gap-2 ${shakeKey > 0 ? 'animate-shake' : ''}`}>
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => <button type="button" key={n} disabled={processing} onClick={() => changePin(pinRef.current + n)}
                             className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xl font-bold border border-slate-200 dark:border-slate-700 active:scale-95">{n}</button>)}
-                        <div />
+                        <button type="button" disabled={processing} aria-label="Limpiar PIN" onClick={() => changePin('')}
+                            className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-lg font-black border border-slate-200 dark:border-slate-700 active:scale-95">C</button>
                         <button type="button" disabled={processing} onClick={() => changePin(pinRef.current + '0')} className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-xl font-bold text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700">0</button>
                         <button type="button" disabled={processing} aria-label="Borrar último dígito" onClick={() => changePin(pinRef.current.slice(0, -1))} className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 flex justify-center items-center"><Delete size={22} /></button>
                     </div>

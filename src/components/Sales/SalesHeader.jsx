@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { RefreshCw, ShoppingCart, Keyboard, Lock, Landmark, Euro, PenTool } from 'lucide-react';
 import Tooltip from '../Tooltip';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { formatOfficialRate } from '../../utils/rateResolver';
+import { OperatorSwitchSheet, OperatorChipButton } from '../security/OperatorPickerSheet.jsx';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const formatRate = formatOfficialRate;
@@ -35,6 +37,7 @@ export default function SalesHeader({
 }) {
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
     const isLocked = usuarioActivo?.rol === 'CAJERO';
+    const [showSwitch, setShowSwitch] = useState(false);
 
     const handleRateToggle = () => {
         if (isLocked) return;
@@ -54,13 +57,17 @@ export default function SalesHeader({
     return (
         <div className="shrink-0 mb-2 lg:mb-1.5 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-3 shadow-sm border border-slate-100 dark:border-slate-800">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-2 lg:mb-1">
-                <div className="flex justify-between items-center w-full sm:w-auto">
-                    <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
-                        <div className="bg-emerald-500 text-white p-1.5 sm:p-2 rounded-xl shadow-lg shadow-emerald-500/30">
-                            <ShoppingCart size={20} className="sm:w-[22px] sm:h-[22px]" />
-                        </div>
-                        Punto de Venta
-                    </h2>
+                <div className="flex justify-between items-center w-full sm:w-auto gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2 shrink-0">
+                            <div className="bg-emerald-500 text-white p-1.5 sm:p-2 rounded-xl shadow-lg shadow-emerald-500/30">
+                                <ShoppingCart size={20} className="sm:w-[22px] sm:h-[22px]" />
+                            </div>
+                            Punto de Venta
+                        </h2>
+                        {/* Chip de operador en turno → cambio rápido (conserva carrito) */}
+                        <OperatorChipButton onClick={() => { triggerHaptic?.(); setShowSwitch(true); }} />
+                    </div>
                     {/* Tasa Móvil (visible solo en sm) */}
                     <div className="sm:hidden flex items-center gap-1">
                         <button 
@@ -98,6 +105,7 @@ export default function SalesHeader({
                         </button>
                     </div>
                 </div>
+                <OperatorSwitchSheet isOpen={showSwitch} onClose={() => setShowSwitch(false)} />
 
                 {/* Tasa Desktop y Botones (oculto en sm) */}
                 <div className="hidden sm:flex items-center gap-2">

@@ -24,6 +24,7 @@ import { useAutoBackup } from './hooks/useAutoBackup';
 import CommandPalette from './components/CommandPalette';
 import SpotlightTour from './components/SpotlightTour';
 import LockScreen from './components/security/LockScreen';
+import ClockInPrompt from './components/security/ClockInPrompt';
 import FactoryPinBanner from './components/security/FactoryPinBanner';
 import { isFactoryPin } from './config/userProvisioning';
 import CloudAuthModal from './components/security/CloudAuthModal';
@@ -46,6 +47,7 @@ export default function App() {
   const [selectedTab, setActiveTab] = useState('inicio');
   const [monitorMode, setMonitorMode] = useState(false);
   const usuarioActivo = useAuthStore(state => state.usuarioActivo);
+  const sessionLocked = useAuthStore(state => state.sessionLocked);
   const usuarios = useAuthStore(state => state.usuarios);
   // A3: la marca factoryPin persiste aunque el PIN ya esté migrado a PBKDF2.
   const factoryPinUsers = (usuarios || []).filter(u => u && (u.factoryPin === true || (!u.pinHashed && isFactoryPin(u.pin))));
@@ -466,6 +468,11 @@ export default function App() {
   return (
     <div className="font-sans antialiased bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-[100dvh] flex flex-col overflow-clip">
 
+      {/* Bloqueo real de sesión (Lock ≠ Logout): conserva operador, sesión y
+          carrito; solo quien bloqueó desbloquea con su PIN. */}
+      {sessionLocked && <LockScreen />}
+      {/* Clock-in: tras el PIN, el cajero ve la opción de fichar entrada. */}
+      <ClockInPrompt />
 
       {/* Aviso de PINs de fábrica (C3 adaptado): visible mientras algún
           usuario conserve el PIN de fábrica. Los PINs siguen funcionando. */}

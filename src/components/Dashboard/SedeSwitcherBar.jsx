@@ -1,4 +1,5 @@
 import { SEDES } from '../../config/sedes.js';
+import SedeName from '../security/SedeName.jsx';
 
 /**
  * Barra de sedes para el dueño — reemplazo compacto y responsive de la
@@ -24,7 +25,7 @@ export default function SedeSwitcherBar({ isDueno, sedeActivaId, setSedePinTarge
                         aria-current={activa ? 'true' : undefined}
                     >
                         {!activa && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />}
-                        <span className="whitespace-nowrap">{s.nombre}</span>
+                        <SedeName nombre={s.nombre} size="xs" />
                     </button>
                 );
             })}

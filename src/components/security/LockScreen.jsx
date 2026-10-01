@@ -6,17 +6,22 @@ import LoginPinModal from './LoginPinModal';
 import SuperAdminModal from './SuperAdminModal';
 import BrandLogo from '../BrandLogo.jsx';
 import ProfessionalSelect from '../ProfessionalSelect';
+import SedeName from './SedeName';
 import { SEDES } from '../../config/sedes';
 import { isCloudConfigured } from '../../config/supabaseCloud.js';
 import { useSedeStore } from '../../hooks/store/useSedeStore';
 import BranchPinModal from './BranchPinModal';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { showToast } from '../Toast.js';
-import { Eye } from 'lucide-react';
+import { Eye, Lock } from 'lucide-react';
 
 export default function LockScreen({ installPrompt, onInstall, showIOSButton, onShowIOSInstall, onEnterMonitor }) {
   const { usuarios, login } = useAuthStore();
+  const sessionLocked = useAuthStore(s => s.sessionLocked);
+  const unlock = useAuthStore(s => s.unlock);
+  const logout = useAuthStore(s => s.logout);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [unlockUser, setUnlockUser] = useState(null);
   // El selector arranca en la sede activa del dispositivo (el cajero de esa
   // sede debe aparecer sin tocar nada); cambiar de sede exige PIN del dueño.
   const selectedSedeId = useSedeStore(s => s.sedeActivaId);
@@ -27,6 +32,60 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
   const confirm = useConfirm();
 
   const visibleUsers = usuarios.filter(user => user.rol === 'DUENO' || user.sedeId === selectedSedeId);
+
+  // ── Modo bloqueado (Lock ≠ Logout): conserva operador, sesión y carrito.
+  // Solo quien bloqueó puede desbloquear con su PIN.
+  if (sessionLocked) {
+    const lockedUser = usuarios.find(u => u.id === sessionLocked.userId);
+    const handleUnlock = async (pin, userId) => {
+      if (userId !== sessionLocked.userId) return false;
+      const ok = await unlock(pin);
+      if (ok) setUnlockUser(null);
+      return ok;
+    };
+    const handleEndShift = async () => {
+      const ok = await confirm({
+        title: 'Cerrar turno',
+        message: `${sessionLocked.userName} cerrará su turno por completo. Si fichó entrada, se registrará la salida.`,
+        confirmText: 'Cerrar turno', cancelText: 'Cancelar', variant: 'logout',
+      });
+      if (ok) logout('turno cerrado');
+    };
+    return (
+      <div className="fixed inset-0 z-[250] bg-slate-900/70 backdrop-blur-sm font-sans overflow-y-auto flex items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-white rounded-3xl p-8 shadow-2xl text-center">
+          <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center">
+            <Lock size={26} />
+          </div>
+          <h1 className="text-xl font-black text-slate-800">Sesión bloqueada</h1>
+          <p className="text-xs text-slate-500 mt-1.5">
+            Bloqueada por <strong className="text-slate-700">{sessionLocked.userName}</strong>
+            {sessionLocked.at && (
+              <> · {new Date(sessionLocked.at).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</>
+            )}
+          </p>
+          <p className="text-xs text-slate-400 mt-1 mb-6">Solo {sessionLocked.userName?.split(' ')[0]} puede desbloquearla con su PIN.</p>
+          {lockedUser ? (
+            <div className="flex justify-center">
+              <UserCard user={lockedUser} onClick={() => setUnlockUser(lockedUser)} />
+            </div>
+          ) : (
+            <p className="text-sm text-rose-600 font-bold">No se encontró la cuenta que bloqueó la sesión.</p>
+          )}
+          <button onClick={handleEndShift} className="mt-6 text-[11px] font-bold text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors">
+            Cerrar turno
+          </button>
+        </div>
+        <LoginPinModal
+          isOpen={!!unlockUser}
+          onClose={() => setUnlockUser(null)}
+          user={unlockUser}
+          purpose="login"
+          onSubmit={handleUnlock}
+        />
+      </div>
+    );
+  }
 
   const handleLogoSecret = () => {
     secretCount.current += 1;
@@ -59,11 +118,13 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
     return success;
   };
 
-  const handleCloudLogout = async () => {
+  // "Desconectar estación": cierra la conexión cloud DE ESTE EQUIPO
+  // (scope local). No cierra turnos ni borra datos del dispositivo.
+  const handleStationDisconnect = async () => {
     const ok = await confirm({
-      title: 'Cerrar sesión',
-      message: 'Se cerrará tu sesión en la nube. Deberás iniciar sesión nuevamente para continuar.',
-      confirmText: 'Cerrar sesión', cancelText: 'Cancelar', variant: 'logout',
+      title: 'Desconectar estación',
+      message: 'Se cerrará la conexión de esta estación con la nube (no se cierra ningún turno). Deberás conectar la estación nuevamente para sincronizar.',
+      confirmText: 'Desconectar', cancelText: 'Cancelar', variant: 'logout',
     });
     if (!ok) return;
     setIsLoggingOut(true);
@@ -79,6 +140,8 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
     }
   };
 
+  const sedeNombre = SEDES.find(s => s.id === selectedSedeId)?.nombre;
+
   return (
     <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-y-auto flex flex-col">
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -86,32 +149,41 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         <div className="absolute -bottom-[30%] -right-[15%] w-[600px] h-[600px] bg-teal-400/10 rounded-full blur-[120px]" />
       </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-6 my-auto">
-        <div className="text-center mb-10">
-          <div className="flex justify-center mb-6">
-            <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-28 sm:h-36 w-auto drop-shadow-lg cursor-default" />
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-light tracking-[0.15em] text-slate-500">
-            Quien esta <strong className="text-slate-800 font-bold">operando</strong>?
-          </h1>
-          <div className="mx-auto mt-5 w-56 text-left">
-            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Sede de trabajo</label>
-            <ProfessionalSelect
-              value={selectedSedeId}
-              onChange={value => {
-                if (value !== selectedSedeId) setPendingSedeId(value);
-              }}
-              options={SEDES.map(sede => ({ value: sede.id, label: sede.nombre }))}
-              ariaLabel="Sede de trabajo"
-              className="w-full"
-            />
-          </div>
+      <div className="relative z-10 flex flex-col lg:flex-row items-center justify-center flex-1 p-6 my-auto gap-10 lg:gap-20 w-full max-w-6xl mx-auto">
+        {/* Panel de marca lateral (solo PC): aire de sobra, sin apilar */}
+        <div className="hidden lg:flex flex-col items-center text-center max-w-xs shrink-0">
+          <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-44 w-auto drop-shadow-lg cursor-default mb-6" />
+          <SedeName nombre={sedeNombre} size="md" className="text-slate-700" />
+          <p className="text-xs text-slate-400 mt-3 leading-relaxed">Punto de venta · control de turnos por PIN.<br />Toca tu cuenta para operar.</p>
         </div>
 
-        <div className="w-full grid grid-cols-2 md:flex md:flex-row md:flex-wrap md:justify-center gap-8 sm:gap-14 max-w-[320px] md:max-w-5xl mx-auto">
-          {visibleUsers.map(user => (
-            <UserCard key={user.id} user={user} onClick={() => setSelectedUser(user)} />
-          ))}
+        <div className="w-full max-w-[520px] flex flex-col items-center">
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-5 lg:hidden">
+              <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-24 sm:h-28 w-auto drop-shadow-lg cursor-default" />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-light text-slate-500">
+              ¿Quién está <strong className="text-slate-800 font-bold">operando</strong>?
+            </h1>
+            <div className="mx-auto mt-5 w-64 text-left">
+              <label className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Sede de trabajo</label>
+              <ProfessionalSelect
+                value={selectedSedeId}
+                onChange={value => {
+                  if (value !== selectedSedeId) setPendingSedeId(value);
+                }}
+                options={SEDES.map(sede => ({ value: sede.id, label: <SedeName nombre={sede.nombre} size="sm" /> }))}
+                ariaLabel="Sede de trabajo"
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="w-full grid grid-cols-2 md:flex md:flex-row md:flex-wrap md:justify-center gap-8 sm:gap-14 max-w-[320px] md:max-w-5xl mx-auto">
+            {visibleUsers.map(user => (
+              <UserCard key={user.id} user={user} onClick={() => setSelectedUser(user)} />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -134,7 +206,7 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         </div>
         <div className="flex items-center gap-4">
           <button onClick={() => window.location.reload()} className="text-[10px] font-bold text-slate-400/70 hover:text-slate-500 transition-colors">Recargar</button>
-          {isCloudConfigured && <button type="button" onClick={handleCloudLogout} disabled={isLoggingOut} aria-busy={isLoggingOut} className="text-[10px] font-bold text-rose-500/60 hover:text-rose-400 transition-colors disabled:opacity-50 disabled:cursor-wait">{isLoggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</button>}
+          {isCloudConfigured && <button type="button" onClick={handleStationDisconnect} disabled={isLoggingOut} aria-busy={isLoggingOut} className="text-[10px] font-bold text-rose-500/60 hover:text-rose-400 transition-colors disabled:opacity-50 disabled:cursor-wait">{isLoggingOut ? 'Desconectando…' : 'Desconectar estación'}</button>}
         </div>
       </div>
 

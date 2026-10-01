@@ -23,6 +23,7 @@ import CierreHistoryCard from '../components/Reports/CierreHistoryCard';
 import StatCard from '../components/Reports/StatCard';
 import TransactionRow from '../components/Reports/TransactionRow';
 import PaymentBreakdown from '../components/Reports/PaymentBreakdown';
+import { OwnerOverrideSheet } from '../components/security/OperatorPickerSheet.jsx';
 import CasheaIcon from '../components/CasheaIcon';
 import { showToast } from '../components/Toast';
 
@@ -54,6 +55,9 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [historyFilter, setHistoryFilter] = useState('all'); // all, completed, voided
     const [recycleOffer, setRecycleOffer] = useState(null);
     const [openPaySections, setOpenPaySections] = useState({});
+    // Anulación con override del dueño (cajero): la venta queda pendiente
+    // hasta que un dueño ingresa su PIN en la hoja de autorización.
+    const [voidOverride, setVoidOverride] = useState(null);
 
     // ── F3.10: فلتر السيدات (dueño/admin فقط) ──
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
@@ -63,9 +67,29 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [sedeFilter, setSedeFilter] = useState(canConsolidate ? sedeActivaId : sedeActivaId);
     const effectiveSedeFilter = canConsolidate ? sedeFilter : sedeActivaId;
     const isMerged = canConsolidate && effectiveSedeFilter === 'todas';
-    const canVoidHere = !isMerged && effectiveSedeFilter === sedeActivaId && usuarioActivo?.rol === 'DUENO';
+    const canVoidHere = !isMerged && effectiveSedeFilter === sedeActivaId && ['DUENO', 'CAJERO'].includes(usuarioActivo?.rol);
 
     // ── Void Sale Handler ──
+    // El dueño anula directo; el cajero anula con PIN del dueño (override).
+    // La autorización queda registrada en la venta anulada (voidAuthorization).
+    const doVoidSale = async (sale, voidAuthorization) => {
+        try {
+            const isPostCierre = sale.cajaCerrada;
+            const voidOptions = isPostCierre ? {
+                skipRestock: localStorage.getItem('void_cierre_restock') !== 'true',
+                skipRevertMoney: localStorage.getItem('void_cierre_revert_money') !== 'true',
+            } : {};
+            if (voidAuthorization) voidOptions.voidAuthorization = voidAuthorization;
+            const { updatedSales, updatedProducts } = await processVoidSale(sale, allSales, products, voidOptions);
+            setProducts(updatedProducts);
+            setAllSales(updatedSales);
+            setRecycleOffer(sale);
+        } catch (error) {
+            console.error('Error anulando venta:', error);
+            showToast(error.message || 'No se pudo anular la venta.', 'error');
+        }
+    };
+
     const handleVoidSale = async (sale) => {
         if (!sale) return;
         const ok = await confirm({
@@ -75,24 +99,16 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
             variant: 'danger',
         });
         if (!ok) return;
-        if (!canVoidHere || (sale.huella?.sedeId || sale.sedeId) !== sedeActivaId) {
+        if (isMerged || (sale.huella?.sedeId || sale.sedeId) !== sedeActivaId) {
             showToast('Activa la sede de origen antes de anular esta venta.', 'error');
             return;
         }
-        try {
-            const isPostCierre = sale.cajaCerrada;
-            const voidOptions = isPostCierre ? {
-                skipRestock: localStorage.getItem('void_cierre_restock') !== 'true',
-                skipRevertMoney: localStorage.getItem('void_cierre_revert_money') !== 'true',
-            } : {};
-            const { updatedSales, updatedProducts } = await processVoidSale(sale, allSales, products, voidOptions);
-            setProducts(updatedProducts);
-            setAllSales(updatedSales);
-            setRecycleOffer(sale);
-        } catch (error) {
-            console.error('Error anulando venta:', error);
-            showToast(error.message || 'No se pudo anular la venta.', 'error');
+        if (usuarioActivo?.rol !== 'DUENO') {
+            // El cajero necesita que un dueño autorice con su PIN.
+            setVoidOverride({ sale, details: { saleId: sale.id, tipo: 'VOID_SALE' } });
+            return;
         }
+        await doVoidSale(sale, null);
     };
 
     useEffect(() => {
@@ -569,6 +585,27 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Override del dueño para anular (cajero): la autorización queda
+                registrada en la venta anulada como voidAuthorization. */}
+            {voidOverride && (
+                <OwnerOverrideSheet
+                    isOpen
+                    onClose={() => setVoidOverride(null)}
+                    action="VOID_SALE"
+                    details={voidOverride.details}
+                    title="Anular venta: autorización del dueño"
+                    onApproved={(proof) => {
+                        const { sale } = voidOverride;
+                        setVoidOverride(null);
+                        void doVoidSale(sale, {
+                            approver: { id: proof.approver.id, nombre: proof.approver.nombre, rol: proof.approver.rol },
+                            authorizedAt: proof.createdAt,
+                            action: 'VOID_SALE',
+                        });
+                    }}
+                />
             )}
 
 

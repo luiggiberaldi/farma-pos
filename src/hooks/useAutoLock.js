@@ -1,31 +1,25 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from './store/useAuthStore';
-import { logEvent } from '../services/auditService';
 import { getActiveAccountId } from '../config/storageScope.js';
+import { shouldAutoLockForRole, autoLockMinutesFor } from '../utils/operatorLockPolicy.js';
 
-const CAJERO_LOCK_MINUTES = 5; // Fijo, no configurable
-
+// AJUSTE 1 (2026-10-01): el bloqueo por inactividad SOLO lo tiene el dueño
+// ("jefe o dueño" y "admin" del pedido = rol DUENO). El cajero nunca se
+// bloquea solo. Además es un bloqueo real (Lock ≠ Logout): conserva
+// operador, sesión y carrito; solo quien bloqueó desbloquea con su PIN.
 export function useAutoLock() {
-    const { usuarioActivo, logout, requireLogin } = useAuthStore();
-    // Cloud accounts always require operator PIN; cashier lock remains enabled.
-    const isAdmin = usuarioActivo?.rol === 'DUENO';
-    const isCajero = usuarioActivo?.rol === 'CAJERO';
+    const { usuarioActivo, lock, requireLogin } = useAuthStore();
+    // Cloud accounts always require operator PIN.
     const isLoginRequired = Boolean(requireLogin || getActiveAccountId());
-    const shouldLock = (isAdmin && isLoginRequired) || isCajero;
+    const shouldLock = shouldAutoLockForRole(usuarioActivo?.rol, isLoginRequired);
     const timeoutRef = useRef(null);
 
-    const getLockMinutes = useCallback(() => {
-        if (isCajero) return CAJERO_LOCK_MINUTES;
-        const minutesStr = localStorage.getItem('admin_auto_lock_minutes') || '5';
-        const minutes = parseInt(minutesStr, 10);
-        return isNaN(minutes) || minutes < 1 ? 5 : minutes;
-    }, [isCajero]);
+    const getLockMinutes = useCallback(() => autoLockMinutesFor(usuarioActivo?.rol) ?? 5, [usuarioActivo?.rol]);
 
     const performLock = useCallback((reason = 'manual') => {
         if (!shouldLock) return;
-        logEvent('AUTH', 'SESION_BLOQUEADA', `Bloqueo de ${usuarioActivo?.nombre} (${usuarioActivo?.rol}): ${reason}`, usuarioActivo);
-        logout();
-    }, [usuarioActivo, logout, shouldLock]);
+        lock(reason);
+    }, [lock, shouldLock]);
 
     const resetTimer = useCallback(() => {
         if (!shouldLock) {
@@ -58,12 +52,7 @@ export function useAutoLock() {
 
         const handleVisibilityChange = () => {
             if (document.hidden) {
-                // Admin: bloquear al minimizar. Cajero: solo reiniciar el timer
-                if (isAdmin) {
-                    performLock('app_minimizada');
-                } else {
-                    resetTimer();
-                }
+                performLock('app_minimizada');
             } else {
                 resetTimer();
             }
@@ -77,7 +66,7 @@ export function useAutoLock() {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
-    }, [usuarioActivo, shouldLock, resetTimer, performLock, isAdmin]);
+    }, [usuarioActivo, shouldLock, resetTimer, performLock]);
 
     return { manualLock: () => performLock('manual') };
 }

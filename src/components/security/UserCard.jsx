@@ -5,7 +5,9 @@ import { CardBody, CardContainer, CardItem } from '../ui/3d-card';
 
 const toTitleCase = (str) => {
   if (!str) return '';
-  return str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  // Ajuste 2: "C&Y" siempre en mayúsculas (el title-case lo degradaba a "C&y").
+  return str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    .replace(/\bC&y\b/g, 'C&Y');
 };
 
 export default function UserCard({ user, onClick }) {

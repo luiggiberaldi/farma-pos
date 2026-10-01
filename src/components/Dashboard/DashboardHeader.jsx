@@ -1,11 +1,16 @@
+import { useState } from 'react';
 import { Bell, LogOut, Lock } from 'lucide-react';
 import BrandLogo from '../BrandLogo';
 import SyncStatus from '../SyncStatus';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { supabaseCloud } from '../../config/supabaseCloud';
 import { showToast } from '../Toast';
+import { useAuthStore } from '../../hooks/store/useAuthStore';
+import { OperatorSwitchSheet } from '../security/OperatorPickerSheet.jsx';
 
 export default function DashboardHeader({ requireLogin, isCloudConfigured, usuarioActivo, triggerHaptic, authLogout, isAdmin, showAlerts, setShowAlerts, alertCount, markAlertsRead, adminAlerts, clearAlerts, confirm }) {
+    const lock = useAuthStore(s => s.lock);
+    const [showSwitch, setShowSwitch] = useState(false);
     return (
     <div className="flex items-center justify-between px-3 sm:px-6 pt-3 sm:pt-4 lg:pt-3 pb-2 sm:pb-3 lg:pb-2 transition-all z-10 relative min-h-[96px] sm:min-h-[135px] lg:min-h-[130px]">
 
@@ -14,21 +19,25 @@ export default function DashboardHeader({ requireLogin, isCloudConfigured, usuar
             {/* Píldoras de Estado */}
             <SyncStatus />
 
-            {/* User Profile Pill */}
+            {/* User Profile Pill — el nombre abre el cambio rápido de
+                operador; el candado bloquea la sesión (Lock ≠ Logout). */}
             {requireLogin && isCloudConfigured && usuarioActivo && (
                 <div className="flex items-center gap-1.5 bg-teal-50 border-teal-100/50 border rounded-full pl-2 pr-1 sm:pl-3 sm:pr-1.5 py-1 sm:py-1.5 shadow-sm">
                     <div className="relative flex h-2 w-2 ml-1 sm:ml-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-teal-400"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
                     </div>
-                    <span className="hidden sm:block text-xs font-black sm:max-w-[120px] truncate text-teal-800">
+                    <button onClick={() => { triggerHaptic?.(); setShowSwitch(true); }} title="Cambiar operador"
+                        className="hidden sm:block text-xs font-black sm:max-w-[120px] truncate text-teal-800 hover:text-teal-600 active:scale-95 transition-all">
                         {usuarioActivo.nombre.split(' ')[0]}
-                    </span>
-                    <button onClick={() => { triggerHaptic?.(); authLogout(); }} className="p-1.5 ml-0.5 transition-all rounded-full active:scale-90 text-teal-500 hover:bg-teal-100 hover:text-teal-700">
+                    </button>
+                    <button onClick={() => { triggerHaptic?.(); lock('manual'); }} title="Bloquear sesión"
+                        className="p-1.5 ml-0.5 transition-all rounded-full active:scale-90 text-teal-500 hover:bg-teal-100 hover:text-teal-700">
                         <Lock size={14} strokeWidth={2.5} />
                     </button>
                 </div>
             )}
+            <OperatorSwitchSheet isOpen={showSwitch} onClose={() => setShowSwitch(false)} />
         </div>
 
         {/* ====== LOGO CENTRADO ====== */}

@@ -7,6 +7,7 @@ import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperator
 import { sanitizeBackup } from '../../utils/backupSafety.js';
 import { assertLocalOperationAllowed, hasPendingLocalWrites } from '../../services/localOperationGuard.js';
 import { generatePinSalt, hashPinPbkdf2, isStrongPinRecord } from '../../utils/pinCrypto.js';
+import { lockoutMsFor } from '../../utils/operatorLockPolicy.js';
 
 // A3: SHA-256 sin salt (formato legado). Solo se usa para comparar registros
 // viejos; todo PIN nuevo o verificado se migra a PBKDF2 (ver pinCrypto.js).
@@ -42,16 +43,17 @@ const APPROVAL_MS = 2 * 60 * 1000;
 function attemptsKey(userId, context) {
     return `operator_pin_attempts_v3:${context.accountId || 'local'}:${userId}`;
 }
+// El bloqueo de sesión sobrevive a una recarga: sin esto, recargar la
+// página esquivaría el PIN de desbloqueo. La llave se valida contra la
+// sesión restaurada en merge() y se limpia en unlock()/logout().
+const SESSION_LOCK_KEY = 'farmapos_session_locked';
+// El turno fichado también sobrevive a recargas para no perder la salida.
+const SHIFT_KEY = 'farmapos_shift';
 // A10: los intentos viven en localStorage (otra pestaña ya no reinicia el
-// contador) y el bloqueo crece exponencialmente: 30s, 60s, 120s… tope 15 min.
-const LOCKOUT_BASE_MS = 30_000;
-const LOCKOUT_MAX_MS = 15 * 60_000;
+// contador). La ventana de bloqueo exponencial vive en
+// utils/operatorLockPolicy.js (lockoutMsFor) para poder testearse aislada.
 function readAttempts(key) {
     try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
-}
-function lockoutMsFor(failures) {
-    if (failures < 3) return 0;
-    return Math.min(LOCKOUT_BASE_MS * 2 ** (failures - 3), LOCKOUT_MAX_MS);
 }
 function noteAttempt(key, success) {
     if (success) { try { localStorage.removeItem(key); } catch { /* noop */ } return; }
@@ -75,6 +77,14 @@ export const useAuthStore = create(persist((set, get) => ({
     requireLogin: false,
     adminEmail: '',
     lastAuthError: null,
+    // Bloqueo real de sesión (Lock ≠ Logout): conserva operador, sesión y
+    // carrito; solo el usuario que bloqueó puede desbloquear con su PIN.
+    sessionLocked: null,
+    // Clock-in/clock-out (patrón Toast/Lightspeed, versión mínima): el cajero
+    // ficha entrada tras el PIN; la salida se registra al cerrar el turno.
+    // Queda en el log de auditoría (AUTH/TURNO_*) para que el dueño lo vea.
+    shift: null,
+    clockInOffer: null,
 
     // Does not log in, change role, move branch or migrate any credentials.
     verifyPin: async (pinInput, userId, { administrative = false } = {}) => {
@@ -137,7 +147,13 @@ export const useAuthStore = create(persist((set, get) => ({
         const envelope = saveOperatorSession(authenticated, { context, pinVerified: !pinless });
         sessionStorage.removeItem('farmapos_select_user');
         try {
-            set({ usuarioActivo: envelope.user, operatorSession: envelope, lastAuthError: null });
+            // Clock-in: tras el PIN, el cajero ve la opción de fichar entrada
+            // (salvo que ya tenga un turno abierto de antes).
+            const shiftOpen = get().shift?.userId === authenticated.id;
+            const clockInOffer = authenticated.rol === 'CAJERO' && !shiftOpen
+                ? { userId: authenticated.id, userName: authenticated.nombre }
+                : null;
+            set({ usuarioActivo: envelope.user, operatorSession: envelope, lastAuthError: null, clockInOffer });
         } catch (error) {
             try { localStorage.removeItem(OPERATOR_SESSION_KEY); } catch { /* Keep memory locked below. */ }
             try { sessionStorage.setItem('farmapos_select_user', '1'); } catch { /* Best effort. */ }
@@ -153,6 +169,18 @@ export const useAuthStore = create(persist((set, get) => ({
         const context = captureStorageContext();
         authEpoch += 1;
         approvals.clear();
+        // Clock-out: al cerrar el turno se registra la salida si había
+        // una entrada fichada (queda en auditoría para el dueño).
+        const shift = get().shift;
+        if (user && shift?.userId === user.id && shift?.clockInAt) {
+            const clockOutAt = new Date().toISOString();
+            const durationMin = Math.max(0, Math.round((Date.parse(clockOutAt) - Date.parse(shift.clockInAt)) / 60000));
+            void logEvent('AUTH', 'TURNO_FINALIZADO',
+                `${user.nombre} fichó salida de turno (${durationMin} min)`, user,
+                { clockInAt: shift.clockInAt, clockOutAt, durationMin }, context);
+        }
+        try { localStorage.removeItem(SESSION_LOCK_KEY); } catch { /* noop */ }
+        try { localStorage.removeItem(SHIFT_KEY); } catch { /* noop */ }
         // Memory is locked even if a privacy/quota error prevents persistence.
         try { sessionStorage.setItem('farmapos_select_user', '1'); } catch { /* Keep in-memory lock. */ }
         try { if (!preserveSavedSession) localStorage.removeItem(OPERATOR_SESSION_KEY); } catch { /* Keep in-memory lock. */ }
@@ -161,12 +189,51 @@ export const useAuthStore = create(persist((set, get) => ({
         // Invalidate this tab without persisting its stale configuration over it.
         const wasSkipping = skipConfigPersistence;
         skipConfigPersistence = wasSkipping || preserveSavedSession;
-        try { set({ usuarioActivo: null, operatorSession: null, lastAuthError: null }); }
+        try { set({ usuarioActivo: null, operatorSession: null, lastAuthError: null, sessionLocked: null, shift: null, clockInOffer: null }); }
         catch { /* Memory is locked even if config write fails. */ }
         finally { skipConfigPersistence = wasSkipping; }
         if (user) void logEvent('AUTH', 'LOGOUT', `${user.nombre} cerró sesión: ${reason}`, user, null, context);
         // Keep the device's branch and every business record/outbox intact.
     },
+
+    // Lock ≠ Logout: bloquea la pantalla conservando operador, sesión y
+    // carrito. Solo quien bloqueó puede desbloquear con su PIN.
+    lock: (reason = 'manual') => {
+        const user = get().usuarioActivo;
+        if (!user) return false;
+        authEpoch += 1;
+        approvals.clear();
+        const locked = { userId: user.id, userName: user.nombre, rol: user.rol, at: new Date().toISOString(), reason };
+        try { localStorage.setItem(SESSION_LOCK_KEY, JSON.stringify(locked)); } catch { /* noop */ }
+        set({ sessionLocked: locked });
+        void logEvent('AUTH', 'SESION_BLOQUEADA', `${user.nombre} bloqueó su sesión (${reason})`, user);
+        return true;
+    },
+
+    unlock: async (pinInput) => {
+        const locked = get().sessionLocked;
+        if (!locked) return false;
+        const verified = await get().verifyPin(pinInput, locked.userId);
+        if (!verified) return false;
+        try { localStorage.removeItem(SESSION_LOCK_KEY); } catch { /* noop */ }
+        set({ sessionLocked: null });
+        void logEvent('AUTH', 'SESION_DESBLOQUEADA', `${locked.userName} desbloqueó su sesión`, verified);
+        return true;
+    },
+
+    // Ficha la entrada del turno del cajero en curso.
+    clockIn: () => {
+        const user = get().usuarioActivo;
+        if (!user || user.rol !== 'CAJERO') return false;
+        const clockInAt = new Date().toISOString();
+        const shift = { userId: user.id, clockInAt };
+        try { localStorage.setItem(SHIFT_KEY, JSON.stringify(shift)); } catch { /* noop */ }
+        set({ shift, clockInOffer: null });
+        void logEvent('AUTH', 'TURNO_INICIADO', `${user.nombre} fichó entrada de turno`, user, { clockInAt });
+        return true;
+    },
+
+    clearClockInOffer: () => set({ clockInOffer: null }),
 
     rebindSessionContext: () => {
         const session = get().operatorSession;
@@ -186,10 +253,11 @@ export const useAuthStore = create(persist((set, get) => ({
     },
 
     issueApproval: async (pin, userId, { action, details }) => {
-        if (!['DISCOUNT', 'CHANGE_SEDE'].includes(action)) throw new Error('Acción administrativa inválida.');
+        if (!['DISCOUNT', 'CHANGE_SEDE', 'VOID_SALE'].includes(action)) throw new Error('Acción administrativa inválida.');
         const context = captureStorageContext();
         const actor = get().usuarioActivo;
         if (action === 'DISCOUNT' && !actor) return null;
+        if (action === 'VOID_SALE' && !actor) return null;
         if (action === 'CHANGE_SEDE' && actor?.rol === 'CAJERO') return null;
         const epoch = authEpoch;
         const signature = JSON.stringify(details);
@@ -396,8 +464,27 @@ export const useAuthStore = create(persist((set, get) => ({
         const usuarios = normalizeUsers(clean.usuarios || current.usuarios);
         const requireLogin = clean.requireLogin === true;
         const session = readOperatorSession(usuarios, captureStorageContext(), requireLogin);
+        // Restaura el bloqueo de sesión si sigue siendo el mismo operador;
+        // si no, la llave huérfana se descarta.
+        let sessionLocked = null;
+        try {
+            const raw = localStorage.getItem(SESSION_LOCK_KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed?.userId && session?.user?.id === parsed.userId) {
+                sessionLocked = { userId: parsed.userId, userName: session.user.nombre, rol: session.user.rol,
+                    at: parsed.at || null, reason: parsed.reason || 'sesión' };
+            } else if (raw) {
+                try { localStorage.removeItem(SESSION_LOCK_KEY); } catch { /* noop */ }
+            }
+        } catch { /* llave corrupta: se ignora el bloqueo */ }
+        let shift = null;
+        try {
+            const raw = localStorage.getItem(SHIFT_KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed?.userId && parsed?.clockInAt && session?.user?.id === parsed.userId) shift = parsed;
+        } catch { /* turno corrupto: se ignora */ }
         return { ...current, usuarios, requireLogin, adminEmail: typeof clean.adminEmail === 'string' ? clean.adminEmail : '',
-            usuarioActivo: session?.user || null, operatorSession: session };
+            usuarioActivo: session?.user || null, operatorSession: session, sessionLocked, shift };
     },
     partialize: state => ({ usuarios: state.usuarios, requireLogin: state.requireLogin, adminEmail: state.adminEmail }),
     storage: {
