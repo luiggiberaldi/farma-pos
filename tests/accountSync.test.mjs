@@ -243,3 +243,20 @@ test('llaves de documento esperadas', () => {
     assert.equal(RATE_DOC_KEY, 'bodega_rate_policy_v1');
     assert.equal(BUSINESS_DOC_KEY, 'bodega_business_v1');
 });
+
+test('las llaves cubiertas por los docs propios no van por el sync ingenuo', async () => {
+    const { SYNC_KEYS } = await import('../src/hooks/cloudSync/syncKeys.js');
+    for (const doc of ['bodega_users_v1', 'bodega_rate_policy_v1', 'bodega_business_v1']) {
+        assert.ok(SYNC_KEYS.includes(doc), `${doc} debe estar en SYNC_KEYS`);
+    }
+    // Doble vía prohibida: el camino ingenuo aplicaba LWW ciego y pisaba la
+    // política ganadora; estas llaves solo viajan dentro de los docs propios.
+    for (const k of ['bodega_custom_rate', 'bodega_use_auto_rate', 'cashea_enabled',
+        'business_address', 'business_phone', 'business_instagram']) {
+        assert.ok(!SYNC_KEYS.includes(k), `${k} no debe estar en SYNC_KEYS`);
+    }
+    // Lo que no cubren los docs propios conserva su sync ingenuo.
+    for (const k of ['tasa_cop', 'cop_enabled', 'auto_cop_enabled', 'monitor_rates_v12']) {
+        assert.ok(SYNC_KEYS.includes(k), `${k} conserva su sync`);
+    }
+});

@@ -26,17 +26,15 @@ export const SYNC_KEYS = [
     'bodega_users_v1',            // Usuarios (merge por syncId, sin PINs en texto plano)
     'bodega_rate_policy_v1',      // Política de tasa a nivel de cuenta (fast-lane 5 min)
     'bodega_business_v1',         // Identidad del negocio a nivel de cuenta
+    // NOTA: 'bodega_custom_rate', 'bodega_use_auto_rate', 'cashea_enabled',
+    // 'business_address', 'business_phone' y 'business_instagram' SALIERON del
+    // sync ingenuo: viajan dentro de los documentos propios de arriba (con
+    // LWW / merge por campo). Dejarlas aquí causaba doble vía: el camino
+    // ingenuo aplicaba last-writer-wins ciego y pisaba la política ganadora.
     'monitor_rates_v12',
-    'bodega_custom_rate',
-    'bodega_use_auto_rate',
     'tasa_cop',
     'cop_enabled',
     'auto_cop_enabled',
-    // ── Configuración del negocio (localStorage) ──────────────────────────
-    'cashea_enabled',
-    'business_address',
-    'business_phone',
-    'business_instagram',
     'admin_auto_lock_minutes',
     'theme',
     'catalog_show_cash_price',
@@ -52,15 +50,14 @@ export const LOCAL_KEYS = [
     'bodega_rate_policy_v1',
     'bodega_business_v1',
     'monitor_rates_v12',
-    'bodega_custom_rate',
-    'bodega_use_auto_rate',
+    // NOTA: las 6 llaves cubiertas por los docs propios (bodega_custom_rate,
+    // bodega_use_auto_rate, cashea_enabled, business_address, business_phone,
+    // business_instagram) no van aquí: el interceptor no debe disparar pushes
+    // para ellas; solo viajan dentro de bodega_rate_policy_v1 /
+    // bodega_business_v1.
     'tasa_cop',
     'cop_enabled',
     'auto_cop_enabled',
-    'cashea_enabled',
-    'business_address',
-    'business_phone',
-    'business_instagram',
     'admin_auto_lock_minutes',
     'theme',
     'catalog_show_cash_price',
