@@ -103,7 +103,18 @@ export function migrateOwnerPinToFactory(users) {
 }
 
 // Normalización de fábrica: dueño con 000000, cajeros siempre con PIN
-// (0000 si no tenían) y un cajero por sede.
+// (0000 si no tenían) y un cajero por sede. Incluye la migración v4 de una
+// sola vez (cajeros sin PIN heredados → 0000); se usa para el estado inicial
+// y en el paso versionado `migrate`, NO en cada arranque.
 export const normalizeUsers = users =>
     migrateOwnerPinToFactory(ensureCashiersPerSede(ensureOwner(users)));
+
+// Normalización en cada arranque (persist `merge`): aprovisiona lo que falte
+// (dueño, cajeros por sede) SIN aplicar migraciones de datos de una sola vez.
+// En particular, un cajero con sinPin intencional (quitarPin del dueño) NO se
+// convierte al PIN de fábrica: esa migración v4 vive solo en el paso
+// versionado `migrate` (fromVersion < 3). Aplicarla en cada arranque revertía
+// quitarPin en cada reinicio (el cajero amanecía con '0000' en texto plano).
+export const normalizeUsersOnBoot = users =>
+    ensureCashiersPerSede(ensureOwner(users));
 

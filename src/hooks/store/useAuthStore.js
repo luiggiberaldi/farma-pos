@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 import { captureStorageContext, getActiveSedeId, isStorageContextActive } from '../../config/storageScope.js';
-import { DEFAULT_USERS, migrateOwnerPinToFactory, normalizeUsers, CASHIER_FACTORY_PIN, isFactoryPin } from '../../config/userProvisioning.js';
+import { DEFAULT_USERS, migrateOwnerPinToFactory, normalizeUsers, normalizeUsersOnBoot, CASHIER_FACTORY_PIN, isFactoryPin } from '../../config/userProvisioning.js';
 import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperatorSession, canUsePinlessAccess, setPinlessOptIn } from '../../utils/operatorSession.js';
 import { sanitizeBackup } from '../../utils/backupSafety.js';
 import { assertLocalOperationAllowed, hasPendingLocalWrites } from '../../services/localOperationGuard.js';
@@ -485,7 +485,7 @@ export const useAuthStore = create(persist((set, get) => ({
         authEpoch += 1;
         approvals.clear();
         const clean = sanitizeBackup(persisted || {});
-        const usuarios = ensureSyncIds(normalizeUsers(clean.usuarios || current.usuarios));
+        const usuarios = ensureSyncIds(normalizeUsersOnBoot(clean.usuarios || current.usuarios));
         const requireLogin = clean.requireLogin === true;
         const session = readOperatorSession(usuarios, captureStorageContext(), requireLogin);
         // Restaura el bloqueo de sesión si sigue siendo el mismo operador;

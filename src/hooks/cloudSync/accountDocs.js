@@ -46,23 +46,37 @@ async function strongPinRecord(pin) {
  */
 export async function pushUsersDoc({ getState, setState, push } = {}) {
     try {
-        let usuarios = ensureSyncIds(getState().usuarios || []);
-        let changed = usuarios !== (getState().usuarios || []);
-        const next = [];
-        for (const u of usuarios) {
-            if (u?.pin && u.pinHashed !== true && u.sinPin !== true) {
+        // 1. syncId: asignar sobre el estado fresco. Entre leer y escribir no
+        //    hay await (atómico en JS): no revierte escritores concurrentes.
+        {
+            const current = getState().usuarios || [];
+            const withIds = ensureSyncIds(current);
+            if (withIds !== current) setState({ usuarios: withIds });
+        }
+        // 2. Hash proactivo de PINs en texto plano. El cálculo es asíncrono,
+        //    pero la APLICACIÓN se hace sobre el estado fresco y solo donde
+        //    el PIN siga siendo el mismo texto plano: un pushUsersDoc
+        //    anterior aún en vuelo no puede revertir cambios concurrentes
+        //    (quitarPin, cambiarPin, merge de la nube).
+        const hashed = new Map(); // syncId -> { plain, strong }
+        for (const u of getState().usuarios || []) {
+            if (u?.pin && u.pinHashed !== true && u.sinPin !== true && u.syncId) {
                 const strong = await strongPinRecord(u.pin);
-                next.push({ ...u, ...strong });
-                changed = true;
-            } else {
-                next.push(u);
+                hashed.set(u.syncId, { plain: u.pin, strong });
             }
         }
-        if (changed) {
-            setState({ usuarios: next });
-            usuarios = next;
+        if (hashed.size > 0) {
+            const current = getState().usuarios || [];
+            let touched = false;
+            const next = current.map(u => {
+                const h = u?.syncId ? hashed.get(u.syncId) : undefined;
+                if (!h || u.pinHashed === true || u.sinPin === true || u.pin !== h.plain) return u;
+                touched = true;
+                return { ...u, ...h.strong };
+            });
+            if (touched) setState({ usuarios: next });
         }
-        return await push(USER_DOC_KEY, sanitizeUsersForCloud(usuarios), true);
+        return await push(USER_DOC_KEY, sanitizeUsersForCloud(getState().usuarios || []), true);
     } catch {
         return undefined;
     }
