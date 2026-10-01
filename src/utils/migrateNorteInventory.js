@@ -1,6 +1,6 @@
 import { SEED_PRODUCTS_NORTE01 } from '../config/seed/seedProductsNorte01.js';
 import { storageService } from './storageService.js';
-import { getActiveAccountId } from './userProvisioning.js';
+import { getActiveAccountId } from '../config/storageScope.js';
 
 const PRODUCTS_KEY = 'bodega_products_v1';
 const FLAG = 'farmacia_products_norte_inv2026_migrated_v1';
