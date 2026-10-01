@@ -1,32 +1,32 @@
 /**
- * Migración única: productos del inventario físico C&Y 2025 (15/08/2026)
- * que no están en el catálogo del sistema → sede central.
+ * Migración única: catálogo completo de la sede central (C&Y 2025).
  *
- * Contexto: el inventario manuscrito de la sede central contiene ~1710 filas.
- * Lote 1: ~920 medicamentos sin equivalente en el sistema.
- * Lote 2: 271 insumos, filas dudosas y resto no cubierto (nombres tal cual
- *         aparecen en las hojas, precios en Bs convertidos a USD).
+ * Contexto: el catálogo base (666 productos) + el inventario manuscrito
+ * 2026 (lotes inv01/inv02/inv03) deben sumar ~1560 productos únicos en
+ * central. En algunos equipos la migración v1–v3 corrió sobre un catálogo
+ * vacío y solo dejó los 963 del manuscrito (sin el catálogo base).
+ *
+ * v4 repara eso de forma idempotente: construye el conjunto deseado
+ * (base + manuscrito), deduplica por similitud de nombre contra el
+ * inventario actual y agrega solo los que falten. No borra ni modifica
+ * productos existentes (salvo la corrección de precios del propio lote
+ * inv2026, heredada de v2).
  *
  * Reglas de seguridad:
- * - Solo aplica a la sede central (C&Y 2025), nunca a norte/sur.
- * - No duplica: omite productos cuyo nombre ya existe en el catálogo
- *   (comparación por similitud, ej. "Anaxen fem" vs "Amaremfem").
- * - No borra ni modifica productos existentes del sistema.
- * - Corrige precios de productos del propio lote inv2026 si el dato
- *   fue ajustado (ej. precios en Bs convertidos a USD).
- * - Idempotente: usa bandera `farmacia_products_inv2026_migrated_v3`.
- *   v3 re-ejecuta la deduplicación contra el inventario actual y agrega
- *   los productos del lote que falten (repara migraciones parciales).
+ * - Solo aplica a la sede central, nunca a norte/sur.
+ * - No duplica: omite productos cuyo nombre ya existe (similitud ≥ 0.6).
+ * - Idempotente: bandera `farmacia_products_inv2026_migrated_v4`.
  */
 
 import { getActiveAccountId } from '../config/storageScope.js';
 import { storageService } from './storageService.js';
 import { isSameProduct } from './productNameMatch.js';
+import { INITIAL_PHARMACY_PRODUCTS, buildSeedProduct } from '../config/pharmacySeed.js';
 import { SEED_PRODUCTS_INV01 } from '../config/seed/seedProductsInv01.js';
 import { SEED_PRODUCTS_INV02 } from '../config/seed/seedProductsInv02.js';
 import { SEED_PRODUCTS_INV03 } from '../config/seed/seedProductsInv03.js';
 
-const MIGRATION_FLAG = 'farmacia_products_inv2026_migrated_v3';
+const MIGRATION_FLAG = 'farmacia_products_inv2026_migrated_v4';
 const PRODUCTS_KEY = 'bodega_products_v1';
 const INV_ID_PREFIX = 'inv2026-';
 
@@ -54,13 +54,14 @@ export async function migrateMissingProducts() {
         const current = await storageService.getItem(PRODUCTS_KEY, [], context).catch(() => []);
         const currentList = Array.isArray(current) ? current : [];
 
-        const incoming = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
-        // Mapa barcode → datos corregidos (para corregir precios del lote 1 si ya se migró)
-        const byBarcode = new Map(incoming.map(p => [p.barcode, p]));
+        // Conjunto deseado: catálogo base + inventario manuscrito 2026.
+        const base = INITIAL_PHARMACY_PRODUCTS.map((item, i) => buildSeedProduct(item, i));
+        const invLotes = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+        // Mapa barcode → datos del lote inv2026 (para corregir precios si ya se migró)
+        const byBarcode = new Map(invLotes.map(p => [p.barcode, p]));
 
         let fixed = 0;
         // 1) Corregir precios de productos ya migrados del lote inv2026
-        //    (ej. los 8 precios que venían en Bs y se convirtieron a USD)
         const updatedList = currentList.map(p => {
             if (typeof p.id === 'string' && p.id.startsWith(INV_ID_PREFIX)) {
                 const ref = byBarcode.get(p.barcode);
@@ -72,16 +73,22 @@ export async function migrateMissingProducts() {
             return p;
         });
 
-        // 2) Agregar los que falten (con deduplicación por similitud)
+        // 2) Agregar los que falten (con deduplicación por similitud).
+        //    Dos fases para replicar la semántica original: el catálogo base
+        //    es el conjunto de referencia (fase A: cada producto base solo se
+        //    compara contra el inventario actual, nunca contra otros de la
+        //    base); el manuscrito se deduplica contra todo lo anterior
+        //    (fase B).
         const toAdd = [];
         let skipped = 0;
-        for (const prod of incoming) {
+        for (const prod of base) {
+            if (updatedList.some(p => isSameProduct(p.name, prod.name))) { skipped++; continue; }
+            toAdd.push(prod);
+        }
+        for (const prod of invLotes) {
             const exists = updatedList.some(p => isSameProduct(p.name, prod.name))
                 || toAdd.some(p => isSameProduct(p.name, prod.name));
-            if (exists) {
-                skipped++;
-                continue;
-            }
+            if (exists) { skipped++; continue; }
             toAdd.push({ ...prod, id: `${INV_ID_PREFIX}${prod.barcode}` });
         }
 
@@ -90,11 +97,11 @@ export async function migrateMissingProducts() {
         }
 
         localStorage.setItem(MIGRATION_FLAG, '1');
-        console.log(`[Migración] Inventario 2026: ${toAdd.length} agregados, ${fixed} precios corregidos, ${skipped} omitidos por duplicado.`);
+        console.log(`[Migración] Catálogo central v4: ${toAdd.length} agregados, ${fixed} precios corregidos, ${skipped} omitidos por duplicado.`);
 
         return { migrated: toAdd.length > 0 || fixed > 0, added: toAdd.length, fixed, skipped, reason: 'ok' };
     } catch (error) {
-        console.error('[Migración] Error migrando productos del inventario 2026:', error.message);
+        console.error('[Migración] Error migrando catálogo central:', error.message);
         return empty('error:' + error.message);
     }
 }

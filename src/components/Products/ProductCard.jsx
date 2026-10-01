@@ -69,7 +69,7 @@ export default function ProductCard({
 
             {/* Info */}
             <div className="p-3 flex flex-col flex-1">
-                <h3 className="font-bold text-slate-700 dark:text-slate-200 text-[13px] leading-tight line-clamp-2">{p.name}</h3>
+                <h3 className="font-bold text-slate-700 dark:text-slate-200 text-[13px] leading-tight break-words">{p.name}</h3>
                 {p.genericName && p.genericName.toLowerCase() !== p.name.toLowerCase() && (
                     <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate mt-0.5">{p.genericName}</p>
                 )}

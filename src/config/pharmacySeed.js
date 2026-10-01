@@ -61,8 +61,7 @@ const LEGACY_CATEGORY_IDS = ['motor', 'electrico', 'carroceria', 'transmision', 
 const m = s => (typeof s === 'string' && s.trim()) ? s.trim() : null;
 const d = (value, fallback) => { const n = Number(value); return Number.isFinite(n) && n > 0 ? n : fallback; };
 
-function buildSeedProduct(item, index) {
-    const stock = Math.max(0, Math.round(d(item.stock, 0)));
+export function buildSeedProduct(item, index) {    const stock = Math.max(0, Math.round(d(item.stock, 0)));
     return {
         id: `seed-${index + 1}`,
         name: item.name,

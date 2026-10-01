@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeName, similarity, isSameProduct } from '../src/utils/productNameMatch.js';
-import { INITIAL_PHARMACY_PRODUCTS } from '../src/config/pharmacySeed.js';
+import { INITIAL_PHARMACY_PRODUCTS, buildSeedProduct } from '../src/config/pharmacySeed.js';
 import { SEED_PRODUCTS_INV01 } from '../src/config/seed/seedProductsInv01.js';
 import { SEED_PRODUCTS_INV02 } from '../src/config/seed/seedProductsInv02.js';
 import { SEED_PRODUCTS_INV03 } from '../src/config/seed/seedProductsInv03.js';
@@ -95,20 +95,60 @@ test('migración: deduplicación determinista contra el seed base (666 + 894 = 1
     assert.equal(base.length + toAdd.length, 1560, 'total esperado en central tras migrar');
 });
 
-test('migración v3: re-ejecución idempotente no duplica', () => {
-    // Simula un inventario ya migrado (base + 894 agregados) y verifica que
-    // una segunda pasada agrega 0.
-    const base = INITIAL_PHARMACY_PRODUCTS.map(p => p.name);
-    const incoming = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
-    const first = [];
-    for (const prod of incoming) {
-        if (base.some(n => isSameProduct(n, prod.name)) || first.some(p => isSameProduct(p.name, prod.name))) continue;
-        first.push(prod);
+test('migración v4: repara un equipo que solo tiene los 963 del manuscrito (agrega la base faltante)', () => {
+    // Escenario real: la migración v1–v3 corrió sobre un catálogo vacío y
+    // dejó solo los 963 del manuscrito. v4 agrega la base que falta sin
+    // duplicar (21 productos base quedan cubiertos por casi-duplicados del
+    // manuscrito ya presentes en el equipo).
+    const base = INITIAL_PHARMACY_PRODUCTS.map((item, i) => buildSeedProduct(item, i));
+    const invLotes = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+    // Inventario actual del equipo: solo manuscrito deduplicado (963)
+    const current = [];
+    for (const prod of invLotes) {
+        if (current.some(p => isSameProduct(p.name, prod.name))) continue;
+        current.push(prod);
     }
-    const current = [...base, ...first.map(p => p.name)];
-    let second = 0;
-    for (const prod of incoming) {
-        if (!current.some(n => isSameProduct(n, prod.name))) second++;
+    assert.equal(current.length, 963, 'equipo con solo el manuscrito');
+    // Núcleo de la migración v4 en dos fases (base = referencia)
+    const toAdd = [];
+    for (const prod of base) {
+        if (!current.some(p => isSameProduct(p.name, prod.name))) toAdd.push(prod);
     }
-    assert.equal(second, 0, 'segunda pasada no agrega nada');
+    for (const prod of invLotes) {
+        if (current.some(p => isSameProduct(p.name, prod.name)) || toAdd.some(p => isSameProduct(p.name, prod.name))) continue;
+        toAdd.push(prod);
+    }
+    assert.equal(toAdd.length, 576, 'productos base que debe agregar v4');
+    assert.equal(current.length + toAdd.length, 1539, 'total esperado tras v4');
+});
+
+test('migración v4: equipo ya completo no agrega nada (idempotente)', () => {
+    const base = INITIAL_PHARMACY_PRODUCTS.map((item, i) => buildSeedProduct(item, i));
+    const invLotes = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+    const current = [...base];
+    for (const prod of invLotes) {
+        if (current.some(p => isSameProduct(p.name, prod.name))) continue;
+        current.push(prod);
+    }
+    assert.equal(current.length, 1560, 'equipo ya completo');
+    const toAdd = [];
+    for (const prod of base) {
+        if (!current.some(p => isSameProduct(p.name, prod.name))) toAdd.push(prod);
+    }
+    for (const prod of invLotes) {
+        if (current.some(p => isSameProduct(p.name, prod.name)) || toAdd.some(p => isSameProduct(p.name, prod.name))) continue;
+        toAdd.push(prod);
+    }
+    assert.equal(toAdd.length, 0, 'v4 no agrega nada si ya está completo');
+});
+
+test('migración v4: equipo vacío recibe el catálogo completo (1560)', () => {
+    const base = INITIAL_PHARMACY_PRODUCTS.map((item, i) => buildSeedProduct(item, i));
+    const invLotes = [...SEED_PRODUCTS_INV01, ...SEED_PRODUCTS_INV02, ...SEED_PRODUCTS_INV03];
+    const toAdd = [...base];
+    for (const prod of invLotes) {
+        if (toAdd.some(p => isSameProduct(p.name, prod.name))) continue;
+        toAdd.push(prod);
+    }
+    assert.equal(toAdd.length, 1560, 'catálogo completo desde cero');
 });
