@@ -1,4 +1,5 @@
 import { X, Users, UserPlus, Check } from 'lucide-react';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function CheckoutCustomerSheet(props) {
     const {
@@ -12,6 +13,7 @@ export default function CheckoutCustomerSheet(props) {
         newClientPhone, setNewClientPhone,
         savingClient, handleCreateClient,
     } = props;
+    useEscapeToClose(closeCustomerSheet, showCustomerSheet);
     if (!showCustomerSheet) return null;
     return (
     
@@ -20,6 +22,9 @@ export default function CheckoutCustomerSheet(props) {
             onClick={closeCustomerSheet}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Seleccionar cliente"
                 className="bg-white dark:bg-slate-900 rounded-t-3xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300"
                 style={{ maxHeight: '85%' }}
                 onClick={e => e.stopPropagation()}
@@ -32,9 +37,14 @@ export default function CheckoutCustomerSheet(props) {
                 {!showNewCustomerForm ? (
                     <>
                         {/* Header */}
-                        <div className="px-5 pt-2 pb-3 shrink-0">
-                            <h3 className="text-lg font-black text-slate-800 dark:text-white">Seleccionar Cliente</h3>
-                            <p className="text-xs text-slate-400 mt-0.5">{customers.length} clientes registrados</p>
+                        <div className="px-5 pt-2 pb-3 shrink-0 flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-white">Seleccionar Cliente</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">{customers.length} clientes registrados</p>
+                            </div>
+                            <button onClick={closeCustomerSheet} aria-label="Cerrar" className="modal-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors -mr-2">
+                                <X size={18} />
+                            </button>
                         </div>
 
                         {/* Search */}

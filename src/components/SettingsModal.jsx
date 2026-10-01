@@ -5,6 +5,8 @@ import { showToast } from '../components/Toast';
 import PaymentMethodsManager from './Settings/PaymentMethodsManager';
 
 import { useSecurity } from '../hooks/useSecurity';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { MODAL_BACKDROP } from './Modal';
 import { collectBranchBackup } from '../services/dataBackupService.js';
 
 export default function SettingsModal({ isOpen, onClose, products, onImport, triggerHaptic }) {
@@ -47,6 +49,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
         if (triggerHaptic) triggerHaptic();
     };
 
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
 
     // --- EXPORTAR BACKUP ---
@@ -85,8 +88,8 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
+        <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 ${MODAL_BACKDROP} animate-in fade-in duration-200`}>
+            <div role="dialog" aria-modal="true" aria-label="Ajustes" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
 
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
@@ -94,7 +97,7 @@ export default function SettingsModal({ isOpen, onClose, products, onImport, tri
                         <Database size={18} className="text-slate-500" />
                         Ajustes
                     </h3>
-                    <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                    <button onClick={onClose} className="modal-close hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                         <X size={18} className="text-slate-500" />
                     </button>
                 </div>

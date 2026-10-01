@@ -4,6 +4,7 @@ import { Wifi, WifiOff, RefreshCw, AlertTriangle, X, ChevronRight, Copy, Check, 
 import { SUPABASE_FREE_PROFILE } from '../config/supabaseFreeTier.js';
 import { ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY, captureStorageContext, isStorageContextActive } from '../config/storageScope.js';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
 
 export default function SyncStatus() {
@@ -12,6 +13,7 @@ export default function SyncStatus() {
     const [failedCount, setFailedCount] = useState(0);
     const [showFailedBanner, setShowFailedBanner] = useState(false);
     const [showErrorModal, setShowErrorModal] = useState(false);
+    useEscapeToClose(() => setShowErrorModal(false), showErrorModal);
     const [failedItems, setFailedItems] = useState([]);
     const [copied, setCopied] = useState(false);
 
@@ -214,6 +216,9 @@ export default function SyncStatus() {
                     onClick={() => setShowErrorModal(false)}
                 >
                     <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Log de sincronización"
                         className="bg-white dark:bg-slate-900 w-full sm:max-w-md sm:rounded-2xl rounded-t-[2rem] p-5 shadow-2xl max-h-[80vh] flex flex-col"
                         onClick={e => e.stopPropagation()}
                     >
@@ -227,7 +232,7 @@ export default function SyncStatus() {
                                     <p className="text-[10px] text-slate-400">{failedCount} venta{failedCount > 1 ? 's' : ''} con error</p>
                                 </div>
                             </div>
-                            <button onClick={() => setShowErrorModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                            <button onClick={() => setShowErrorModal(false)} className="modal-close text-slate-400 hover:text-slate-600">
                                 <X size={18} />
                             </button>
                         </div>

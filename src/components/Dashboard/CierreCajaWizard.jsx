@@ -3,6 +3,7 @@ import { X, ChevronRight, DollarSign, Wallet, CheckCircle2, AlertTriangle, Trend
 import CasheaIcon from '../CasheaIcon';
 import { formatBs } from '../../utils/calculatorUtils';
 import { getPaymentLabel, getPaymentIcon, toTitleCase } from '../../config/paymentMethods';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function CierreCajaWizard({
     isOpen,
@@ -35,6 +36,7 @@ export default function CierreCajaWizard({
     const activeSalesCount = todaySales.filter(s => !s.relatedVoidId && s.tipo !== 'ANULACION_VENTA').length;
     const voidSalesCount = todaySales.filter(s => s.tipo === 'ANULACION_VENTA').length;
 
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
 
     const expectedUsd = (paymentBreakdown['efectivo_usd']?.total || 0) - (paymentBreakdown['vuelto_usd']?.total || 0);
@@ -109,6 +111,9 @@ export default function CierreCajaWizard({
     return (
         <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-end sm:items-center justify-center animate-in fade-in duration-200" onClick={handleClose}>
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Cierre de caja"
                 className="bg-white dark:bg-slate-900 w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[85vh] sm:max-h-[88vh] flex flex-col shadow-2xl border-t border-slate-200 dark:border-slate-700 animate-in slide-in-from-bottom duration-300"
                 onClick={e => e.stopPropagation()}
             >
@@ -127,7 +132,7 @@ export default function CierreCajaWizard({
                                 </div>
                             )}
                         </div>
-                        <button onClick={handleClose} disabled={isConfirming} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40">
+                        <button onClick={handleClose} disabled={isConfirming} className="modal-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40">
                             <X size={18} />
                         </button>
                     </div>

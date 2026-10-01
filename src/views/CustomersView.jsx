@@ -10,7 +10,7 @@ import EditCustomerModal from '../components/Customers/EditCustomerModal';
 import AddCustomerModal from '../components/Customers/AddCustomerModal';
 import { processCustomerTransaction } from '../utils/customerTransactionProcessor';
 import { processLocalAdminOperation } from '../utils/localAdminOperations.js';
-import ConfirmModal from '../components/ConfirmModal';
+import { useConfirm } from '../hooks/confirmState';
 import EmptyState from '../components/EmptyState';
 import SwipeableItem from '../components/SwipeableItem';
 import { useProductContext } from '../context/ProductContext';
@@ -31,6 +31,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
 
     const usuarioActivo = useAuthStore(state => state.usuarioActivo);
     const isAdmin = usuarioActivo?.rol === 'DUENO';
+    const confirm = useConfirm();
 
     // Modal de Abono / Crédito
     const [transactionModal, setTransactionModal] = useState({ isOpen: false, type: null, customer: null }); // type: 'ABONO' | 'CREDITO'
@@ -38,7 +39,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [currencyMode, setCurrencyMode] = useState('BS'); // 'BS' | 'USD'
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
     const [activePaymentMethods, setActivePaymentMethods] = useState([]);
-    const [resetBalanceCustomer, setResetBalanceCustomer] = useState(null);
     const { effectiveRate: bcvRate, tasaCop, copEnabled } = useProductContext();
     const { log: auditLog } = useAudit();
     const [expandedHistory, setExpandedHistory] = useState(null);
@@ -46,10 +46,9 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     // Modales de Clientes
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [editingCustomer, setEditingCustomer] = useState(null);
-    const [deleteCustomerTarget, setDeleteCustomerTarget] = useState(null);
 
     // Guard: evita eliminar clientes con deuda o saldo a favor pendiente
-    const handleDeleteCustomerRequest = (customer) => {
+    const handleDeleteCustomerRequest = async (customer) => {
         const deuda = customer.deuda || 0;
         let saldo;
         try { saldo = customerCredit(customer); } catch (error) { showToast(error.message, 'error'); return; }
@@ -62,7 +61,21 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
             showToast(`No se puede eliminar: ${customer.name} tiene un saldo a favor de $${saldo.toFixed(2)}.`, 'error');
             return;
         }
-        setDeleteCustomerTarget(customer);
+        await deleteCustomer(customer);
+    };
+
+    const deleteCustomer = async (customer) => {
+        const ok = await confirm({
+            title: 'Eliminar cliente',
+            message: `¿Eliminar a ${customer.name}? Esta acción no se puede deshacer.`,
+            confirmText: 'Sí, eliminar',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        const updated = customers.filter(c => c.id !== customer.id);
+        await saveCustomers(updated);
+        showToast(`Cliente ${customer.name} eliminado`, 'success');
+        auditLog('CLIENTE', 'CLIENTE_ELIMINADO', `Cliente "${customer.name}" eliminado`);
     };
 
     // ── ESTADOS DE PROVEEDORES ──
@@ -76,7 +89,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
     const [editingSupplier, setEditingSupplier] = useState(null);
     const [isAddInvoiceModalOpen, setIsAddInvoiceModalOpen] = useState(false);
     const [isPayInvoiceModalOpen, setIsPayInvoiceModalOpen] = useState(false);
-    const [deleteSupplierTarget, setDeleteSupplierTarget] = useState(null);
     const [supplierHistoryData, setSupplierHistoryData] = useState([]);
 
     const loadSequence = useRef(0);
@@ -228,7 +240,13 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
 
     const handleResetBalance = async (customer) => {
         triggerHaptic();
-        setResetBalanceCustomer(customer);
+        const ok = await confirm({
+            title: 'Reiniciar saldo del cliente',
+            message: `¿Estás seguro de reiniciar la deuda y saldo a favor a $0.00 para ${customer.name}?\n\nEsta acción es permanente y no se puede deshacer.`,
+            confirmText: 'Sí, reiniciar',
+            variant: 'danger',
+        });
+        if (ok) adjustCustomer(customer, 'FORGIVE');
     };
 
     const adjustCustomer = async (customer, action) => {
@@ -239,12 +257,26 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
             storageService.assertActive(); loadSequence.current++; setCustomers(result.customers);
             setSelectedCustomer(result.customers.find(item => item.id === customer.id));
             showToast('Conciliación manual guardada con huella; no representa un cobro externo.', 'success');
-            setResetBalanceCustomer(null); triggerHaptic?.();
+            triggerHaptic?.();
         } catch (error) { showToast(error.message, 'error'); }
     };
-    const confirmResetBalance = () => adjustCustomer(resetBalanceCustomer, 'FORGIVE');
     const convertDeudaToCashea = customer => adjustCustomer(customer, 'TO_CASHEA');
     const clearCasheaDeuda = customer => adjustCustomer(customer, 'SETTLE_CASHEA');
+
+    const handleDeleteSupplierRequest = async (supplier) => {
+        if (!supplier) return;
+        const ok = await confirm({
+            title: 'Eliminar Proveedor',
+            message: `¿Eliminar a ${supplier.name}? Esta acción no se puede deshacer.`,
+            confirmText: 'Sí, eliminar',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        const updated = suppliers.filter(s => s.id !== supplier.id);
+        await saveSuppliers(updated);
+        showToast(`Proveedor ${supplier.name} eliminado`, 'success');
+        setSelectedSupplier(null);
+    };
 
     const transactionRequest = useRef({ busy: false, intent: null, id: null });
     const handleTransaction = async () => {
@@ -300,7 +332,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                         isAdmin={isAdmin}
                         onAddSupplier={() => setIsAddSupplierModalOpen(true)}
                         onSelectSupplier={handleSelectSupplier}
-                        onDeleteSupplier={(s) => setDeleteSupplierTarget(s)}
+                        onDeleteSupplier={(s) => handleDeleteSupplierRequest(s)}
                     />
                 </div>
 
@@ -342,22 +374,7 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     onAddInvoice={() => setIsAddInvoiceModalOpen(true)}
                     onPayInvoice={() => setIsPayInvoiceModalOpen(true)}
                     onEdit={() => { setEditingSupplier(selectedSupplier); setIsAddSupplierModalOpen(true); }}
-                    onDelete={() => setDeleteSupplierTarget(selectedSupplier)}
-                />
-                <ConfirmModal
-                    isOpen={!!deleteSupplierTarget}
-                    onClose={() => setDeleteSupplierTarget(null)}
-                    onConfirm={async () => {
-                        const updated = suppliers.filter(s => s.id !== deleteSupplierTarget.id);
-                        await saveSuppliers(updated);
-                        showToast(`Proveedor ${deleteSupplierTarget.name} eliminado`, 'success');
-                        setSelectedSupplier(null);
-                        setDeleteSupplierTarget(null);
-                    }}
-                    title="Eliminar Proveedor"
-                    message={deleteSupplierTarget ? `¿Eliminar a ${deleteSupplierTarget.name}? Esta acción no se puede deshacer.` : ''}
-                    confirmText="Sí, eliminar"
-                    variant="danger"
+                    onDelete={() => handleDeleteSupplierRequest(selectedSupplier)}
                 />
             </div>
         );
@@ -536,19 +553,20 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                     setEditingCustomer(selectedCustomer);
                     setSelectedCustomer(null);
                 }}
-                onDelete={() => {
-                    const deuda = selectedCustomer?.deuda || 0;
-                    const saldo = selectedCustomer?.saldoFavor || 0;
+                onDelete={async () => {
+                    const customer = selectedCustomer;
+                    const deuda = customer?.deuda || 0;
+                    const saldo = customer?.saldoFavor || 0;
                     if (deuda > 0.005) {
-                        showToast(`No se puede eliminar: ${selectedCustomer.name} tiene una deuda de $${deuda.toFixed(2)} pendiente.`, 'error');
+                        showToast(`No se puede eliminar: ${customer.name} tiene una deuda de $${deuda.toFixed(2)} pendiente.`, 'error');
                         return;
                     }
                     if (saldo > 0.005) {
-                        showToast(`No se puede eliminar: ${selectedCustomer.name} tiene un saldo a favor de $${saldo.toFixed(2)}.`, 'error');
+                        showToast(`No se puede eliminar: ${customer.name} tiene un saldo a favor de $${saldo.toFixed(2)}.`, 'error');
                         return;
                     }
-                    setDeleteCustomerTarget(selectedCustomer);
                     setSelectedCustomer(null);
+                    await deleteCustomer(customer);
                 }}
                 bcvRate={bcvRate}
                 tasaCop={tasaCop}
@@ -560,34 +578,6 @@ export default function CustomersView({ triggerHaptic, rates, isActive }) {
                 onClearCashea={() => {
                     clearCasheaDeuda(selectedCustomer);
                 }}
-            />
-
-            {/* Modal Confirmación: Reiniciar Saldo */}
-            <ConfirmModal
-                isOpen={!!resetBalanceCustomer}
-                onClose={() => setResetBalanceCustomer(null)}
-                onConfirm={confirmResetBalance}
-                title="Reiniciar saldo del cliente"
-                message={resetBalanceCustomer ? `¿Estás seguro de reiniciar la deuda y saldo a favor a $0.00 para ${resetBalanceCustomer.name}?\n\nEsta acción es permanente y no se puede deshacer.` : ''}
-                confirmText="Sí, reiniciar"
-                variant="danger"
-            />
-
-            {/* Modal Confirmación: Eliminar Cliente */}
-            <ConfirmModal
-                isOpen={!!deleteCustomerTarget}
-                onClose={() => setDeleteCustomerTarget(null)}
-                onConfirm={async () => {
-                    const updated = customers.filter(c => c.id !== deleteCustomerTarget.id);
-                    await saveCustomers(updated);
-                    showToast(`Cliente ${deleteCustomerTarget.name} eliminado`, 'success');
-                    auditLog('CLIENTE', 'CLIENTE_ELIMINADO', `Cliente "${deleteCustomerTarget.name}" eliminado`);
-                    setDeleteCustomerTarget(null);
-                }}
-                title="Eliminar cliente"
-                message={deleteCustomerTarget ? `¿Eliminar a ${deleteCustomerTarget.name}? Esta acción no se puede deshacer.` : ''}
-                confirmText="Sí, eliminar"
-                variant="danger"
             />
 
             {/* Modal Editar Cliente */}

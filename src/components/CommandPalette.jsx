@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, ChevronRight, Package, Users, FileText, X } from 'lucide-react';
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }) {
     const [query, setQuery] = useState('');
@@ -41,12 +42,13 @@ export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose, onToggle]);
 
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] px-4 backdrop-blur-sm bg-slate-900/40"
              onClick={onClose}>
-            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200"
+            <div role="dialog" aria-modal="true" aria-label="Paleta de comandos" className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200"
                  onClick={e => e.stopPropagation()}>
                 
                 <div className="flex items-center px-4 py-3 border-b border-slate-100 dark:border-slate-800">
@@ -60,7 +62,7 @@ export default function CommandPalette({ isOpen, onClose, onToggle, navigateTo }
                         onChange={(e) => setQuery(e.target.value)}
                         className="flex-1 bg-transparent border-none outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-400"
                     />
-                    <button onClick={onClose} aria-label="Cerrar paleta de comandos" className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <button onClick={onClose} aria-label="Cerrar paleta de comandos" className="modal-close text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                         <X size={20} />
                     </button>
                 </div>

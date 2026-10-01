@@ -10,7 +10,7 @@ import { useWallet } from '../hooks/useWallet';
 // para no inflar el bundle inicial.
 const loadPharmacySeed = () => import('../config/pharmacySeed.js');
 import ProductFormModal from '../components/Products/ProductFormModal';
-import ConfirmModal from '../components/ConfirmModal';
+import { useConfirm } from '../hooks/confirmState';
 import CategoryManagerModal from '../components/Products/CategoryManagerModal';
 import BulkPriceAdjustModal from '../components/Products/BulkPriceAdjustModal';
 import TransferenciasModal from '../components/Products/TransferenciasModal';
@@ -50,6 +50,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         tasaCop
     } = useProductContext();
     const isCajero = useAuthStore(s => s.usuarioActivo)?.rol === 'CAJERO';
+    const confirm = useConfirm();
 
     // ─── LOTES (F3.6): declarado antes de useProductForm que lo consume ───
     const [lotes, setLotes] = useState([]);
@@ -94,7 +95,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     const [isBulkPriceOpen, setIsBulkPriceOpen] = useState(false);
     const [isTransferenciasOpen, setIsTransferenciasOpen] = useState(false);
-    const [deleteCategoryConfirmId, setDeleteCategoryConfirmId] = useState(null);
 
     // Share State
     const [shareProduct, setShareProduct] = useState(null);
@@ -312,7 +312,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         triggerHaptic && triggerHaptic();
     };
 
-    const handleDeleteCategory = (categoryId) => {
+    const handleDeleteCategory = async (categoryId) => {
         if (categoryId === 'todos' || categoryId === 'otros') {
             showToast('No puedes eliminar una categoría del sistema', 'warning');
             return;
@@ -324,17 +324,17 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
             return;
         }
 
-        setDeleteCategoryConfirmId(categoryId);
-    };
-
-    const confirmDeleteCategory = () => {
-        const categoryId = deleteCategoryConfirmId;
-        if (!categoryId) return;
+        const ok = await confirm({
+            title: 'Eliminar categoría',
+            message: '¿Seguro que deseas borrar esta categoría? Los productos no se eliminarán, pero quedarán sin categoría asignada.',
+            confirmText: 'Sí, eliminar',
+            variant: 'warning',
+        });
+        if (!ok) return;
         const newCats = categories.filter(c => c.id !== categoryId);
         setCategories(newCats);
         if (activeCategory === categoryId) handleSetActiveCategory('todos');
         triggerHaptic && triggerHaptic();
-        setDeleteCategoryConfirmId(null);
     };
 
     // ─── RENDER ─────────────────────────────────────────────
@@ -572,16 +572,6 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
                 setNewCategoryName={setNewCategoryName}
             />
 
-            {/* Modal Confirmación: Borrar Categoría */}
-            <ConfirmModal
-                isOpen={!!deleteCategoryConfirmId}
-                onClose={() => setDeleteCategoryConfirmId(null)}
-                onConfirm={confirmDeleteCategory}
-                title="Eliminar categoría"
-                message="¿Seguro que deseas borrar esta categoría? Los productos no se eliminarán, pero quedarán sin categoría asignada."
-                confirmText="Sí, eliminar"
-                variant="warning"
-            />
         </div>
     );
 };

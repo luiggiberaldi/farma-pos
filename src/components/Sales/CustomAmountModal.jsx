@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Check } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function CustomAmountModal({
     onClose,
@@ -8,6 +9,7 @@ export default function CustomAmountModal({
     effectiveRate,
     triggerHaptic
 }) {
+    useEscapeToClose(onClose);
     const [amount, setAmount] = useState('');
     const [currency, setCurrency] = useState('BS');
     const inputRef = useRef(null);
@@ -55,7 +57,7 @@ export default function CustomAmountModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800">
+            <div role="dialog" aria-modal="true" aria-label="Monto libre" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800">
                 
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
@@ -63,7 +65,7 @@ export default function CustomAmountModal({
                         <h2 className="text-lg font-black text-slate-800 dark:text-white">Monto Libre</h2>
                         <p className="text-xs font-bold text-slate-400">Venta rápida sin inventario</p>
                     </div>
-                    <button onClick={onClose} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <button onClick={onClose} className="modal-close -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                         <X size={20} />
                     </button>
                 </div>

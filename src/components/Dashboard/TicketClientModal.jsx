@@ -1,15 +1,18 @@
 import { UserPlus, Phone, Send } from 'lucide-react';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function TicketClientModal({ ticketPendingSale, setTicketPendingSale, ticketClientName, setTicketClientName, ticketClientPhone, setTicketClientPhone, ticketClientDocument, setTicketClientDocument, onRegister }) {
     if (!ticketPendingSale) return null;
     const reset = () => { setTicketPendingSale(null); setTicketClientName(''); setTicketClientPhone(''); setTicketClientDocument(''); };
+    useEscapeToClose(reset, !!ticketPendingSale);
     return (
     <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
         onClick={reset}
     >
         <div
-            className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100"
+            role="dialog" aria-modal="true" aria-label="Registrar cliente"
+            className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800"
             onClick={(e) => e.stopPropagation()}
         >
             <div className="p-6">
@@ -18,10 +21,10 @@ export default function TicketClientModal({ ticketPendingSale, setTicketPendingS
                         <UserPlus size={28} />
                     </div>
                 </div>
-                <h3 className="text-lg font-black text-center text-slate-800 mb-1">
+                <h3 className="text-lg font-black text-center text-slate-800 dark:text-white mb-1">
                     Registrar Cliente
                 </h3>
-                <p className="text-xs text-center text-slate-500 mb-5">
+                <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-5">
                     Para enviar el ticket, registra los datos del cliente.
                 </p>
 

@@ -1,10 +1,11 @@
+import { useEffect } from 'react';
 import CheckoutModal from './CheckoutModal';
 import ReceiptModal from './ReceiptModal';
 import CustomAmountModal from './CustomAmountModal';
 import DiscountModal from './DiscountModal';
 import KeyboardHelpModal from './KeyboardHelpModal';
 import AperturaCajaModal from '../Dashboard/AperturaCajaModal';
-import ConfirmModal from '../ConfirmModal';
+import { useConfirm } from '../../hooks/confirmState';
 import Confetti from '../Confetti';
 import { buildReceiptWhatsAppUrl } from './ReceiptShareHelper';
 
@@ -24,6 +25,44 @@ export default function SalesModals(props) {
         showConfetti, setShowConfetti, showKeyboardHelp, setShowKeyboardHelp,
         isAperturaOpen, setIsAperturaOpen, handleSaveApertura,
     } = props;
+    const confirm = useConfirm();
+    // Los confirms de vaciar cesta y sobrepago usan el provider único de
+    // confirmación (auditoría de modales 2026-10-01): el estado booleano del
+    // padre dispara el diálogo promise-based una sola vez.
+    useEffect(() => {
+        if (!showClearCartConfirm) return;
+        let cancelled = false;
+        (async () => {
+            const ok = await confirm({
+                title: '¿Vaciar toda la cesta?',
+                message: 'Todos los productos serán eliminados de la cesta actual. Esta acción no se puede deshacer.',
+                confirmText: 'Sí, vaciar',
+                variant: 'cart',
+            });
+            if (cancelled) return;
+            setShowClearCartConfirm(false);
+            if (ok) { setCart([]); setDiscount({ type: 'percentage', value: 0 }); setCartSelectedIndex(-1); }
+        })();
+        return () => { cancelled = true; };
+    }, [showClearCartConfirm]);
+    useEffect(() => {
+        if (!overpayAlert) return;
+        const pending = overpayAlert;
+        let cancelled = false;
+        (async () => {
+            const ok = await confirm({
+                title: 'Revisar monto',
+                message: pending.message || '',
+                confirmText: 'Sí, continuar',
+                cancelText: 'Corregir',
+                variant: 'warning',
+            });
+            if (cancelled) return;
+            setOverpayAlert(null);
+            if (ok) handleCheckout(pending.payments, pending.changeBreakdown, pending.prescription, true);
+        })();
+        return () => { cancelled = true; };
+    }, [overpayAlert]);
     const requiresPrescription = cart.some(item => { const p = products.find(product => product.id === (item.productId || item._originalId || item.id)); return p?.requiresPrescription || p?.isControlled; });
     return (
         <>
@@ -65,33 +104,6 @@ export default function SalesModals(props) {
             triggerHaptic={triggerHaptic}
         />
     )}
-
-    {/* Clear Cart Confirm */}
-    <ConfirmModal
-        isOpen={showClearCartConfirm}
-        onClose={() => setShowClearCartConfirm(false)}
-        onConfirm={() => { setCart([]); setDiscount({ type: 'percentage', value: 0 }); setShowClearCartConfirm(false); setCartSelectedIndex(-1); }}
-        title="¿Vaciar toda la cesta?"
-        message="Todos los productos serán eliminados de la cesta actual. Esta acción no se puede deshacer."
-        confirmText="Sí, vaciar"
-        variant="cart"
-    />
-
-    {/* Overpayment sanity-check (B6: ConfirmModal en vez de window.confirm) */}
-    <ConfirmModal
-        isOpen={!!overpayAlert}
-        onClose={() => setOverpayAlert(null)}
-        onConfirm={() => {
-            const pending = overpayAlert;
-            setOverpayAlert(null);
-            if (pending) handleCheckout(pending.payments, pending.changeBreakdown, pending.prescription, true);
-        }}
-        title="Revisar monto"
-        message={overpayAlert?.message || ''}
-        confirmText="Sí, continuar"
-        cancelText="Corregir"
-        variant="warning"
-    />
 
     {/* Discount Modal */}
     {showDiscountModal && (

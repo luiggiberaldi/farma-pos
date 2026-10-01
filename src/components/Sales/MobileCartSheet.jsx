@@ -1,6 +1,7 @@
 import { ShoppingCart, X } from 'lucide-react';
 import { formatBs } from '../../utils/calculatorUtils';
 import CartPanel from './CartPanel';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function MobileCartSheet(props) {
     const {
@@ -12,6 +13,7 @@ export default function MobileCartSheet(props) {
         setShowCheckout, setShowClearCartConfirm,
         triggerHaptic, cartSelectedIndex, copEnabled, tasaCop,
     } = props;
+    useEscapeToClose(() => setIsCartSheetOpen(false), isCartSheetOpen && !showCheckout && !showReceipt);
     return (
     <div className="md:hidden">
         {/* Floating Action Button */}
@@ -40,16 +42,16 @@ export default function MobileCartSheet(props) {
         {isCartSheetOpen && !showCheckout && !showReceipt && (
             <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 pb-[max(0px,env(safe-area-inset-bottom))]"
                  onClick={() => setIsCartSheetOpen(false)}>
-                <div className="bg-slate-50 dark:bg-slate-950 w-full rounded-t-3xl shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-full duration-300"
+                <div role="dialog" aria-modal="true" aria-label="Cesta actual" className="bg-slate-50 dark:bg-slate-950 w-full rounded-t-3xl shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-full duration-300"
                      onClick={e => e.stopPropagation()}>
-                    <div className="shrink-0 flex justify-center pt-3 pb-2" onClick={() => setIsCartSheetOpen(false)}>
-                        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full cursor-pointer" />
+                    <div className="shrink-0 flex justify-center min-h-[44px] items-center cursor-pointer" onClick={() => setIsCartSheetOpen(false)}>
+                        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
                     </div>
                     <div className="shrink-0 px-4 pb-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
                         <h3 className="font-black text-slate-800 dark:text-white text-lg flex items-center gap-2">
                             <ShoppingCart size={20} className="text-emerald-500" /> Cesta Actual
                         </h3>
-                        <button onClick={() => setIsCartSheetOpen(false)} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                        <button onClick={() => setIsCartSheetOpen(false)} className="modal-close -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                             <X size={20} />
                         </button>
                     </div>

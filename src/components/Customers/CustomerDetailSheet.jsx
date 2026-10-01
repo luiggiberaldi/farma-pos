@@ -1,8 +1,10 @@
 import { X, Phone, ArrowRightLeft, CheckCircle2, CreditCard, RefreshCw, Clock, ArrowUpRight, Ban, ShoppingBag, Pencil, Trash2 } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs, formatUsd } from '../../utils/calculatorUtils';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose, onAjustar, onReset, onEdit, onDelete, bcvRate, tasaCop, copEnabled, sales, onConvertToCashea, onClearCashea }) {
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen || !customer) return null;
 
     const createdDate = customer.createdAt
@@ -12,6 +14,9 @@ export default function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose
     return (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Detalle del cliente"
                 className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom duration-300 shadow-2xl"
                 onClick={e => e.stopPropagation()}
             >
@@ -19,7 +24,7 @@ export default function CustomerDetailSheet({ customer, isOpen, isAdmin, onClose
                 <div className="flex items-center justify-between px-4 pt-3 pb-2">
                     <div className="w-8" />
                     <div className="w-8 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
-                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                    <button onClick={onClose} className="modal-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                         <X size={18} />
                     </button>
                 </div>

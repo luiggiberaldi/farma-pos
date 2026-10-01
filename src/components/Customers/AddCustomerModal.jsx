@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { User, X, Save } from 'lucide-react';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
+import { MODAL_BACKDROP } from '../../components/Modal';
 
 export default function AddCustomerModal({ onClose, onSave }) {
+    useEscapeToClose(onClose);
     const [name, setName] = useState('');
     const [documentId, setDocumentId] = useState('');
     const [phone, setPhone] = useState('');
@@ -22,13 +25,13 @@ export default function AddCustomerModal({ onClose, onSave }) {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
+        <div className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 ${MODAL_BACKDROP} animate-in fade-in duration-200`}>
+            <div role="dialog" aria-modal="true" aria-label="Nuevo cliente" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
                 <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
                     <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
                         <User size={22} className="text-blue-500" /> Nuevo Cliente
                     </h3>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                    <button onClick={onClose} className="modal-close text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                         <X size={20} />
                     </button>
                 </div>

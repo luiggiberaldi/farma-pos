@@ -3,6 +3,7 @@ import ProfessionalSelect from '../ProfessionalSelect';
 import { discountAuthorizationDetails } from '../../utils/discountAuthorization.js';
 import { X, Percent, DollarSign, Calculator, ShieldAlert, KeyRound } from 'lucide-react';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function DiscountModal({
     currentDiscount,
@@ -27,6 +28,7 @@ export default function DiscountModal({
     const [approval, setApproval] = useState(null);
     const inputRef = useRef(null);
     const pinRef = useRef(null);
+    useEscapeToClose(onClose);
 
     useEffect(() => {
         const timer = setTimeout(() => inputRef.current?.focus(), 150);
@@ -87,6 +89,9 @@ export default function DiscountModal({
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Descuento"
                 className="bg-white dark:bg-slate-900 w-full max-w-sm mx-4 sm:mx-6 md:mx-auto rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800"
                 onClick={e => e.stopPropagation()}
             >
@@ -96,13 +101,13 @@ export default function DiscountModal({
                         <Calculator size={20} className="text-blue-500" />
                         Descuento
                     </h3>
-                    <button onClick={onClose} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors active:scale-95">
+                    <button onClick={onClose} className="modal-close -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors active:scale-95">
                         <X size={18} />
                     </button>
                 </div>
 
                 {/* Body */}
-                <form onSubmit={handleSubmit} className="p-4 sm:p-5 flex flex-col gap-5">
+                <form onSubmit={handleSubmit} className="p-4 sm:p-5 flex flex-col gap-5 max-h-[85vh] overflow-y-auto">
 
                     {/* Toggle Type */}
                     <div className="flex bg-slate-100 dark:bg-slate-950 p-1.5 rounded-2xl shadow-inner">

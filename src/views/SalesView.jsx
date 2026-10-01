@@ -380,7 +380,7 @@ export default function SalesView({ rates, triggerHaptic, onNavigate, isActive }
 
 
     const [isProcessingSale, setIsProcessingSale] = useState(false);
-    // B6: la alerta de sobrepago usa ConfirmModal en vez de window.confirm.
+    // B6: la alerta de sobrepago usa el provider único useConfirm en vez de window.confirm.
     const [overpayAlert, setOverpayAlert] = useState(null);
     const checkoutInFlight = useRef(false);
     const handleCheckout = useCheckout({

@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { X, Truck, Save, Pencil, FileText, CreditCard, Clock, Phone, Trash2, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { formatUsd, formatBs } from '../../utils/calculatorUtils';
 import { round2, divR, mulR } from '../../utils/dinero';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
+import { MODAL_BACKDROP } from '../Modal';
 
 export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
+    useEscapeToClose(onClose);
     const [name, setName] = useState(editingSupplier?.name || '');
     const [documentId, setDocumentId] = useState(editingSupplier?.documentId || '');
     const [phone, setPhone] = useState(editingSupplier?.phone || '');
@@ -26,14 +29,14 @@ export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
+        <div className={`fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 ${MODAL_BACKDROP} animate-in fade-in duration-200`}>
+            <div role="dialog" aria-modal="true" aria-label="Proveedor" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
                 <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
                     <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
                         {editingSupplier ? <Pencil size={20} className="text-purple-500" /> : <Truck size={20} className="text-purple-500" />}
                         {editingSupplier ? 'Editar Proveedor' : 'Nuevo Proveedor'}
                     </h3>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                    <button onClick={onClose} className="modal-close text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                         <X size={20} />
                     </button>
                 </div>
@@ -64,6 +67,7 @@ export function AddSupplierModal({ onClose, onSave, editingSupplier = null }) {
 }
 
 export function AddInvoiceModal({ supplier, bcvRate, onClose, onSave }) {
+    useEscapeToClose(onClose);
     const [invoiceNumber, setInvoiceNumber] = useState('');
     const [amountUsd, setAmountUsd] = useState('');
     const [dueDate, setDueDate] = useState('');
@@ -88,13 +92,13 @@ export function AddInvoiceModal({ supplier, bcvRate, onClose, onSave }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${MODAL_BACKDROP} animate-in fade-in duration-200`}>
+            <div role="dialog" aria-modal="true" aria-label="Cargar factura" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
                         <FileText size={18} className="text-red-500" /> Cargar Factura
                     </h3>
-                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
+                    <button onClick={onClose} className="modal-close text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
                 </div>
                 <form onSubmit={handleSubmit} className="p-5 space-y-4">
                     <p className="text-xs text-slate-500 -mt-2 mb-2">Registrar deuda con: <strong>{supplier.name}</strong></p>
@@ -126,6 +130,7 @@ export function AddInvoiceModal({ supplier, bcvRate, onClose, onSave }) {
 }
 
 export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, activePaymentMethods = [], onClose, onSave }) {
+    useEscapeToClose(onClose);
     const [amount, setAmount] = useState('');
     const [currencyMode, setCurrencyMode] = useState('BS');
     const [paymentMethod, setPaymentMethod] = useState('efectivo_bs');
@@ -146,13 +151,13 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, active
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${MODAL_BACKDROP} animate-in fade-in duration-200`}>
+            <div role="dialog" aria-modal="true" aria-label="Cargar factura" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="p-5 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
                         <CreditCard size={18} className="text-emerald-500" /> Pagar a Proveedor
                     </h3>
-                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
+                    <button onClick={onClose} className="modal-close text-slate-400 hover:bg-slate-100 rounded-full"><X size={18} /></button>
                 </div>
                 <form onSubmit={handleSave} className="p-5 space-y-4">
                     <p className="text-xs text-slate-500 -mt-2 mb-2">Deuda total: <strong>${formatUsd(supplier.deuda)}</strong></p>
@@ -216,16 +221,17 @@ export function PayInvoiceModal({ supplier, bcvRate, tasaCop, copEnabled, active
 }
 
 export function SupplierDetailsSheet({ supplier, isOpen, isAdmin, onClose, onAddInvoice, onPayInvoice, onEdit, onDelete, bcvRate, tasaCop, copEnabled, historyData }) {
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen || !supplier) return null;
 
     return (
         <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-            <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[85vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="Detalle del proveedor" className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl max-h-[85vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
                 {/* Close + Drag Handle */}
                 <div className="flex items-center justify-between px-4 pt-3 pb-2">
                     <div className="w-8" />
                     <div className="w-8 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
-                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={18} /></button>
+                    <button onClick={onClose} className="modal-close text-slate-400 hover:bg-slate-100 transition-colors"><X size={18} /></button>
                 </div>
 
                 <div className="px-5 pb-6 space-y-5">

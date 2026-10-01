@@ -3,15 +3,17 @@ import { CheckCircle, Wallet, Send, X, Printer } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs } from '../../utils/calculatorUtils';
 import { formatOfficialRate } from '../../utils/rateResolver';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 import { printThermalTicket } from '../../utils/ticketGenerator';
 import { PrinterSerial } from '../../services/PrinterSerial';
 
 export default function ReceiptModal({ receipt, onClose, onShareWhatsApp, currentRate }) {
+    useEscapeToClose(onClose, !!receipt);
     if (!receipt) return null;
 
     return (
         <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
-            <div className="bg-white w-full sm:max-w-sm sm:rounded-[2rem] rounded-t-[2rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden relative flex flex-col h-[92dvh] sm:h-[85dvh]">
+            <div role="dialog" aria-modal="true" aria-label="Recibo de venta" className="bg-white w-full sm:max-w-sm sm:rounded-[2rem] rounded-t-[2rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden relative flex flex-col h-[92dvh] sm:h-[85dvh]">
 
                 {/* Botón X cerrar — siempre visible */}
                 <button

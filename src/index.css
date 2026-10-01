@@ -208,6 +208,18 @@ button,
   scrollbar-width: none;
 }
 
+/* ── MODAL: botón de cierre con hit-area táctil de 44px ── */
+/* El icono visual queda igual; solo crece el área clicable. */
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;  /* 44px */
+  height: 2.75rem; /* 44px */
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+
 /* ── INPUT PIN (PIN numérico oculto) ── */
 .input-pin {
   -webkit-text-security: disc;

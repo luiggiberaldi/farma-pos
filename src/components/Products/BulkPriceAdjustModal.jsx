@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, TrendingUp, TrendingDown, Percent, Check, AlertTriangle } from 'lucide-react';
 import { logEvent } from '../../services/auditService';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function BulkPriceAdjustModal({
     isOpen,
@@ -40,6 +41,7 @@ export default function BulkPriceAdjustModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [affectedProducts.length, multiplier, selectedCategory]);
 
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
 
     const handleApply = () => {
@@ -100,6 +102,9 @@ export default function BulkPriceAdjustModal({
 
             {/* Modal */}
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Ajuste masivo de precios"
                 className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200"
                 onClick={e => e.stopPropagation()}
             >

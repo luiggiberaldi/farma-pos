@@ -50,7 +50,7 @@ export default function SpotlightTour({ steps, onComplete }) {
             />
             {/* Popover */}
             <div 
-               className={`absolute z-10 bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 w-72 pointer-events-auto transition-all duration-500 ease-out ${isCenter ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : ''}`}
+               className={`absolute z-10 bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 w-72 max-w-[calc(100vw-2rem)] pointer-events-auto transition-all duration-500 ease-out ${isCenter ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : ''}`}
                style={isCenter ? {} : {
                    // Position above or below
                    top: rect.bottom + 20 > window.innerHeight - 160 ? rect.top - 160 - 20 : rect.bottom + 20,

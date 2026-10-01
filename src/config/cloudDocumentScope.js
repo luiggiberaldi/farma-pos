@@ -132,6 +132,23 @@ export function salesChunkDocIdLike({ accountId, sedeId } = {}) {
     return `${CLOUD_DOCUMENT_VERSION}:bodega_sales_%:account:${accountId}:sede:${sedeId}`;
 }
 
+/**
+ * Objetivos cloud a borrar cuando el usuario elimina el historial de ventas
+ * de una sede (auditoría de modales 2026-10-01): el monolito legacy
+ * `bodega_sales_v1` (doc_id exacto) MÁS todos los chunks diarios
+ * `bodega_sales_YYYYMMDD` (patrón LIKE). Sin el LIKE, los chunks se
+ * re-descargan en el siguiente poll y las ventas "resucitan".
+ * Función pura: solo construye los objetivos, no toca la red.
+ */
+export function salesCloudDeletionTargets({ accountId, sedeId } = {}) {
+    assertAccount(accountId);
+    if (!VALID_SEDES.has(sedeId)) throw new Error('Sede cloud inválida para documento sede-scoped.');
+    return {
+        legacyDocId: buildCloudDocumentId('bodega_sales_v1', { accountId, sedeId }),
+        chunksDocIdLike: salesChunkDocIdLike({ accountId, sedeId }),
+    };
+}
+
 export function parseCloudDocumentId(docId) {
     if (typeof docId !== 'string') return null;
     const match = docId.match(/^v2:([a-zA-Z0-9_-]{1,120}):account:([^:\s]{1,255})(?::sede:(central|norte|sur))?$/);

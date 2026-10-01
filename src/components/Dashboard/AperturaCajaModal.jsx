@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, X, Check } from 'lucide-react';
 import { BsIcon, UsdIcon } from '../CurrencyIcons';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 /**
  * AperturaCajaModal
@@ -14,6 +15,7 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
     const [bs, setBs] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
 
     const handleConfirm = async () => {
@@ -36,6 +38,9 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
             onClick={onClose}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Apertura de caja"
                 className="bg-white dark:bg-slate-900 w-full sm:max-w-sm rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-2xl animate-in slide-in-from-bottom-6 duration-250"
                 onClick={e => e.stopPropagation()}
             >
@@ -52,7 +57,7 @@ export default function AperturaCajaModal({ isOpen, onClose, onConfirm }) {
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                        className="modal-close text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                     >
                         <X size={18} />
                     </button>

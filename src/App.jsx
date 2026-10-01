@@ -580,7 +580,7 @@ export default function App() {
                 <h3 className="text-lg font-black text-slate-800 dark:text-white">Instalar App</h3>
                 <p className="text-xs text-slate-400 mt-1">Sigue estos pasos en Safari</p>
               </div>
-              <button onClick={() => { setShowIOSInstall(false); localStorage.setItem('ios_install_dismissed', '1'); }} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500">
+              <button onClick={() => { setShowIOSInstall(false); localStorage.setItem('ios_install_dismissed', '1'); }} aria-label="Cerrar" className="modal-close bg-slate-100 dark:bg-slate-800 text-slate-500">
                 <X size={18} />
               </button>
             </div>
@@ -607,13 +607,13 @@ export default function App() {
 
       {/* Admin Panel Modal */}
       {showAdminPanel && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1E293B] border border-slate-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowAdminPanel(false)}>
+          <div role="dialog" aria-modal="true" aria-label="Panel Dev" className="bg-[#1E293B] border border-slate-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <FlaskConical className="text-[#0B8D63]" /> Panel Dev
               </h2>
-              <button onClick={() => setShowAdminPanel(false)} className="text-slate-400 hover:text-white" aria-label="Cerrar">Cerrar</button>
+              <button onClick={() => setShowAdminPanel(false)} className="modal-close text-slate-400 hover:text-white hover:bg-slate-700/60" aria-label="Cerrar"><X size={18} /></button>
             </div>
 
             <button

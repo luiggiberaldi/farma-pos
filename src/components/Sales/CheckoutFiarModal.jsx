@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { formatBs } from '../../utils/calculatorUtils';
 import { mulR } from '../../utils/dinero';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function CheckoutFiarModal(props) {
     const {
@@ -9,11 +10,12 @@ export default function CheckoutFiarModal(props) {
         casheaAmountUsd, remainingUsd, remainingBs, effectiveRate,
         selectedCustomer, totalPaidUsd, handleConfirm,
     } = props;
+    useEscapeToClose(() => setConfirmFiar(false), !!confirmFiar);
     if (!confirmFiar) return null;
     return (
 
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setConfirmFiar(false)}>
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="Confirmar venta fiada" className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="flex items-center gap-4 mb-5">

@@ -9,7 +9,7 @@ import { generateTicketPDF } from '../utils/ticketGenerator';
 import { useProductContext } from '../context/ProductContext';
 import { useCart } from '../context/CartContext';
 import EmptyState from '../components/EmptyState';
-import ConfirmModal from '../components/ConfirmModal';
+import { useConfirm } from '../hooks/confirmState';
 import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
@@ -52,12 +52,12 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const [visibleCount, setVisibleCount] = useState(30);
     const [historySearch, setHistorySearch] = useState('');
     const [historyFilter, setHistoryFilter] = useState('all'); // all, completed, voided
-    const [voidSaleTarget, setVoidSaleTarget] = useState(null);
     const [recycleOffer, setRecycleOffer] = useState(null);
     const [openPaySections, setOpenPaySections] = useState({});
 
     // ── F3.10: فلتر السيدات (dueño/admin فقط) ──
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
+    const confirm = useConfirm();
     const canConsolidate = canSeeConsolidatedReports(usuarioActivo);
     const sedeActivaId = useSedeStore(s => s.sedeActivaId);
     const [sedeFilter, setSedeFilter] = useState(canConsolidate ? sedeActivaId : sedeActivaId);
@@ -66,10 +66,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
     const canVoidHere = !isMerged && effectiveSedeFilter === sedeActivaId && usuarioActivo?.rol === 'DUENO';
 
     // ── Void Sale Handler ──
-    const confirmVoidSale = async () => {
-        const sale = voidSaleTarget;
+    const handleVoidSale = async (sale) => {
         if (!sale) return;
-        setVoidSaleTarget(null);
+        const ok = await confirm({
+            title: `Anular venta #${sale.id?.substring(0, 6).toUpperCase() || ''}`,
+            message: 'Esta acción:\n- Marcará la venta como ANULADA\n- Devolverá el stock a la bodega\n- Revertirá deudas o saldos a favor\n\nEsta acción no se puede deshacer.',
+            confirmText: 'Sí, anular',
+            variant: 'danger',
+        });
+        if (!ok) return;
         if (!canVoidHere || (sale.huella?.sedeId || sale.sedeId) !== sedeActivaId) {
             showToast('Activa la sede de origen antes de anular esta venta.', 'error');
             return;
@@ -481,7 +486,7 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                                         onToggle={() => setExpandedSaleId(prev => prev === s.id ? null : s.id)}
                                         // En modo consolidado (todas las sedes) se desactiva anular:
                                         // la anulación solo toca el inventario de la sede activa.
-                                        onVoidSale={canVoidHere ? setVoidSaleTarget : null}
+                                        onVoidSale={canVoidHere ? handleVoidSale : null}
                                         onRecycleSale={setRecycleOffer}
                                     />
                                 ))}
@@ -565,16 +570,6 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
                     </div>
                 </div>
             )}
-
-            {/* Confirm Void Modal */}
-            <ConfirmModal
-                isOpen={!!voidSaleTarget}
-                onClose={() => setVoidSaleTarget(null)}
-                onConfirm={confirmVoidSale}
-                title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
-                message={'Esta accion:\n- Marcara la venta como ANULADA\n- Devolvera el stock a la bodega\n- Revertira deudas o saldos a favor\n\nEsta accion no se puede deshacer.'}
-                confirmText="Si, anular"
-            />
 
 
         </div>

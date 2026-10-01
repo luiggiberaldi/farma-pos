@@ -4,12 +4,14 @@ import { useAuthStore } from '../../hooks/store/useAuthStore.js';
 import { useSedeStore } from '../../hooks/store/useSedeStore.js';
 import { SEDES } from '../../config/sedes.js';
 import LoginPinModal from './LoginPinModal';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function BranchPinModal({ targetSedeId, onClose }) {
     const users = useAuthStore(s => s.usuarios);
     const owner = users.find(user => Number(user.id) === 1 && user.rol === 'DUENO' && user.pin);
     const ownerExists = users.some(user => Number(user.id) === 1 && user.rol === 'DUENO');
 
+    useEscapeToClose(onClose, !!targetSedeId);
     if (!targetSedeId) return null;
     if (owner) {
         return <LoginPinModal

@@ -4,7 +4,6 @@ import { showToast } from '../components/Toast';
 import { BarChart3 } from 'lucide-react';
 import SalesHistory from '../components/Dashboard/SalesHistory';
 import SalesChart from '../components/Dashboard/SalesChart';
-import ConfirmModal from '../components/ConfirmModal';
 import CierreCajaWizard from '../components/Dashboard/CierreCajaWizard';
 import { generateTicketPDF, printThermalTicket } from '../utils/ticketGenerator';
 import { generateDailyClosePDF, generateDailyCloseLetterPDF } from '../utils/dailyCloseGenerator';
@@ -83,7 +82,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
     const isLoading = isLoadingProducts || isLoadingLocal;
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
-    const [voidSaleTarget, setVoidSaleTarget] = useState(null);
     const [isCashReconOpen, setIsCashReconOpen] = useState(false);
     const closeRequest = useRef(null);
     const [isFinalizingHistoricalBatch, setIsFinalizingHistoricalBatch] = useState(false);
@@ -134,13 +132,19 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
 
     // ── Funciones de Historial Avanzado ──
     const handleVoidSale = async (sale) => {
-        setVoidSaleTarget(sale);
+        if (!sale) return;
+        const ok = await confirm({
+            title: `Anular venta #${sale.id?.substring(0, 6).toUpperCase() || ''}`,
+            message: 'Esta acción:\n• Marcará la venta como ANULADA\n• Devolverá el stock a la bodega\n• Revertirá deudas o saldos a favor\n\nEsta acción no se puede deshacer.',
+            confirmText: 'Sí, anular',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        await confirmVoidSale(sale);
     };
 
-    const confirmVoidSale = async () => {
-        const sale = voidSaleTarget;
+    const confirmVoidSale = async (sale) => {
         if (!sale) return;
-        setVoidSaleTarget(null);
 
         try {
             const isPostCierre = sale.cajaCerrada;
@@ -592,6 +596,7 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 setSales={setSales}
                 storageService={storageService}
                 salesKey={SALES_KEY}
+                sedeId={sedeActivaId}
                 remotePaused={REMOTE_OPERATIONS_PAUSED}
                 cloudPauseMessage={CLOUD_PAUSE_MESSAGE}
             />
@@ -604,17 +609,6 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                     setRecycleOffer(null);
                     if (onNavigate) onNavigate('ventas');
                 }}
-            />
-
-            {/* Modal Confirmación: Anular Venta */}
-            <ConfirmModal
-                isOpen={!!voidSaleTarget}
-                onClose={() => setVoidSaleTarget(null)}
-                onConfirm={confirmVoidSale}
-                title={`Anular venta #${voidSaleTarget?.id?.substring(0, 6).toUpperCase() || ''}`}
-                message={`Esta acción:\n• Marcará la venta como ANULADA\n• Devolverá el stock a la bodega\n• Revertirá deudas o saldos a favor\n\nEsta acción no se puede deshacer.`}
-                confirmText="Sí, anular"
-                variant="danger"
             />
 
             {/* La autorización local verifica PIN, sesión y operación en el servicio. */}

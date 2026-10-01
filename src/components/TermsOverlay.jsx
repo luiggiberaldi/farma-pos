@@ -23,8 +23,9 @@ export default function TermsOverlay({ onAccepted }) {
 
     if (hasAccepted) return null;
 
+    // Orden z: Términos (10000) > useConfirm (9999) > modales normales — el consentimiento legal siempre va encima
     return (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[10000] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col h-[85dvh] animate-in zoom-in-95 duration-500">
 
                 {/* Header */}

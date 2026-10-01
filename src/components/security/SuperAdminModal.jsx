@@ -3,6 +3,7 @@ import { ShieldAlert, X, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { supabaseCloud, isCloudConfigured } from '../../config/supabaseCloud.js';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 const PIN_LENGTH = 6;
 
@@ -148,13 +149,14 @@ export default function SuperAdminModal({ isOpen, onClose }) {
         if (step === 'identity' || grant) cancelOwnerPinReset();
         onClose();
     };
+    useEscapeToClose(handleClose, isOpen);
 
     const canSubmit = saving || newPin.length !== PIN_LENGTH || confirmPin.length !== PIN_LENGTH;
 
     return (
         <div role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60" onClick={handleClose}>
             <div className="relative max-w-sm w-full p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl" onClick={event => event.stopPropagation()}>
-                <button onClick={handleClose} aria-label="Cerrar recuperación" className="absolute top-3 right-3 p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><X size={20} /></button>
+                <button onClick={handleClose} aria-label="Cerrar recuperación" className="absolute top-3 right-3 modal-close text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><X size={20} /></button>
                 <ShieldAlert size={28} className="text-amber-600 mb-3" />
                 <h2 id="recovery-title" className="text-lg font-bold text-slate-800 dark:text-white">Recuperación de acceso</h2>
 

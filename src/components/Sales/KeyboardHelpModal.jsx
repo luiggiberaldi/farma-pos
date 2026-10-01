@@ -1,7 +1,9 @@
 import React from 'react';
 import { X, Keyboard } from 'lucide-react';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function KeyboardHelpModal({ isOpen, onClose }) {
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
 
     const shortcuts = [
@@ -17,7 +19,7 @@ export default function KeyboardHelpModal({ isOpen, onClose }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95">
+            <div role="dialog" aria-modal="true" aria-label="Atajos de teclado" className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95">
                 
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
@@ -29,7 +31,7 @@ export default function KeyboardHelpModal({ isOpen, onClose }) {
                     </h3>
                     <button 
                         onClick={onClose}
-                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                        className="modal-close hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
                     >
                         <X size={20} />
                     </button>
@@ -68,7 +70,7 @@ export default function KeyboardHelpModal({ isOpen, onClose }) {
                 <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-right">
                     <button 
                         onClick={onClose}
-                        className="px-5 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold rounded-xl transition-colors"
+                        className="px-5 py-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold rounded-xl transition-colors"
                     >
                         Entendido
                     </button>

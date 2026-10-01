@@ -6,6 +6,7 @@ import { useCheckoutPayments } from '../../hooks/useCheckoutPayments';
 import CheckoutModePills from './CheckoutModePills';
 import CheckoutCurrencySections from './CheckoutCurrencySections';
 import CheckoutCasheaSection from './CheckoutCasheaSection';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 import CheckoutCustomerPanel from './CheckoutCustomerPanel';
 import CheckoutCtaBar from './CheckoutCtaBar';
 import CheckoutFiarModal from './CheckoutFiarModal';
@@ -34,6 +35,7 @@ export default function CheckoutModal({
     currentFloatBs = 0,
     useAutoRate = false
 }) {
+    useEscapeToClose(() => { if (!isProcessingSale) onClose(); });
     const p = useCheckoutPayments({
         cartTotalUsd, cartTotalBs, effectiveRate, customers,
         selectedCustomerId, setSelectedCustomerId, paymentMethods,
@@ -42,7 +44,7 @@ export default function CheckoutModal({
     });
 
     return (
-        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
+        <div role="dialog" aria-modal="true" aria-label="Cobro" className="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
 
         {/* --- HEADER --- */}
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 gap-2">

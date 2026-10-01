@@ -1,11 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import { ConfirmContext } from './confirmState.js';
-import { AlertTriangle, LogOut, Trash2, Link2Off } from 'lucide-react';
+import { useEscapeToClose } from './useEscapeToClose';
+import { AlertTriangle, LogOut, Trash2, Link2Off, ShoppingCart } from 'lucide-react';
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 
 // ─── Modal UI ─────────────────────────────────────────────────────────────────
+// Sistema único de confirmación de la app (auditoría de modales 2026-10-01).
 const VARIANTS = {
+    danger:  { icon: Trash2,     iconBg: 'bg-red-50 dark:bg-red-900/20',     iconColor: 'text-red-500',    btn: 'bg-red-500 hover:bg-red-600 shadow-red-500/20' },
+    warning: { icon: AlertTriangle, iconBg: 'bg-amber-50 dark:bg-amber-900/20', iconColor: 'text-amber-500', btn: 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' },
+    cart:    { icon: ShoppingCart, iconBg: 'bg-slate-100 dark:bg-slate-800', iconColor: 'text-slate-500',   btn: 'bg-slate-700 hover:bg-slate-800 shadow-slate-700/20' },
     danger:  { icon: Trash2,     iconBg: 'bg-red-50 dark:bg-red-900/20',     iconColor: 'text-red-500',    btn: 'bg-red-500 hover:bg-red-600 shadow-red-500/20' },
     warning: { icon: AlertTriangle, iconBg: 'bg-amber-50 dark:bg-amber-900/20', iconColor: 'text-amber-500', btn: 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' },
     logout:  { icon: LogOut,     iconBg: 'bg-rose-50 dark:bg-rose-900/20',   iconColor: 'text-rose-500',   btn: 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20' },
@@ -13,6 +18,7 @@ const VARIANTS = {
 };
 
 function ConfirmDialog({ isOpen, title, message, confirmText, cancelText, variant, onConfirm, onCancel }) {
+    useEscapeToClose(onCancel, isOpen);
     if (!isOpen) return null;
     const v = VARIANTS[variant] || VARIANTS.danger;
     const Icon = v.icon;
@@ -23,6 +29,9 @@ function ConfirmDialog({ isOpen, title, message, confirmText, cancelText, varian
             onClick={onCancel}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={title}
                 className="bg-white dark:bg-slate-900 rounded-[1.5rem] p-6 max-w-sm w-full shadow-2xl border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200"
                 onClick={e => e.stopPropagation()}
             >

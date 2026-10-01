@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { getAuditLog, getAuditCount, clearAuditLog, exportAuditLog, getCloudAuditLog } from '../../services/auditService';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { showToast } from '../Toast';
+import { useConfirm } from '../../hooks/confirmState';
 import { jsPDF } from 'jspdf';
 import { SYSTEM_BRAND } from '../../config/branding';
 import {
     FileText, Download, Trash2, Filter, Shield, ShoppingCart,
-    Package, Users, Settings, Database, Clock, ChevronDown, AlertTriangle,
+    Package, Users, Settings, Database, Clock, ChevronDown,
     Calendar, FileDown, Hash, Cloud, Smartphone
 } from 'lucide-react';
 
@@ -187,7 +188,6 @@ export default function AuditLogViewer({ triggerHaptic }) {
     const [catFilter, setCatFilter] = useState(null);
     const [showFilters, setShowFilters] = useState(false);
     const [visibleCount, setVisibleCount] = useState(50);
-    const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [showDateExport, setShowDateExport] = useState(false);
     const [pdfFrom, setPdfFrom] = useState(getLocalISODate());
     const [pdfTo, setPdfTo] = useState(getLocalISODate());
@@ -228,11 +228,19 @@ export default function AuditLogViewer({ triggerHaptic }) {
 
     useEffect(() => { loadLog(); }, [loadLog]);
 
-    const handleClear = async () => {
+    const confirm = useConfirm();
+
+    const handleClearRequest = async () => {
+        const ok = await confirm({
+            title: 'Borrar Log',
+            message: 'Se eliminarán todos los registros de auditoría. Esta acción no se puede deshacer.',
+            confirmText: 'Sí, borrar',
+            variant: 'danger',
+        });
+        if (!ok) return;
         await clearAuditLog();
         showToast('Audit log borrado', 'success');
         triggerHaptic?.();
-        setShowClearConfirm(false);
         loadLog();
     };
 
@@ -315,7 +323,7 @@ export default function AuditLogViewer({ triggerHaptic }) {
                         <Download size={14} />
                     </button>
                     {!cloudMode && (
-                        <button onClick={() => setShowClearConfirm(true)} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" title="Borrar todo">
+                        <button onClick={handleClearRequest} className="modal-close text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" title="Borrar todo">
                             <Trash2 size={14} />
                         </button>
                     )}
@@ -438,29 +446,6 @@ export default function AuditLogViewer({ triggerHaptic }) {
                 >
                     <ChevronDown size={12} /> Cargar mas
                 </button>
-            )}
-
-            {/* Clear Confirmation */}
-            {showClearConfirm && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowClearConfirm(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                        <div className="w-14 h-14 mx-auto bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mb-4">
-                            <AlertTriangle size={28} />
-                        </div>
-                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Borrar Log</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                            Se eliminaran todos los registros de auditoria. Esta accion no se puede deshacer.
-                        </p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setShowClearConfirm(false)} className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl active:scale-95 transition-all">
-                                Cancelar
-                            </button>
-                            <button onClick={handleClear} className="flex-1 py-3 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all">
-                                Si, borrar
-                            </button>
-                        </div>
-                    </div>
-                </div>
             )}
         </div>
     );

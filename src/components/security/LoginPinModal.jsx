@@ -5,6 +5,7 @@ import { useAuthStore } from '../../hooks/store/useAuthStore.js';
 import { canUsePinlessAccess } from '../../utils/operatorSession.js';
 import { isFactoryPin } from '../../config/userProvisioning.js';
 import { captureStorageContext } from '../../config/storageScope.js';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function LoginPinModal({ isOpen, onClose, user, onSubmit, forcePin = false, purpose = 'login' }) {
     if (!isOpen || !user) return null;
@@ -77,6 +78,7 @@ function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
         useAuthStore.getState().cancelPendingAuthentication();
         onClose();
     };
+    useEscapeToClose(() => { if (onClose && !forcePin) close(); }, isOpen);
 
     return (
         <div role="dialog" aria-modal="true" aria-labelledby="pin-dialog-title" className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={close}>

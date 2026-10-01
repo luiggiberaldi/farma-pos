@@ -1,8 +1,11 @@
 import { Trash2 } from 'lucide-react';
 import { showToast } from '../Toast';
 import { supabaseCloud } from '../../config/supabaseCloud';
+import { salesCloudDeletionTargets } from '../../config/cloudDocumentScope';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
-export default function DeleteHistoryModal({ isOpen, onClose, deleteConfirmText, setDeleteConfirmText, setSales, storageService, salesKey, remotePaused, cloudPauseMessage }) {
+export default function DeleteHistoryModal({ isOpen, onClose, deleteConfirmText, setDeleteConfirmText, setSales, storageService, salesKey, sedeId, remotePaused, cloudPauseMessage }) {
+    useEscapeToClose(onClose, isOpen);
     if (!isOpen) return null;
     const handleDelete = async () => {
                         if (remotePaused) {
@@ -14,15 +17,22 @@ export default function DeleteHistoryModal({ isOpen, onClose, deleteConfirmText,
                             // 1. Borrar local
                             await storageService.removeItem(salesKey);
                             localStorage.removeItem('cierre_notified_date');
-                            // 2. Borrar de la nube para que no se restaure al recargar
+                            // 2. Borrar de la nube para que no se restaure al recargar:
+                            //    el monolito legacy `bodega_sales_v1` (doc_id exacto) MÁS
+                            //    todos los chunks diarios (LIKE). Sin el LIKE, los chunks
+                            //    se re-descargan en el siguiente poll y las ventas "resucitan".
                             try {
                                 const { data: { session } } = await supabaseCloud.auth.getSession();
-                                if (session?.user?.id) {
+                                if (session?.user?.id && sedeId) {
+                                    const { legacyDocId, chunksDocIdLike } = salesCloudDeletionTargets({ accountId: session.user.id, sedeId });
                                     await supabaseCloud.from('sync_documents').delete()
                                         .eq('user_id', session.user.id)
-                                        .eq('doc_id', salesKey);
+                                        .eq('doc_id', legacyDocId);
+                                    await supabaseCloud.from('sync_documents').delete()
+                                        .eq('user_id', session.user.id)
+                                        .like('doc_id', chunksDocIdLike);
                                 }
-                            } catch (e) { /* sin nube, ignorar */ }
+                            } catch (e) { /* sin nube o sede inválida, ignorar */ }
                             onClose();
                             showToast('Historial y reportes eliminados', 'success');
                             setTimeout(() => window.location.reload(), 800);
@@ -30,13 +40,13 @@ export default function DeleteHistoryModal({ isOpen, onClose, deleteConfirmText,
     };
     return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100">
+        <div role="dialog" aria-modal="true" aria-label="Borrar historial de ventas" className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 dark:border-slate-800">
             <div className="p-6 flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mb-4">
                     <Trash2 size={32} />
                 </div>
-                <h3 className="text-xl font-black text-slate-800 mb-2">¿Estás absolutamente seguro?</h3>
-                <p className="text-sm text-slate-500 mb-4 px-2">
+                <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2">¿Estás absolutamente seguro?</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 px-2">
                     Esta acción borrará permanentemente <strong className="text-red-500">TODO el historial de ventas y reportes estadísticos</strong>. (No afectará tu inventario de productos).
                 </p>
                 {remotePaused && (
@@ -44,21 +54,21 @@ export default function DeleteHistoryModal({ isOpen, onClose, deleteConfirmText,
                         Borrado bloqueado: se conservan el historial y las ventas pendientes durante la pausa de sincronización.
                     </p>
                 )}
-                <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-200 mb-2 mt-2">
-                    <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wide">Escribe "BORRAR" para confirmar:</p>
+                <div className="w-full bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mb-2 mt-2">
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2 uppercase tracking-wide">Escribe "BORRAR" para confirmar:</p>
                     <input
                         type="text"
                         value={deleteConfirmText}
                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                         placeholder="Ej. BORRAR"
-                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-center font-black text-red-500 uppercase tracking-widest focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all outline-none"
+                        className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-center font-black text-red-500 uppercase tracking-widest focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all outline-none"
                     />
                 </div>
             </div>
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex gap-3">
                 <button
                     onClick={onClose}
-                    className="flex-1 py-3.5 bg-white border-2 border-slate-200 text-slate-700 font-bold rounded-xl active:scale-[0.98] transition-all"
+                    className="flex-1 py-3.5 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl active:scale-[0.98] transition-all"
                 >
                     Cancelar
                 </button>

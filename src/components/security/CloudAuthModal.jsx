@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useCloudAuthLogic } from '../../hooks/useCloudAuthLogic';
 import { useConfirm } from '../../hooks/confirmState.js';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 // ─── Constantes de color del brand ──────────────────────────────────
 const C = {
@@ -49,6 +50,7 @@ export default function CloudAuthModal({
     const [showPassword, setShowPassword] = useState(false);
     const confirm = useConfirm();
 
+    useEscapeToClose(() => { if (!forceLogin) onClose(); }, (isOpen || forceLogin) && !dataConflictPending);
     if (!isOpen && !forceLogin) return null;
 
     // ── Vista: Conflicto de Datos ────────────────────────────────────
@@ -158,7 +160,7 @@ export default function CloudAuthModal({
     // ── Vista Principal: Login / Registro ───────────────────────────
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-md p-4 animate-in fade-in duration-300">
-            <div className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden relative">
+            <div role="dialog" aria-modal="true" aria-label="Acceso a la nube" className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden relative">
 
                 {/* Destellos decorativos del brand (sky/teal) */}
                 <div className="absolute top-0 right-0 -mr-12 -mt-12 w-40 h-40 rounded-full blur-3xl pointer-events-none" style={{ background: 'rgba(125,211,252,0.2)' }} />
@@ -166,7 +168,7 @@ export default function CloudAuthModal({
 
                 {/* Botón cerrar */}
                 {!forceLogin && (
-                    <button type="button" aria-label="Close" onClick={onClose} className="absolute top-4 right-4 p-2 bg-slate-50 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors z-20">
+                    <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute top-4 right-4 modal-close bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors z-20">
                         <X size={18} />
                     </button>
                 )}
@@ -199,7 +201,7 @@ export default function CloudAuthModal({
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Mail size={16} className="text-slate-400" /></div>
                                     <input
-                                        type="email" name="email" aria-label="Email" autoComplete="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
+                                        type="email" name="email" aria-label="Correo" autoComplete="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
                                         className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                         placeholder="Tu correo de cuenta"
                                     />
@@ -224,7 +226,7 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Mail size={16} className="text-slate-400" /></div>
                                         <input
-                                            type="email" name="email" aria-label="Email" autoComplete="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
+                                            type="email" name="email" aria-label="Correo" autoComplete="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)}
                                             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Correo electrónico"
                                         />
@@ -237,11 +239,11 @@ export default function CloudAuthModal({
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none"><Key size={16} className="text-slate-400" /></div>
                                         <input
-                                            type={showPassword ? 'text' : 'password'} name="password" aria-label="Password" autoComplete="current-password" value={inputPassword} onChange={e => setInputPassword(e.target.value)}
+                                            type={showPassword ? 'text' : 'password'} name="password" aria-label="Contraseña" autoComplete="current-password" value={inputPassword} onChange={e => setInputPassword(e.target.value)}
                                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 outline-none transition-all"
                                             placeholder="Contraseña"
                                         />
-                                        <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
+                                        <button type="button" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-sky-500 transition-colors">
                                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                         </button>
                                     </div>
