@@ -61,6 +61,17 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState(() => window.deferredInstallPrompt);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
 
+  // Migración única: inventario físico C&Y 2026 → norte (REEMPLAZA el catálogo de prueba).
+  // Va ANTES de useCloudSync: su efecto corre primero, y al reemplazar pone el
+  // flag skip_cloud_pull para que el pull inicial de este arranque no fusione
+  // el catálogo de prueba con el inventario real en la nube.
+  useEffect(() => {
+    if (!usuarioActivo) return;
+    import('./utils/migrateNorteInventory')
+      .then(({ migrateNorteInventory }) => migrateNorteInventory())
+      .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
+  }, [usuarioActivo]);
+
   // Inicializar Sincronización Realtime con Supabase
   useCloudSync();
 
@@ -92,14 +103,6 @@ export default function App() {
     if (!usuarioActivo) return;
     import('./utils/migrateMissingProducts')
       .then(({ migrateMissingProducts }) => migrateMissingProducts())
-      .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
-  }, [usuarioActivo]);
-
-  // Migración única: inventario físico C&Y 2026 → norte (REEMPLAZA el catálogo de prueba)
-  useEffect(() => {
-    if (!usuarioActivo) return;
-    import('./utils/migrateNorteInventory')
-      .then(({ migrateNorteInventory }) => migrateNorteInventory())
       .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
   }, [usuarioActivo]);
 

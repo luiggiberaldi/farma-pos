@@ -21,6 +21,16 @@ const localStorageMock = (() => {
     };
 })();
 global.localStorage = localStorageMock;
+const sessionStorageMock = (() => {
+    let store = {};
+    return {
+        getItem: (k) => store[k] ?? null,
+        setItem: (k, v) => { store[k] = String(v); },
+        removeItem: (k) => { delete store[k]; },
+        clear: () => { store = {}; },
+    };
+})();
+global.sessionStorage = sessionStorageMock;
 
 const mockAccountId = 'test-account-norte';
 const NORTE_KEY = `account:${mockAccountId}:sede:norte:bodega_products_v1`;
@@ -64,6 +74,7 @@ describe('migrateNorteInventory', () => {
     let records;
     beforeEach(() => {
         localStorageMock.clear();
+        sessionStorageMock.clear();
         records = new Map();
         // Catálogo de prueba preexistente en norte + datos en central/sur
         records.set(NORTE_KEY, [
@@ -98,9 +109,27 @@ describe('migrateNorteInventory', () => {
     it('es idempotente: la segunda corrida no hace nada', async () => {
         const { migrateNorteInventory, isNorteInventoryMigrated } = await loadMigration(records);
         await migrateNorteInventory();
+        sessionStorageMock.clear();
         const res2 = await migrateNorteInventory();
         assert.equal(res2.skipped, true);
         assert.equal(records.get(NORTE_KEY).length, 506);
         assert.equal(isNorteInventoryMigrated(), true);
+        assert.equal(sessionStorageMock.getItem('skip_cloud_pull'), null,
+            'al omitir la migración no debe pedirse omitir el pull');
+    });
+
+    it('pone skip_cloud_pull al reemplazar (el pull no debe fusionar el catálogo de prueba)', async () => {
+        const { migrateNorteInventory } = await loadMigration(records);
+        await migrateNorteInventory();
+        assert.equal(sessionStorageMock.getItem('skip_cloud_pull'), '1');
+    });
+
+    it('App.jsx: el efecto de migración de norte se declara antes de useCloudSync()', async () => {
+        const { readFileSync } = await import('node:fs');
+        const src = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+        const idxMig = src.indexOf('migrateNorteInventory');
+        const idxSync = src.indexOf('useCloudSync();');
+        assert.ok(idxMig !== -1 && idxSync !== -1, 'ambos deben existir en App.jsx');
+        assert.ok(idxMig < idxSync, 'la migración debe declarar su efecto antes del sync');
     });
 });

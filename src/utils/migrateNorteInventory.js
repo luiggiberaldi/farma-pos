@@ -17,6 +17,12 @@ export const NORTE_SEED_COUNT = SEED_PRODUCTS_NORTE01.length;
  * Los productos no traen costUsd porque las hojas no traen costo.
  * Los productos sin precio legible quedan en priceUsd=0 (el guardarraíl del
  * POS bloquea su venta hasta que el dueño les ponga precio).
+ *
+ * Al reemplazar, pone el flag `skip_cloud_pull` de sessionStorage: el pull
+ * inicial del sync de este arranque se omite y el catch-up push sube los 506
+ * productos tal cual a la nube. Sin esto, el pull podría fusionar el catálogo
+ * de prueba con el inventario real y los productos de prueba quedarían
+ * inmortalizados en el documento nube (el merge por ID es unión).
  */
 export async function migrateNorteInventory() {
   if (typeof localStorage !== 'undefined' && localStorage.getItem(FLAG) === '1') {
@@ -32,6 +38,9 @@ export async function migrateNorteInventory() {
   await storageService.setItem(PRODUCTS_KEY, products, context);
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(FLAG, '1');
+  }
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('skip_cloud_pull', '1');
   }
   return { replaced: true, count: products.length };
 }
