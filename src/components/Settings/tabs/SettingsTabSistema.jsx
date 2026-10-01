@@ -73,7 +73,7 @@ export default function SettingsTabSistema({
                 <div className="p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl flex gap-2.5">
                     <AlertTriangle size={18} className="text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
                     <p className="text-[10px] text-amber-800 dark:text-amber-400 leading-relaxed font-bold">
-                        PRECAUCION: Al restaurar un backup se sobrescribira por completo todo el historial de ventas, inventario, deudores y configuraciones de este dispositivo.
+                        PRECAUCION: Al restaurar un backup se fusiona con los datos de este dispositivo: las ventas, cierres y clientes que ya existen NO se borran; el respaldo solo agrega lo que falte.
                     </p>
                 </div>
 

@@ -4,6 +4,7 @@ import { captureStorageContext, assertStorageContextActive, getStorageKeyForCont
 import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { assertLocalOperationAllowed } from './localOperationGuard.js';
 import { drainSnapshotWrites } from './localSnapshotQueue.js';
+import { _mergeArraysById } from '../hooks/cloudSync/syncUtils.js';
 
 const IDB_KEYS = [
     'bodega_products_v1', 'my_categories_v1', 'bodega_sales_v1', 'bodega_customers_v1',
@@ -85,6 +86,23 @@ export function previewBranchBackup(value, context = captureStorageContext()) {
     };
 }
 
+// Un restore NUNCA borra datos del equipo: cada colección se fusiona con los
+// datos vivos (unión por ID + LWW por item con el mismo merge del cloud sync).
+// Las ventas, cierres y clientes creados después del respaldo sobreviven; el
+// respaldo aporta los registros que falten. Los correlativos avanzan al máximo
+// (un restore jamás puede reutilizar números de venta).
+export function mergeRestoreCollection(key, backupData, liveData) {
+    if (key === 'farmacia_correlativos_v1') {
+        const merged = { ...(liveData && typeof liveData === 'object' && !Array.isArray(liveData) ? liveData : {}) };
+        for (const [k, v] of Object.entries(backupData || {})) {
+            if (typeof v === 'number' && (!Number.isFinite(merged[k]) || v > merged[k])) merged[k] = v;
+        }
+        return merged;
+    }
+    const live = Array.isArray(liveData) ? liveData : [];
+    return _mergeArraysById(live, Array.isArray(backupData) ? backupData : []);
+}
+
 export async function restoreBranchBackup(value) {
     const actor = requireOwner();
     const sessionId = useAuthStore.getState().operatorSession?.sessionId;
@@ -116,15 +134,20 @@ export async function restoreBranchBackup(value) {
         ...restored.map(([key]) => ({ name: key, key, fallback: key === 'farmacia_correlativos_v1' ? {} : [] })),
         { name: 'evidence', key: `backup_restore_${crypto.randomUUID()}`, fallback: null },
     ];
-    // Every collection is replaced inside a single IndexedDB transaction: a
-    // failure leaves the previous data untouched.
-    await storageService.transaction(records, () => {
+    // Cada colección se fusiona con los datos vivos dentro de una sola
+    // transacción IndexedDB: un fallo deja los datos anteriores intactos y
+    // un restore jamás borra ventas, cierres ni clientes del equipo.
+    await storageService.transaction(records, (values) => {
         assertStorageContextActive(context);
         const current = useAuthStore.getState();
         if (current.usuarioActivo?.id !== actor.id || current.operatorSession?.sessionId !== sessionId) {
             throw new Error('La sesión cambió durante la restauración. No se modificó ningún dato.');
         }
-        return { writes: { ...Object.fromEntries(restored), evidence }, result: null };
+        const writes = {};
+        for (const [key, backupData] of restored) {
+            writes[key] = mergeRestoreCollection(key, backupData, values[key]);
+        }
+        return { writes: { ...writes, evidence }, result: null };
     }, context);
 
     // Display configuration lives in localStorage and is not transactional, so

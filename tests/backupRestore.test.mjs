@@ -25,7 +25,7 @@ async function fixture(t, { user = { id: 1, nombre: 'Dueno QA', rol: 'DUENO', se
     return { f, service };
 }
 
-test('restoring a valid backup replaces every collection in a single transaction', async t => {
+test('restoring a valid backup MERGES every collection in a single transaction (never deletes)', async t => {
     const { f, service } = await fixture(t);
     const result = await service.restoreBranchBackup(backup());
     assert.equal(f.calls.length, 1, 'the whole restore must be one transaction');
@@ -153,4 +153,47 @@ test('a restore never adopts credentials or session state from the backup', asyn
     const preview = service.previewBranchBackup(tainted);
     assert.equal(preview.configKeys, 1);
     assert.equal(JSON.stringify([...f.records.entries()]).includes('leaked'), false);
+});
+
+test('restore NO borra ventas creadas después del respaldo (merge por ID)', async t => {
+    const { f, service } = await fixture(t);
+    // El equipo vendió 2 veces DESPUÉS del respaldo (no están en el backup).
+    await f.seed('bodega_sales_v1', [
+        { id: 'sale-new-1', tipo: 'VENTA', totalUsd: 25, updatedAt: '2026-10-01T12:00:00.000Z' },
+        { id: 'sale-new-2', tipo: 'VENTA', totalUsd: 30, updatedAt: '2026-10-01T13:00:00.000Z' },
+    ]);
+    await service.restoreBranchBackup(backup());
+    const sales = await f.storage.getItem('bodega_sales_v1', []);
+    const ids = sales.map(s => s.id).sort();
+    assert.deepEqual(ids, ['sale-1', 'sale-new-1', 'sale-new-2'], 'el backup aporta sale-1; las nuevas sobreviven');
+    assert.equal(sales.reduce((a, s) => a + s.totalUsd, 0), 65);
+});
+
+test('restore NO borra cierres ni clientes; el cliente vivo gana por updatedAt', async t => {
+    const { f, service } = await fixture(t);
+    const b = backup();
+    b.data.idb['bodega_cierres_v1'] = [{ cierreId: 'cierre-old', totalUsd: 100 }];
+    b.data.idb['bodega_customers_v1'] = [{ id: 'c1', name: 'Cliente', deuda: 5, favor: 0, updatedAt: '2026-09-15T10:00:00.000Z' }];
+    await f.seed('bodega_cierres_v1', [{ cierreId: 'cierre-new', totalUsd: 200 }]);
+    await f.seed('bodega_customers_v1', [{ id: 'c1', name: 'Cliente', deuda: 50, favor: 0, updatedAt: '2026-10-01T12:00:00.000Z' }]);
+    await service.restoreBranchBackup(b);
+    const cierres = await f.storage.getItem('bodega_cierres_v1', []);
+    assert.deepEqual(cierres.map(c => c.cierreId).sort(), ['cierre-new', 'cierre-old']);
+    const customers = await f.storage.getItem('bodega_customers_v1', []);
+    assert.equal(customers.length, 1, 'sin duplicados');
+    assert.equal(customers[0].deuda, 50, 'la deuda viva (más reciente) no la pisa el backup');
+});
+
+test('restore NO reutiliza correlativos: avanzan al máximo', async t => {
+    const { f, service } = await fixture(t);
+    await f.seed('farmacia_correlativos_v1', { VENTA: 42 });
+    await service.restoreBranchBackup(backup()); // backup trae VENTA: 7
+    assert.equal((await f.storage.getItem('farmacia_correlativos_v1', null)).VENTA, 42, 'el correlativo vivo (42) no retrocede a 7');
+});
+
+test('mergeRestoreCollection: objetos no-arreglo y datos ausentes no rompen', async t => {
+    const { service } = await fixture(t);
+    assert.deepEqual(service.mergeRestoreCollection('bodega_sales_v1', [{ id: 'a' }], null), [{ id: 'a' }]);
+    assert.deepEqual(service.mergeRestoreCollection('bodega_sales_v1', [{ id: 'a' }], undefined), [{ id: 'a' }]);
+    assert.deepEqual(service.mergeRestoreCollection('farmacia_correlativos_v1', { VENTA: 7 }, null), { VENTA: 7 });
 });
