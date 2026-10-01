@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 import { captureStorageContext, getActiveSedeId, isStorageContextActive } from '../../config/storageScope.js';
 import { DEFAULT_USERS, migrateOwnerPinToFactory, normalizeUsers, CASHIER_FACTORY_PIN, isFactoryPin } from '../../config/userProvisioning.js';
-import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperatorSession, canUsePinlessAccess } from '../../utils/operatorSession.js';
+import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperatorSession, canUsePinlessAccess, setPinlessOptIn } from '../../utils/operatorSession.js';
 import { sanitizeBackup } from '../../utils/backupSafety.js';
 import { assertLocalOperationAllowed, hasPendingLocalWrites } from '../../services/localOperationGuard.js';
 import { generatePinSalt, hashPinPbkdf2, isStrongPinRecord } from '../../utils/pinCrypto.js';
@@ -127,7 +127,12 @@ export const useAuthStore = create(persist((set, get) => ({
         }
         const pinless = canUsePinlessAccess(user, context, get().requireLogin);
         if (!pinless && !user.pin) {
-            set({ lastAuthError: 'El dueño debe configurar un PIN para este cajero antes de acceder con cuenta cloud.' });
+            const sinPinRemoved = user.sinPin === true;
+            set({ lastAuthError: sinPinRemoved
+                ? (get().requireLogin
+                    ? '"Pedir PIN al iniciar" está activado: este cajero sin PIN no puede entrar hasta desactivarlo en Configuración → Usuarios.'
+                    : 'A este cajero se le quitó el PIN, pero el acceso sin PIN no está activado en este equipo. El dueño debe activarlo con el ícono de huella en Usuarios y Roles.')
+                : 'El dueño debe configurar un PIN para este cajero antes de acceder con cuenta cloud.' });
             return false;
         }
         const verified = pinless ? publicOperator(user) : await get().verifyPin(pinInput, userId);
@@ -384,6 +389,10 @@ export const useAuthStore = create(persist((set, get) => ({
         approvals.clear();
         set(state => ({ usuarios: state.usuarios.map(u => u.id === userId
             ? { ...u, pin: null, pinHashed: false, pinSalt: null, sinPin: true, factoryPin: false, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+        // El dueño quitó el PIN en este equipo: activar el acceso sin PIN aquí mismo
+        // para que "quitar PIN" funcione como se espera. El opt-in sigue siendo por
+        // equipo: otros dispositivos requieren su propia activación.
+        setPinlessOptIn(userId, context, true);
         void logEvent('AUTH', 'PIN_ELIMINADO', `PIN eliminado para ${target.nombre || 'usuario'} (acceso sin PIN)`, actor, null, context);
     },
 
@@ -402,11 +411,15 @@ export const useAuthStore = create(persist((set, get) => ({
         const strong = pinlessCashier ? { pin: null, sinPin: true } : await strongPinRecord(pin);
         if (epoch !== authEpoch || !isStorageContextActive(context)) throw new Error('La sesión cambió.');
         requireOwner(get().usuarioActivo);
+        const newUserId = Math.max(0, ...get().usuarios.map(u => Number(u.id) || 0)) + 1;
         set(state => ({ usuarios: [...state.usuarios, {
-            id: Math.max(0, ...state.usuarios.map(u => Number(u.id) || 0)) + 1,
+            id: newUserId,
             nombre: nombre.trim(), rol, ...strong, factoryPin: pinlessCashier ? false : isFactoryPin(String(pin)),
             sedeId: rol === 'CAJERO' ? sedeId : null, credentialVersion: 0,
         }] }));
+        // Cajero creado sin PIN por el dueño en este equipo: activar el acceso sin
+        // PIN aquí mismo para que pueda entrar sin un segundo paso manual.
+        if (pinlessCashier) setPinlessOptIn(newUserId, context, true);
         void logEvent('USUARIO', 'USUARIO_CREADO', `Usuario ${nombre} (${rol}) creado`, get().usuarioActivo);
     },
 
