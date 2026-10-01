@@ -23,6 +23,10 @@ import {
     RATE_DOC_KEY,
     sanitizeRatePolicy, canEditRatePolicy, describeRatePolicy, isTimestampNewer,
 } from './accountSync.js';
+import {
+    BUSINESS_DOC_KEY,
+    sanitizeBusinessDoc, mergeBusinessDocs,
+} from './accountSync.js';
 // NOTA: logEvent se resuelve por import dinámico (auditService usa imports sin
 // extensión que solo el bundler resuelve) o se inyecta como `audit` en tests.
 
@@ -95,6 +99,10 @@ export async function applyAccountDocFromCloud(cloudKey, payload, cloudUpdatedAt
     }
     if (cloudKey === RATE_DOC_KEY) {
         await applyRatePolicyFromCloud(payload, cloudUpdatedAt);
+        return;
+    }
+    if (cloudKey === BUSINESS_DOC_KEY) {
+        await applyBusinessFromCloud(payload, cloudUpdatedAt);
     }
 }
 
@@ -198,34 +206,34 @@ export async function applyRatePolicyFromCloud(payload, cloudUpdatedAt) {
 }
 
 /**
- * Chequeo two-way del fast-lane: si la nube trae algo más nuevo lo aplica;
- * si quedó un push pendiente (offline) lo reintenta. Respeta pestaña
- * visible, red y sesión activa.
+ * Chequeo two-way genérico de un documento de cuenta: si la nube trae algo
+ * más nuevo lo aplica; si quedó un push pendiente (offline) lo reintenta.
+ * Respeta pestaña visible, red y sesión activa.
  */
-export async function pollRatePolicyOnce({ getState, pull, push } = {}) {
+async function pollAccountDocOnce({ docKey, tsKey, pendingKey, localKey, apply, getState, pull, push }) {
     try {
         if (typeof document !== 'undefined' && document.hidden) return { status: 'skipped' };
         if (typeof navigator !== 'undefined' && !navigator.onLine) return { status: 'skipped' };
         if (!getState?.()?.usuarioActivo) return { status: 'skipped' };
         let remote = null;
         try {
-            remote = await pull(RATE_DOC_KEY);
+            remote = await pull(docKey);
         } catch {
             return { status: 'error' };
         }
-        const localTs = safeGet(RATE_TS_KEY) || '';
+        const localTs = safeGet(tsKey) || '';
         const remoteTs = remote?.updatedAt || remote?.payload?.updatedAt || '';
         if (remote?.payload && isTimestampNewer(remoteTs, localTs)) {
-            await applyRatePolicyFromCloud(remote.payload, remote.updatedAt);
-            return { status: 'applied' };
+            const applied = await apply(remote.payload, remote.updatedAt);
+            return { status: applied ? 'applied' : 'in-sync' };
         }
-        if (safeGet(RATE_PENDING_KEY) === '1' && localTs && !isTimestampNewer(remoteTs, localTs)) {
-            let policy = null;
-            try { policy = sanitizeRatePolicy(JSON.parse(safeGet(RATE_LOCAL_KEY))); } catch { /* snapshot corrupto */ }
-            if (policy) {
+        if (safeGet(pendingKey) === '1' && localTs && !isTimestampNewer(remoteTs, localTs)) {
+            let snap = null;
+            try { snap = JSON.parse(safeGet(localKey)); } catch { /* snapshot corrupto */ }
+            if (snap) {
                 try {
-                    await push(RATE_DOC_KEY, policy, true);
-                    try { localStorage.removeItem(RATE_PENDING_KEY); } catch { /* noop */ }
+                    await push(docKey, snap, true);
+                    try { localStorage.removeItem(pendingKey); } catch { /* noop */ }
                     return { status: 'republished' };
                 } catch {
                     return { status: 'pending' };
@@ -239,11 +247,22 @@ export async function pollRatePolicyOnce({ getState, pull, push } = {}) {
 }
 
 /**
- * Fast-lane de tasa: chequeo cada 5 min + al volver visible la pestaña +
- * uno inmediato al arrancar. Devuelve función para detener.
+ * Chequeo two-way del fast-lane para la tasa.
+ */
+export function pollRatePolicyOnce(deps = {}) {
+    return pollAccountDocOnce({
+        ...deps,
+        docKey: RATE_DOC_KEY, tsKey: RATE_TS_KEY, pendingKey: RATE_PENDING_KEY, localKey: RATE_LOCAL_KEY,
+        apply: (p, ts) => applyRatePolicyFromCloud(p, ts),
+    });
+}
+
+/**
+ * Fast-lane de documentos de cuenta: chequea tasa y negocio cada 5 min + al
+ * volver visible la pestaña + uno inmediato al arrancar. Devuelve stop.
  * Se inicia desde App.jsx junto a useCloudSync.
  */
-export function startRatePolicyFastLane({ getState, pull, push } = {}) {
+export function startAccountDocsFastLane({ getState, pull, push } = {}) {
     let timer = null;
     let inFlight = false;
     const tick = async () => {
@@ -251,6 +270,7 @@ export function startRatePolicyFastLane({ getState, pull, push } = {}) {
         inFlight = true;
         try {
             await pollRatePolicyOnce({ getState, pull, push });
+            await pollBusinessOnce({ getState, pull, push });
         } finally {
             inFlight = false;
         }
@@ -265,4 +285,105 @@ export function startRatePolicyFastLane({ getState, pull, push } = {}) {
         if (timer) clearInterval(timer);
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
     };
+}
+
+// ─── Datos del negocio (Fase D) ─────────────────────────────────────────────
+
+const BUSINESS_TS_KEY = '_business_ts';           // ISO del último cambio aplicado/publicado
+const BUSINESS_LOCAL_KEY = '_business_local';     // snapshot JSON para reintento offline
+const BUSINESS_PENDING_KEY = '_business_pending'; // '1' = hay push pendiente por reintentar
+
+const BUSINESS_LS_KEYS = {
+    name: 'business_name',
+    address: 'business_address',
+    phone: 'business_phone',
+    instagram: 'business_instagram',
+};
+
+/** Lee el doc de negocio efectivo del localStorage. */
+export function readBusinessLocal() {
+    const doc = { fieldTs: {} };
+    for (const [f, k] of Object.entries(BUSINESS_LS_KEYS)) doc[f] = safeGet(k) || '';
+    doc.cashea_enabled = safeGet('cashea_enabled') === 'true';
+    try {
+        const snap = JSON.parse(safeGet(BUSINESS_LOCAL_KEY) || 'null');
+        if (snap && typeof snap.fieldTs === 'object') doc.fieldTs = snap.fieldTs;
+    } catch { /* sin snapshot previo */ }
+    doc.updatedAt = safeGet(BUSINESS_TS_KEY) || '';
+    return sanitizeBusinessDoc(doc);
+}
+
+function writeBusinessLocal(doc) {
+    const clean = sanitizeBusinessDoc(doc);
+    if (!clean) return;
+    for (const [f, k] of Object.entries(BUSINESS_LS_KEYS)) safeSet(k, clean[f]);
+    safeSet('cashea_enabled', clean.cashea_enabled ? 'true' : 'false');
+    safeSet(BUSINESS_TS_KEY, clean.updatedAt);
+    safeSet(BUSINESS_LOCAL_KEY, JSON.stringify(clean));
+}
+
+/**
+ * Publica cambios del dueño en los datos del negocio. `changedFields` lleva
+ * solo los campos editados (el resto se conserva del estado local); cada
+ * campo publicado queda marcado con su timestamp para el merge por campo.
+ * Gate duro: solo DUENO. Push bypass inmediato; si falla queda pendiente.
+ */
+export async function publishBusinessDoc(changedFields = {}, { getState, push, audit } = {}) {
+    const me = getState?.()?.usuarioActivo;
+    if (me?.rol !== 'DUENO') return { status: 'denied' };
+    const prev = readBusinessLocal();
+    const now = new Date().toISOString();
+    const next = { ...prev, fieldTs: { ...prev.fieldTs }, updatedAt: now, updatedByName: me?.nombre || '' };
+    let touched = false;
+    for (const f of ['name', 'address', 'phone', 'instagram']) {
+        if (changedFields[f] !== undefined) {
+            next[f] = String(changedFields[f] ?? '');
+            next.fieldTs[f] = now;
+            touched = true;
+        }
+    }
+    if (changedFields.cashea_enabled !== undefined) {
+        next.cashea_enabled = changedFields.cashea_enabled === true;
+        next.fieldTs.cashea_enabled = now;
+        touched = true;
+    }
+    if (!touched) return { status: 'unchanged' };
+    const clean = sanitizeBusinessDoc(next);
+    writeBusinessLocal(clean);
+    try {
+        const auditFn = audit || (await import('../../services/auditService.js')).logEvent;
+        await auditFn('NEGOCIO', 'DATOS_NEGOCIO_ACTUALIZADOS',
+            `Datos del negocio actualizados por ${me?.nombre || 'dueño'}`);
+    } catch { /* auditoría best-effort */ }
+    try {
+        await push(BUSINESS_DOC_KEY, clean, true);
+        try { localStorage.removeItem(BUSINESS_PENDING_KEY); } catch { /* noop */ }
+    } catch {
+        safeSet(BUSINESS_PENDING_KEY, '1');
+    }
+    return { status: 'ok', doc: clean };
+}
+
+/**
+ * Aplica el doc de negocio que llegó de la nube con merge por campo
+ * (vacío entrante nunca borra local no-vacío). Devuelve true si cambió algo.
+ */
+export async function applyBusinessFromCloud(payload, cloudUpdatedAt) {
+    const incoming = sanitizeBusinessDoc(payload);
+    if (!incoming) return false;
+    if (!incoming.updatedAt && cloudUpdatedAt) incoming.updatedAt = String(cloudUpdatedAt);
+    const local = readBusinessLocal();
+    const { doc, changed } = mergeBusinessDocs(local, incoming);
+    if (!changed) return false;
+    writeBusinessLocal(doc);
+    return true;
+}
+
+/** Chequeo two-way del fast-lane para los datos del negocio. */
+export function pollBusinessOnce(deps = {}) {
+    return pollAccountDocOnce({
+        ...deps,
+        docKey: BUSINESS_DOC_KEY, tsKey: BUSINESS_TS_KEY, pendingKey: BUSINESS_PENDING_KEY, localKey: BUSINESS_LOCAL_KEY,
+        apply: (p, ts) => applyBusinessFromCloud(p, ts),
+    });
 }

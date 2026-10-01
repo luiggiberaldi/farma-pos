@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     publishRatePolicy, applyRatePolicyFromCloud, pollRatePolicyOnce,
-    readRatePolicyLocal, startRatePolicyFastLane,
+    readRatePolicyLocal, startAccountDocsFastLane,
 } from '../src/hooks/cloudSync/accountDocs.js';
 import { RATE_DOC_KEY } from '../src/hooks/cloudSync/accountSync.js';
 
@@ -213,10 +213,10 @@ test('pollRatePolicyOnce in-sync no toca nada', async () => {
 
 // ─── startRatePolicyFastLane ─────────────────────────────────────────────────
 
-test('startRatePolicyFastLane hace tick inmediato y se detiene', async () => {
+test('startAccountDocsFastLane hace tick inmediato y se detiene', async () => {
     resetEnv();
     let pulls = 0;
-    const stop = startRatePolicyFastLane(deps({ pull: async () => { pulls++; return null; } }));
+    const stop = startAccountDocsFastLane(deps({ pull: async () => { pulls++; return null; } }));
     await new Promise(r => setTimeout(r, 50));
     assert.ok(pulls >= 1, 'tick inmediato al arrancar');
     stop();

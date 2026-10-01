@@ -303,8 +303,14 @@ export function describeRatePolicy(p) {
 
 // ─── Datos del negocio ──────────────────────────────────────────────────────
 
+const BUSINESS_TEXT_FIELDS = ['name', 'address', 'phone', 'instagram'];
+
 export function sanitizeBusinessDoc(b) {
     if (!b || typeof b !== 'object') return null;
+    const fieldTs = {};
+    const rawTs = b.fieldTs && typeof b.fieldTs === 'object' ? b.fieldTs : {};
+    for (const f of BUSINESS_TEXT_FIELDS) fieldTs[f] = String(rawTs[f] || '');
+    fieldTs.cashea_enabled = String(rawTs.cashea_enabled || '');
     return {
         name: String(b.name ?? ''),
         address: String(b.address ?? ''),
@@ -313,5 +319,52 @@ export function sanitizeBusinessDoc(b) {
         cashea_enabled: b.cashea_enabled === true,
         updatedAt: String(b.updatedAt || ''),
         updatedByName: String(b.updatedByName || ''),
+        fieldTs,
     };
+}
+
+/**
+ * Fusiona el doc de negocio local con el que llegó de la nube, campo por
+ * campo (los equipos editan campos distintos en momentos distintos):
+ * - Texto: "vacío entrante nunca borra local no-vacío". Si ambos tienen
+ *   valor, gana el timestamp de campo más nuevo; sin timestamps, el
+ *   entrante no-vacío se adopta (fallback para docs legados).
+ * - cashea_enabled (booleano): gana el timestamp de campo más nuevo; sin
+ *   timestamps, se adopta el entrante si difiere.
+ * Devuelve { doc, changed }.
+ */
+export function mergeBusinessDocs(local, cloud) {
+    const l = sanitizeBusinessDoc(local) || sanitizeBusinessDoc({});
+    const c = sanitizeBusinessDoc(cloud);
+    if (!c) return { doc: l, changed: false };
+    const out = { ...l, fieldTs: { ...l.fieldTs } };
+    let changed = false;
+    for (const f of BUSINESS_TEXT_FIELDS) {
+        const incoming = c[f] ?? '';
+        const current = l[f] ?? '';
+        if (incoming === '' && current !== '') continue; // vacío nunca borra
+        if (incoming === current) continue;
+        const tsC = c.fieldTs?.[f] || '';
+        const tsL = l.fieldTs?.[f] || '';
+        if (tsC && tsL ? tsC > tsL : (tsC || (!tsL && incoming !== ''))) {
+            out[f] = incoming;
+            if (tsC) out.fieldTs[f] = tsC;
+            changed = true;
+        }
+    }
+    if (c.cashea_enabled !== l.cashea_enabled) {
+        const tsC = c.fieldTs?.cashea_enabled || '';
+        const tsL = l.fieldTs?.cashea_enabled || '';
+        if (tsC && tsL ? tsC > tsL : (tsC || !tsL)) {
+            out.cashea_enabled = c.cashea_enabled;
+            if (tsC) out.fieldTs.cashea_enabled = tsC;
+            changed = true;
+        }
+    }
+    if (c.updatedAt && (!l.updatedAt || c.updatedAt > l.updatedAt)) {
+        out.updatedAt = c.updatedAt;
+        out.updatedByName = c.updatedByName || l.updatedByName;
+        changed = true;
+    }
+    return { doc: out, changed };
 }

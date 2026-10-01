@@ -22,6 +22,8 @@ import { collectBranchBackup, validateBranchBackup, restoreBranchBackup, preview
 import { useProductContext } from '../context/ProductContext';
 import { useAuthStore } from '../hooks/store/useAuthStore';
 import { useAudit } from '../hooks/useAudit';
+import { publishBusinessDoc } from '../hooks/cloudSync/accountDocs.js';
+import { pushCloudSync } from '../hooks/useCloudSync.js';
 import { useConfirm } from '../hooks/confirmState.js';
 import { APP_STORAGE_DB_NAME } from '../config/storageScope';
 import SettingsTabNegocio from '../components/Settings/tabs/SettingsTabNegocio';
@@ -94,6 +96,11 @@ export default function SettingsView({ onClose, theme, toggleTheme, triggerHapti
         localStorage.setItem('business_rif', businessRif);
         localStorage.setItem('printer_paper_width', paperWidth);
         localStorage.setItem('allow_negative_stock', allowNegativeStock.toString());
+        // Sincroniza el nombre del negocio a nivel de cuenta (best-effort).
+        void publishBusinessDoc({ name: businessName }, {
+            getState: useAuthStore.getState,
+            push: pushCloudSync,
+        });
         showToast('Datos guardados correctamente', 'success');
         triggerHaptic?.('light');
     };

@@ -3,6 +3,9 @@ import { Package, CreditCard, ShieldAlert, EyeOff, Percent, ShieldOff, RotateCcw
 import { SectionCard, Toggle } from '../../SettingsShared';
 import PaymentMethodsManager from '../PaymentMethodsManager';
 import CasheaIcon from '../../CasheaIcon';
+import { useAuthStore } from '../../../hooks/store/useAuthStore';
+import { publishBusinessDoc } from '../../../hooks/cloudSync/accountDocs.js';
+import { pushCloudSync } from '../../../hooks/useCloudSync.js';
 
 export default function SettingsTabVentas({
     allowNegativeStock, setAllowNegativeStock,
@@ -75,6 +78,11 @@ export default function SettingsTabVentas({
                             const newVal = !casheaEnabled;
                             setCasheaEnabled(newVal);
                             localStorage.setItem('cashea_enabled', newVal.toString());
+                            // Sincroniza el toggle a nivel de cuenta (best-effort).
+                            void publishBusinessDoc({ cashea_enabled: newVal }, {
+                                getState: useAuthStore.getState,
+                                push: pushCloudSync,
+                            });
                             showToast(newVal ? 'Módulo Cashea activado' : 'Módulo Cashea desactivado', 'success');
                             triggerHaptic?.();
                         }}

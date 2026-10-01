@@ -231,7 +231,8 @@ test('describeRatePolicy describe para auditoría', () => {
 
 test('sanitizeBusinessDoc limpia y normaliza', () => {
     const b = sanitizeBusinessDoc({ name: 'C&Y', address: 'Av 1', phone: '0212', instagram: '@cy', cashea_enabled: 1, updatedAt: 't', junk: true });
-    assert.deepEqual(b, { name: 'C&Y', address: 'Av 1', phone: '0212', instagram: '@cy', cashea_enabled: false, updatedAt: 't', updatedByName: '' });
+    assert.deepEqual(b, { name: 'C&Y', address: 'Av 1', phone: '0212', instagram: '@cy', cashea_enabled: false, updatedAt: 't', updatedByName: '',
+        fieldTs: { name: '', address: '', phone: '', instagram: '', cashea_enabled: '' } });
     assert.equal(sanitizeBusinessDoc('x'), null);
 });
 
