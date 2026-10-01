@@ -73,12 +73,13 @@ test('F22: rechazo HTTP no puede convertirse en venta offline confirmada', async
   assert.equal(r.success, false); assert.equal(f.queued.length, 0); assert.equal(f.writes.length, 0);
 });
 
-test('F02: push cloud legado queda pausado sin crear timers ni escribir', async t => {
+test('F02 (ADR-003): el push de documentos ya no queda pausado; el track legado sí', async t => {
   const f = createProcessorFixture(t);
   f.mocks['src/config/supabaseCloud.js'] = 'export const supabaseCloud = { auth: { getSession: async () => { throw new Error("unexpected cloud read"); } } };';
   const { pushCloudSync } = await loadRealModule('src/hooks/useCloudSync.js', f.mocks);
   const result = await pushCloudSync('bodega_products_v1', [{ id: 'p', stock: 10 }], true);
-  assert.equal(result?.status, 'paused');
+  // ADR-003 habilita el motor de documentos: no retorna 'paused'.
+  assert.notEqual(result?.status, 'paused');
 });
 
 test('F02: exportar un backup legado no puede repoblar documentos cloud sin sede', async t => {

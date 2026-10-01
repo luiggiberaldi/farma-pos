@@ -5,7 +5,7 @@ import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId, captureStorageContext, getActiveSedeId } from '../config/storageScope';
 import { buildCloudDocumentId, parseCloudDocumentId, isCloudDocumentForContext } from '../config/cloudDocumentScope.js';
 import { recordSyncMetric } from '../utils/syncMetrics';
-import { REMOTE_OPERATIONS_PAUSED, pausedCloudOperation } from '../config/operationSafety.js';
+import { syncV2Paused, pausedCloudOperation } from '../config/operationSafety.js';
 import { sanitizeBackup } from '../utils/backupSafety.js';
 import { SUPABASE_FREE_PROFILE, inspectSyncPayload, fingerprintSyncPayload } from '../config/supabaseFreeTier.js';
 import { _trimSalesForSync } from './cloudSync/syncUtils.js';
@@ -43,7 +43,7 @@ const _pendingPushValues = {}; // último valor pendiente por llave, para flush 
  */
 export const pushCloudSync = async (key, value, bypassDebounce = false, storageContext = captureStorageContext()) => {
     const context = Object.freeze({ ...storageContext });
-    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
+    if (syncV2Paused()) return pausedCloudOperation();
     // Salir antes de cualquier trabajo de debounce/serialización para claves no sincronizables.
     if (!SYNC_KEYS.includes(key)) return;
     if (isSyncingFromCloud) return;          // Nunca re-emitir lo que llegó de la nube
@@ -140,7 +140,7 @@ export const pushCloudSync = async (key, value, bypassDebounce = false, storageC
  * el catch-up push del próximo arranque y la cola offline de ventas cubren el hueco.
  */
 export const flushPendingPushes = () => {
-    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
+    if (syncV2Paused()) return pausedCloudOperation();
     for (const key of Object.keys(_pushDebounceTimers)) {
         clearTimeout(_pushDebounceTimers[key]);
         delete _pushDebounceTimers[key];
@@ -157,7 +157,7 @@ export const flushPendingPushes = () => {
  * para evitar sobreescribir cambios locales con datos desactualizados de la nube.
  */
 async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
-    if (REMOTE_OPERATIONS_PAUSED) return pausedCloudOperation();
+    if (syncV2Paused()) return pausedCloudOperation();
     // Llaves legadas subidas por versiones viejas de la app: ignorar para no
     // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
     if (PULL_IGNORE_KEYS.includes(docId)) return;
@@ -171,14 +171,12 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     }
     docId = parsedDoc.key;
 
-    // El inventario de la cuenta activa es autoritativo: no se mezcla ni se
-    // bloquea por timestamps locales heredados de otro sistema.
-    const isInventory = docId === 'bodega_products_v1' && collection === 'store';
-    // Para llaves mergeables (excepto inventario), se conserva el merge por ID.
+    // ADR-003: todas las llaves mergeables (incluido el inventario) se mezclan
+    // por ID con LWW por updatedAt. Ya no hay reemplazo autoritativo.
     const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
 
-    // Protección contra sobreescritura para llaves NO mergeables/no inventario.
-    if (!isMergeable && !isInventory && cloudUpdatedAt) {
+    // Protección contra sobreescritura para llaves NO mergeables.
+    if (!isMergeable && cloudUpdatedAt) {
         try {
             const localTs = localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
             if (localTs && localTs > cloudUpdatedAt) {
@@ -276,7 +274,7 @@ export function useCloudSync() {
     // El sincronizador debe reaccionar al cambio real de sesión, aunque el
     // auth-storage local todavía no tenga adminEmail.
     useEffect(() => {
-        if (REMOTE_OPERATIONS_PAUSED) return;
+        if (syncV2Paused()) return;
         const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event) => {
             if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
                 setAuthEpoch(value => value + 1);
@@ -292,7 +290,7 @@ export function useCloudSync() {
     useEffect(() => {
         // Esta ejecución del efecto es la autoridad actual: cualquier initSync
         // de una ejecución anterior (todavía en vuelo tras un await) se aborta.
-        if (REMOTE_OPERATIONS_PAUSED) return;
+        if (syncV2Paused()) return;
         const myGen = ++syncGeneration;
         const isCurrent = () => syncGeneration === myGen;
 
@@ -429,9 +427,9 @@ export function useCloudSync() {
                             // No subir arrays vacíos si la nube ya tiene datos para esta llave.
                             // Esto previene que un dispositivo nuevo borre el inventario de la nube.
                             if (val != null) {
-                                // El inventario ya fue hidratado desde la nube; no volver a
-                                // subir el arreglo local ni mezclarlo con otra fuente.
-                                if (key === 'bodega_products_v1' && cloudDocIds.has(key)) continue;
+                                // ADR-003: el inventario SÍ se sube tras el merge inicial para
+                                // que el stock vivo del equipo llegue a la nube (el merge por ID
+                                // con LWW ya resolvió los conflictos en el pull).
                                 if (Array.isArray(val) && val.length === 0 && cloudDocIds.has(key)) {
                                     console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
                                     continue;

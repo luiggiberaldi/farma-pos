@@ -95,7 +95,11 @@ export const POLLING_ONLY_KEYS = SUPABASE_FREE_PROFILE.realtimeEnabled
 // se hace merge por ID: se combinan items locales + nube, y si ambos tienen
 // el mismo ID, gana el que tenga updatedAt/createdAt más reciente.
 export const MERGEABLE_KEYS = [
-    // El inventario no se mezcla: la cuenta/nube activa es la fuente de verdad.
+    // ADR-003: el inventario también se mezcla por ID (antes la nube lo
+    // reemplazaba). El merge por ID con LWW por updatedAt preserva el stock
+    // vivo de cada equipo; la semilla canónica 1539 no trae updatedAt para
+    // no pisar ventas reales.
+    'bodega_products_v1',
     'bodega_customers_v1',
     'bodega_sales_v1',
     'bodega_cierres_v1',

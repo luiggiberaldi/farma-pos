@@ -8,3 +8,14 @@ export const CLOUD_PAUSE_MESSAGE = 'Sincronización operativa pausada por seguri
 export function pausedCloudOperation() {
   return { status: 'paused', code: 'REMOTE_OPERATIONS_PAUSED', message: CLOUD_PAUSE_MESSAGE };
 }
+
+// ADR-003 (2026-09-30): sincronización bidireccional multi-equipo por documentos
+// (public.sync_documents). Es un contrato NUEVO e independiente del track legado:
+// el checkout sigue 100% local-first y REMOTE_OPERATIONS_PAUSED sigue en true
+// para los RPCs operacionales (pharmacy_commit_*), la cola offline y el checkout
+// remoto. Este flag solo habilita el motor de documentos de useCloudSync.
+export const SYNC_V2_ENABLED = true;
+
+export function syncV2Paused() {
+  return !SYNC_V2_ENABLED;
+}

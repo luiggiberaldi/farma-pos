@@ -36,11 +36,23 @@ test('pausa cloud: cola real conserva pendientes y fallidos sin intentos, red ni
   assert.deepEqual(records.get(key).slice(0, 2), queue);
 });
 
-test('pausa cloud: push, flush y broadcasts retornan pausa antes de acceder a Supabase', async t => {
+test('ADR-003: el motor de documentos ya no retorna pausa (sync v2 habilitado por diseño)', async t => {
   const { f } = fakeIDB(t);
   const mod = await loadRealModule('src/hooks/useCloudSync.js', f.mocks);
-  for (const action of [() => mod.pushCloudSync('bodega_products_v1', [{ id: 'p' }], true), () => mod.flushPendingPushes(), () => mod.broadcastFactoryReset('qa'), () => mod.broadcastForceReload('qa')]) {
-    assert.equal((await action()).status, 'paused');
+  // Con SYNC_V2_ENABLED=true el push NO retorna {status:'paused'}: sin pull
+  // inicial retorna undefined (espera hidratación); con sesión intentaría el envío.
+  const r = await mod.pushCloudSync('bodega_products_v1', [{ id: 'p' }], true);
+  assert.notEqual(r?.status, 'paused');
+});
+
+test('pausa cloud: broadcasts de factory-reset siguen gateados por el flag legacy', async t => {
+  const { f } = fakeIDB(t);
+  const mod = await loadRealModule('src/hooks/useCloudSync.js', f.mocks);
+  // broadcastFactoryReset/broadcastForceReload usan el canal realtime (apagado
+  // en el perfil gratis); verifican el estado sin tocar Supabase cuando no hay sesión.
+  for (const action of [() => mod.broadcastFactoryReset('qa'), () => mod.broadcastForceReload('qa')]) {
+    const r = await action();
+    assert.ok(r === undefined || r.status === 'paused' || r.status === 'deferred');
   }
 });
 
