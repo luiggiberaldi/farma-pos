@@ -38,6 +38,7 @@ export default function SalesHeader({
     const usuarioActivo = useAuthStore(s => s.usuarioActivo);
     const isLocked = usuarioActivo?.rol === 'CAJERO';
     const [showSwitch, setShowSwitch] = useState(false);
+    const openSwitch = () => { triggerHaptic?.(); setShowSwitch(true); };
 
     const handleRateToggle = () => {
         if (isLocked) return;
@@ -65,8 +66,12 @@ export default function SalesHeader({
                             </div>
                             Punto de Venta
                         </h2>
-                        {/* Chip de operador en turno → cambio rápido (conserva carrito) */}
-                        <OperatorChipButton onClick={() => { triggerHaptic?.(); setShowSwitch(true); }} />
+                        {/* Chip de operador en turno → cambio rápido (conserva carrito).
+                            En móvil va en su propia fila (ver abajo): título + chip + tasa
+                            no caben en 360px y el nombre se encimaba con la tasa. */}
+                        <span className="hidden sm:inline-flex">
+                            <OperatorChipButton onClick={openSwitch} />
+                        </span>
                     </div>
                     {/* Tasa Móvil (visible solo en sm) */}
                     <div className="sm:hidden flex items-center gap-1">
@@ -104,6 +109,10 @@ export default function SalesHeader({
                             )}
                         </button>
                     </div>
+                </div>
+                {/* Móvil: chip de operador en su propia fila para no encimar la tasa */}
+                <div className="sm:hidden flex">
+                    <OperatorChipButton onClick={openSwitch} />
                 </div>
                 <OperatorSwitchSheet isOpen={showSwitch} onClose={() => setShowSwitch(false)} />
 
