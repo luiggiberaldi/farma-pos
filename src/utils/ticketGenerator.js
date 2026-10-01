@@ -5,7 +5,11 @@ import { getActiveSedeId } from '../config/storageScope';
 
 /**
  * Genera el HTML del ticket térmico (fuente única de verdad para print y PDF).
+ * Exportado para pruebas (recibo largo sintético).
  */
+export function buildThermalHTML(sale, bcvRate, forCapture = false) {
+    return _buildThermalHTML(sale, bcvRate, forCapture);
+}
 function _buildThermalHTML(sale, bcvRate, forCapture = false) {
     const printerMode = localStorage.getItem('printer_mode') || 'thermal';
     const isCarta = printerMode === 'inkjet_carta';
@@ -242,6 +246,33 @@ function _buildThermalHTML(sale, bcvRate, forCapture = false) {
 }
 
 /**
+ * Paginación del canvas del ticket para el PDF.
+ * Un recibo largo (150+ items ≈ 14000px de canvas a scale 2) roza el límite
+ * de los canvas del navegador y produce una única página PDF de ~2 metros,
+ * inmanejable para visores e impresoras. Esta función pura calcula los
+ * recortes por página: cobertura total sin huecos ni solapes.
+ * Devuelve [{ page, y, h, w, heightMm }].
+ */
+export const THERMAL_PDF_MAX_PAGE_MM = 290;
+export function paginateThermalCanvas(canvasW, canvasH, pdfW, maxPageMm = THERMAL_PDF_MAX_PAGE_MM) {
+    const totalMm = (canvasH / canvasW) * pdfW;
+    if (!(canvasW > 0) || !(canvasH > 0) || !(totalMm > 0)) return [];
+    if (totalMm <= maxPageMm) {
+        return [{ page: 0, y: 0, h: canvasH, w: canvasW, heightMm: totalMm }];
+    }
+    const pages = [];
+    const pxPerMm = canvasH / totalMm;
+    let y = 0;
+    let page = 0;
+    while (y < canvasH) {
+        const h = Math.min(canvasH - y, Math.max(1, Math.round(maxPageMm * pxPerMm)));
+        pages.push({ page: page++, y, h, w: canvasW, heightMm: (h / canvasH) * totalMm });
+        y += h;
+    }
+    return pages;
+}
+
+/**
  * Genera un PDF del ticket usando el mismo HTML del ticket térmico.
  * El resultado visual es idéntico al ticket que se imprime en el momento de la venta.
  */
@@ -274,22 +305,33 @@ export async function generateTicketPDF(sale, bcvRate) {
 
         document.body.removeChild(iframe);
 
-        const imgData = canvas.toDataURL('image/png');
-
-        let pdfW, heightMm;
+        let pdfW;
         if (isCarta) {
-            // Letter size: 216 x 279 mm
+            // Letter size: 216 x 279 mm (la paginación lo recorta si excede)
             pdfW = 216;
-            heightMm = 279;
         } else {
-            const paperMm = parseFloat(localStorage.getItem('printer_paper_width') || '58');
-            pdfW = paperMm;
-            heightMm = canvas.height / canvas.width * pdfW;
+            pdfW = parseFloat(localStorage.getItem('printer_paper_width') || '58');
         }
 
+        const pages = paginateThermalCanvas(canvas.width, canvas.height, pdfW);
+        if (pages.length === 0) throw new Error('Canvas del ticket vacío');
+
         const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF({ unit: 'mm', format: [pdfW, heightMm], orientation: 'portrait' });
-        doc.addImage(imgData, 'PNG', 0, 0, pdfW, heightMm);
+        let doc = null;
+        for (const p of pages) {
+            // Recorte de la página desde el canvas completo.
+            const slice = document.createElement('canvas');
+            slice.width = p.w;
+            slice.height = p.h;
+            slice.getContext('2d').drawImage(canvas, 0, p.y, p.w, p.h, 0, 0, p.w, p.h);
+            const imgData = slice.toDataURL('image/png');
+            if (!doc) {
+                doc = new jsPDF({ unit: 'mm', format: [pdfW, p.heightMm], orientation: 'portrait' });
+            } else {
+                doc.addPage([pdfW, p.heightMm], 'portrait');
+            }
+            doc.addImage(imgData, 'PNG', 0, 0, pdfW, p.heightMm);
+        }
 
         const blob = doc.output('blob');
         const file = new File([blob], filename, { type: 'application/pdf' });
