@@ -31,7 +31,8 @@ import CloudAuthModal from './components/security/CloudAuthModal';
 import { useAuthStore } from './hooks/store/useAuthStore';
 import { useAutoLock } from './hooks/useAutoLock';
 import { purgeOldEntries, syncAuditToCloud } from './services/auditService';
-import { useCloudSync } from './hooks/useCloudSync';
+import { useCloudSync, fetchAccountDoc, pushCloudSync } from './hooks/useCloudSync';
+import { startRatePolicyFastLane } from './hooks/cloudSync/accountDocs';
 import { supabaseCloud, isCloudConfigured as envCloudConfigured } from './config/supabaseCloud';
 import { useConfirm } from './hooks/confirmState.js';
 import { getActiveAccountId, setActiveAccountId, ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY } from './config/storageScope';
@@ -62,6 +63,17 @@ export default function App() {
 
   // Inicializar Sincronización Realtime con Supabase
   useCloudSync();
+
+  // Fast-lane de tasa: propaga cambios de la política entre equipos cada 5 min
+  // (el polling general es de 60 min). Se detiene al desmontar.
+  useEffect(() => {
+    const stop = startRatePolicyFastLane({
+      getState: useAuthStore.getState,
+      pull: fetchAccountDoc,
+      push: pushCloudSync,
+    });
+    return () => stop();
+  }, []);
 
   useEffect(() => {
     syncSedeWithUser();

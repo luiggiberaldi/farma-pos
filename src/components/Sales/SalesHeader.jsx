@@ -4,6 +4,8 @@ import Tooltip from '../Tooltip';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
 import { formatOfficialRate } from '../../utils/rateResolver';
 import { OperatorSwitchSheet, OperatorChipButton } from '../security/OperatorPickerSheet.jsx';
+import { publishRatePolicy } from '../../hooks/cloudSync/accountDocs.js';
+import { pushCloudSync } from '../../hooks/useCloudSync.js';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const formatRate = formatOfficialRate;
@@ -39,6 +41,15 @@ export default function SalesHeader({
     const isLocked = usuarioActivo?.rol === 'CAJERO';
     const [showSwitch, setShowSwitch] = useState(false);
     const openSwitch = () => { triggerHaptic?.(); setShowSwitch(true); };
+
+    // Publica el cambio de tasa a la nube (solo dueño; publishRatePolicy tiene
+    // gate duro). Best-effort: no bloquea la UI.
+    const publishRate = (mode, manual) => {
+        void publishRatePolicy({ mode, manualRate: manual }, {
+            getState: useAuthStore.getState,
+            push: pushCloudSync,
+        });
+    };
 
     const handleRateToggle = () => {
         if (isLocked) return;
@@ -187,7 +198,7 @@ export default function SalesHeader({
                         {/* Botón Dólar BCV */}
                         <button
                             type="button"
-                            onClick={() => { triggerHaptic && triggerHaptic(); setRateMode('bcv'); }}
+                            onClick={() => { triggerHaptic && triggerHaptic(); setRateMode('bcv'); publishRate('bcv'); }}
                             className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-center select-none ${
                                 rateMode === 'bcv'
                                     ? 'bg-emerald-50 border-emerald-400 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-400 ring-2 ring-emerald-500/10'
@@ -204,7 +215,7 @@ export default function SalesHeader({
                         {/* Botón Euro BCV */}
                         <button
                             type="button"
-                            onClick={() => { triggerHaptic && triggerHaptic(); setRateMode('euro'); }}
+                            onClick={() => { triggerHaptic && triggerHaptic(); setRateMode('euro'); publishRate('euro'); }}
                             className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-center select-none ${
                                 rateMode === 'euro'
                                     ? 'bg-blue-50 border-blue-400 text-blue-700 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-400 ring-2 ring-blue-500/10'
@@ -249,7 +260,7 @@ export default function SalesHeader({
                         </div>
                     )}
                     <button
-                        onClick={() => { triggerHaptic && triggerHaptic(); setShowRateConfig(false); }}
+                        onClick={() => { triggerHaptic && triggerHaptic(); setShowRateConfig(false); publishRate(rateMode, customRate); }}
                         className="w-full min-h-[44px] py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-sm shadow-emerald-500/20 active:scale-95 transition-all"
                     >
                         Aceptar

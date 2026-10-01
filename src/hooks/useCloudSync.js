@@ -206,6 +206,30 @@ async function _discoverSalesChunks(userId, sedeId, updatedAfter = null, metaOnl
     }
 }
 
+/**
+ * Lee un documento account-scoped puntual de sync_documents.
+ * La usa el fast-lane de tasa (accountDocs) para chequear cambios sin
+ * esperar el polling general de 60 min.
+ * Devuelve { payload, updatedAt } o null. Best-effort: nunca lanza.
+ */
+export const fetchAccountDoc = async (docKey) => {
+    try {
+        const { data: { session } } = await supabaseCloud.auth.getSession();
+        const accountId = session?.user?.id;
+        if (!accountId) return null;
+        const { data, error } = await supabaseCloud
+            .from('sync_documents')
+            .select('data, updated_at')
+            .eq('user_id', accountId)
+            .eq('doc_id', buildCloudDocumentId(docKey, { accountId }))
+            .maybeSingle();
+        if (error || !data) return null;
+        return { payload: data.data?.payload ?? null, updatedAt: data.updated_at || null };
+    } catch {
+        return null;
+    }
+};
+
 export const pushCloudSync = async (key, value, bypassDebounce = false, storageContext = captureStorageContext()) => {
     const context = Object.freeze({ ...storageContext });
     if (syncV2Paused()) return pausedCloudOperation();
