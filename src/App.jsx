@@ -95,6 +95,14 @@ export default function App() {
       .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
   }, [usuarioActivo]);
 
+  // Migración única: inventario físico C&Y 2026 → norte (REEMPLAZA el catálogo de prueba)
+  useEffect(() => {
+    if (!usuarioActivo) return;
+    import('./utils/migrateNorteInventory')
+      .then(({ migrateNorteInventory }) => migrateNorteInventory())
+      .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
+  }, [usuarioActivo]);
+
   // Monitor: subida periódica de resúmenes de sede (solo upload, no toca ventas)
   useEffect(() => {
     if (!usuarioActivo) return;
