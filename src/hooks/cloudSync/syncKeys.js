@@ -20,7 +20,12 @@ export const SYNC_KEYS = [
     'bodega_suppliers_v1',        // Proveedores
     'bodega_supplier_invoices_v1',// Facturas de proveedores
     // ── localStorage (local) ──────────────────────────────────────────────
-    'abasto-auth-storage',        // Usuarios, PINs, roles
+    // NOTA: 'abasto-auth-storage' salió del sync ingenuo (subía PINs en texto
+    // plano y pisaba por last-writer-wins). Los usuarios viajan en el
+    // documento propio 'bodega_users_v1' (merge por syncId). Ver PULL_IGNORE_KEYS.
+    'bodega_users_v1',            // Usuarios (merge por syncId, sin PINs en texto plano)
+    'bodega_rate_policy_v1',      // Política de tasa a nivel de cuenta (fast-lane 5 min)
+    'bodega_business_v1',         // Identidad del negocio a nivel de cuenta
     'monitor_rates_v12',
     'bodega_custom_rate',
     'bodega_use_auto_rate',
@@ -43,7 +48,9 @@ export const SYNC_KEYS = [
 
 // Llaves que van a colección 'local' (localStorage); el resto va a 'store' (IndexedDB)
 export const LOCAL_KEYS = [
-    'abasto-auth-storage',
+    'bodega_users_v1',
+    'bodega_rate_policy_v1',
+    'bodega_business_v1',
     'monitor_rates_v12',
     'bodega_custom_rate',
     'bodega_use_auto_rate',
@@ -120,6 +127,10 @@ export const PULL_IGNORE_KEYS = [
     'abasto_audit_log_v1',
     'bodega_sales_archive_v1',
     'abasto_audit_archive_v1',
+    // El sobre completo de auth lo subían versiones viejas con PINs en texto
+    // plano y last-writer-wins sobre la lista completa. Los usuarios ahora
+    // viajan en 'bodega_users_v1' (merge por syncId); este sobre se ignora.
+    'abasto-auth-storage',
 ];
 // Llaves con payloads grandes: debounce largo para agrupar ráfagas (ej. hora
 // pico de ventas) en un solo upsert y reducir el Disk I/O de Supabase.

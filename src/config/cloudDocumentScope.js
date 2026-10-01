@@ -23,7 +23,10 @@ export const CLOUD_SEDE_SCOPED_KEYS = Object.freeze(new Set([
 
 // Estas entidades pertenecen a la cuenta completa y no deben duplicarse por sede.
 export const CLOUD_ACCOUNT_SCOPED_KEYS = Object.freeze(new Set([
-    'abasto-auth-storage',
+    'abasto-auth-storage', // legado: solo describe docs viejos ya subidos; fuera de SYNC_KEYS
+    'bodega_users_v1',
+    'bodega_rate_policy_v1',
+    'bodega_business_v1',
     'my_categories_v1',
     'farmacia_transferencias_v1',
     // Preferencias de cuenta que ya forman parte del contrato local sync.
