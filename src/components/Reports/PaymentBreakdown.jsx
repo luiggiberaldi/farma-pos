@@ -3,6 +3,30 @@ import { PAYMENT_ICONS, getPaymentIcon, getPaymentLabel, toTitleCase } from '../
 import { formatBs } from '../../utils/calculatorUtils';
 import CasheaIcon from '../CasheaIcon';
 
+// FIX 2026-10-01 (M1): AccordionSection vivía DENTRO del render del padre,
+// así que cada render creaba un componente nuevo y React remontaba los
+// acordeones (pérdida de estado/foco). Ahora es estable a nivel de módulo y
+// recibe el estado por props.
+function AccordionSection({ sectionKey, color, label, netLabel, children, isOpen, onToggle }) {
+    const colors = {
+        blue: { bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-200 dark:border-blue-800/40', text: 'text-blue-700 dark:text-blue-300', label: 'text-blue-500' },
+        emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-200 dark:border-emerald-800/40', text: 'text-emerald-700 dark:text-emerald-300', label: 'text-emerald-500' },
+        amber: { bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-200 dark:border-amber-800/40', text: 'text-amber-700 dark:text-amber-300', label: 'text-amber-500' },
+    }[color];
+    return (
+        <div className={`rounded-xl border ${colors.border} overflow-hidden`}>
+            <button onClick={() => onToggle(sectionKey)} className={`w-full flex items-center justify-between px-3 py-2.5 ${colors.bg} transition-colors`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${colors.label}`}>{label}</span>
+                <div className="flex items-center gap-2">
+                    <span className={`text-sm font-black ${colors.text}`}>{netLabel}</span>
+                    {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                </div>
+            </button>
+            {isOpen && <div className="px-3 py-2 divide-y divide-slate-100 dark:divide-slate-800">{children}</div>}
+        </div>
+    );
+}
+
 export default function PaymentBreakdown({ paymentBreakdown, bcvRate, copEnabled, tasaCop, totalBs, openPaySections, setOpenPaySections }) {
     if (Object.keys(paymentBreakdown).length === 0) return null;
 
@@ -98,27 +122,6 @@ export default function PaymentBreakdown({ paymentBreakdown, bcvRate, copEnabled
         );
     };
 
-    const AccordionSection = ({ sectionKey, color, label, netLabel, children }) => {
-        const isOpen = openPaySections[sectionKey];
-        const colors = {
-            blue: { bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-200 dark:border-blue-800/40', text: 'text-blue-700 dark:text-blue-300', label: 'text-blue-500' },
-            emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-200 dark:border-emerald-800/40', text: 'text-emerald-700 dark:text-emerald-300', label: 'text-emerald-500' },
-            amber: { bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-200 dark:border-amber-800/40', text: 'text-amber-700 dark:text-amber-300', label: 'text-amber-500' },
-        }[color];
-        return (
-            <div className={`rounded-xl border ${colors.border} overflow-hidden`}>
-                <button onClick={() => toggleSection(sectionKey)} className={`w-full flex items-center justify-between px-3 py-2.5 ${colors.bg} transition-colors`}>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider ${colors.label}`}>{label}</span>
-                    <div className="flex items-center gap-2">
-                        <span className={`text-sm font-black ${colors.text}`}>{netLabel}</span>
-                        {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-                    </div>
-                </button>
-                {isOpen && <div className="px-3 py-2 divide-y divide-slate-100 dark:divide-slate-800">{children}</div>}
-            </div>
-        );
-    };
-
     return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm">
         <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1">
@@ -156,19 +159,19 @@ export default function PaymentBreakdown({ paymentBreakdown, bcvRate, copEnabled
         {/* Accordion sections */}
         <div className="space-y-2">
             {bsMethods.length > 0 && (
-                <AccordionSection sectionKey="bs" color="blue" label="Bolívares" netLabel={`${formatBs(netBs)} Bs`}>
+                <AccordionSection sectionKey="bs" color="blue" label="Bolívares" netLabel={`${formatBs(netBs)} Bs`} isOpen={openPaySections.bs} onToggle={toggleSection}>
                     {bsIncomeMethods.map(renderSimpleMethod)}
                     {vueltoMethods.length > 0 && vueltoMethods.map(renderSimpleMethod)}
                 </AccordionSection>
             )}
             {usdMethods.length > 0 && (
-                <AccordionSection sectionKey="usd" color="emerald" label="Dólares" netLabel={`$${netUsd.toFixed(2)}`}>
+                <AccordionSection sectionKey="usd" color="emerald" label="Dólares" netLabel={`$${netUsd.toFixed(2)}`} isOpen={openPaySections.usd} onToggle={toggleSection}>
                     {usdIncomeMethods.map(renderSimpleMethod)}
                     {vueltoUsdMethods.length > 0 && vueltoUsdMethods.map(renderSimpleMethod)}
                 </AccordionSection>
             )}
             {(fiadoMethods.length > 0 || casheaMethods.length > 0) && (
-                <AccordionSection sectionKey="cobrar" color="amber" label="Por Cobrar" netLabel={`$${totalPorCobrar.toFixed(2)}`}>
+                <AccordionSection sectionKey="cobrar" color="amber" label="Por Cobrar" netLabel={`$${totalPorCobrar.toFixed(2)}`} isOpen={openPaySections.cobrar} onToggle={toggleSection}>
                     {fiadoMethods.map(renderSimpleMethod)}
                     {casheaMethods.map(([method, data]) => (
                         <div key={method} className="flex justify-between items-center py-1.5">
@@ -181,7 +184,7 @@ export default function PaymentBreakdown({ paymentBreakdown, bcvRate, copEnabled
                 </AccordionSection>
             )}
             {copEnabled && copMethods.length > 0 && (
-                <AccordionSection sectionKey="cop" color="amber" label="Pesos Colombianos" netLabel={`${fmtCop(totalCop)} COP`}>
+                <AccordionSection sectionKey="cop" color="amber" label="Pesos Colombianos" netLabel={`${fmtCop(totalCop)} COP`} isOpen={openPaySections.cop} onToggle={toggleSection}>
                     {copMethods.map(renderSimpleMethod)}
                 </AccordionSection>
             )}

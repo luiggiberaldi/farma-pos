@@ -9,35 +9,42 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 // - image: campo legado (`/products/*.jpg` o `data:image`) — compatibilidad.
 // Si no hay nada que mostrar, devuelve null y el padre pinta su placeholder.
 export function ProductPhoto({ photoHash, image, alt = '', className = '' }) {
-    const [src, setSrc] = useState(() => (!isValidPhotoHash(photoHash) && image ? image : null));
+    const needsResolve = isValidPhotoHash(photoHash) && !!SUPABASE_URL;
+    // FIX 2026-10-01 (M2): antes el efecto hacía setState sincrónico al
+    // inicio (setSrc(null)/setSrc(image)) en cada tarjeta con foto, lo que
+    // generaba renders en cascada y era un loop potencial si las deps
+    // cambiaban. Ahora el estado inicial se deriva de los props en lazy init
+    // y se re-deriva durante el render cuando cambian los props (patrón
+    // recomendado por React); el efecto solo resuelve la URL remota.
+    const [sync, setSync] = useState(() => ({
+        photoHash,
+        image,
+        src: needsResolve ? null : (image || null),
+    }));
+    if (sync.photoHash !== photoHash || sync.image !== image) {
+        setSync({ photoHash, image, src: needsResolve ? null : (image || null) });
+    }
 
     useEffect(() => {
+        if (!needsResolve) return;
         let alive = true;
         let objectUrl = null;
-        if (!isValidPhotoHash(photoHash) || !SUPABASE_URL) {
-            setSrc(image || null);
-            return () => { alive = false; };
-        }
-        setSrc(null);
         resolvePhotoUrl(SUPABASE_URL, photoHash)
             .then((url) => {
                 if (!alive) return;
-                if (url) {
-                    objectUrl = url;
-                    setSrc(url);
-                } else {
-                    setSrc(image || null);
-                }
+                objectUrl = url;
+                setSync((prev) => ({ ...prev, src: url || image || null }));
             })
             .catch(() => {
-                if (alive) setSrc(image || null);
+                if (alive) setSync((prev) => ({ ...prev, src: image || null }));
             });
         return () => {
             alive = false;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [photoHash, image]);
+    }, [photoHash, image, needsResolve]);
 
+    const src = sync.src;
     if (!src) return null;
     return (
         <img
@@ -46,7 +53,7 @@ export function ProductPhoto({ photoHash, image, alt = '', className = '' }) {
             loading="lazy"
             draggable={false}
             className={className}
-            onError={() => setSrc((current) => (current && current !== image ? image || null : null))}
+            onError={() => setSync((prev) => (prev.src && prev.src !== image ? { ...prev, src: image || null } : prev))}
         />
     );
 }
