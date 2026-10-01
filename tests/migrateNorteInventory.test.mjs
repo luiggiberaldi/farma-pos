@@ -50,7 +50,7 @@ async function loadMigration(records) {
                 async getItem(key, def, context) { return structuredClone(records.get(scopedKey(key, context)) ?? def ?? null); },
                 async setItem(key, value, context) { records.set(scopedKey(key, context), structuredClone(value)); return value; },
             };`,
-        'src/utils/userProvisioning.js': `
+        'src/config/storageScope.js': `
             export const getActiveAccountId = () => ${JSON.stringify(mockAccountId)};`,
     };
     globalThis.__norteTestRecords = records;
