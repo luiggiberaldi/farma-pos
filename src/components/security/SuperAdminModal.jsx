@@ -78,6 +78,14 @@ export default function SuperAdminModal({ isOpen, onClose }) {
     const [newPin, setNewPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
     const [saving, setSaving] = useState(false);
+    // El hook va ANTES del early return: si se llama después, abrir el modal
+    // cambia el orden de hooks entre renders y React tumba la app
+    // (pantalla blanca). El flag `isOpen` ya lo desactiva cuando está cerrado.
+    const handleCloseEarly = () => {
+        if (step === 'identity' || grant) cancelOwnerPinReset();
+        onClose();
+    };
+    useEscapeToClose(handleCloseEarly, isOpen);
 
     if (!isOpen) return null;
 
@@ -149,7 +157,6 @@ export default function SuperAdminModal({ isOpen, onClose }) {
         if (step === 'identity' || grant) cancelOwnerPinReset();
         onClose();
     };
-    useEscapeToClose(handleClose, isOpen);
 
     const canSubmit = saving || newPin.length !== PIN_LENGTH || confirmPin.length !== PIN_LENGTH;
 

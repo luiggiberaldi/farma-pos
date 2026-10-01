@@ -9,10 +9,10 @@ import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function LoginPinModal({ isOpen, onClose, user, onSubmit, forcePin = false, purpose = 'login' }) {
     if (!isOpen || !user) return null;
-    return <PinEntry key={`${user.id}:${purpose}`} user={user} onClose={onClose} onSubmit={onSubmit} forcePin={forcePin} purpose={purpose} />;
+    return <PinEntry key={`${user.id}:${purpose}`} isOpen={isOpen} user={user} onClose={onClose} onSubmit={onSubmit} forcePin={forcePin} purpose={purpose} />;
 }
 
-function PinEntry({ user, onClose, onSubmit, forcePin, purpose }) {
+function PinEntry({ isOpen, user, onClose, onSubmit, forcePin, purpose }) {
     const requireLogin = useAuthStore(s => s.requireLogin);
     const pinLength = user.rol === 'DUENO' ? 6 : 4;
     const pinless = !forcePin && canUsePinlessAccess(user, captureStorageContext(), requireLogin);
