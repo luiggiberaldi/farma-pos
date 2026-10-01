@@ -5,7 +5,10 @@ import { formatBs, formatUsd, smartCashRounding } from '../utils/calculatorUtils
 
 export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, streetRate }) => {
     const [accountChoice, setSelectedAccountId] = useState('');
-    const selectedAccountId = accounts.some(account => account.id === accountChoice) ? accountChoice : accounts[0]?.id || '';
+    // FIX 2026-10-01 (M3): guards defensivos — ningún render debe lanzar por
+    // un prop ausente.
+    const accountList = accounts || [];
+    const selectedAccountId = accountList.some(account => account.id === accountChoice) ? accountChoice : accountList[0]?.id || '';
     const [config, setConfig] = useState({
         showUsd: true,
         showEfectivo: true,
@@ -19,7 +22,8 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
     if (!product) return null;
 
     // Cálculos
-    const valBs = product.priceUsd * rates.bcv.price;
+    const bcvPrice = rates?.bcv?.price || 0;
+    const valBs = product.priceUsd * bcvPrice;
 
     // Lógica Street Rate (Calibrada)
     // Si hay tasa calibrada (>0), el precio efectivo es Bs / TasaCalibrada
@@ -55,18 +59,19 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
 
         // Referencias explícitas
         if (config.showRefBcv) {
-            const refBcv = valBs / rates.bcv.price;
+            const refBcv = bcvPrice > 0 ? valBs / bcvPrice : 0;
             lines.push(`Ref. BCV: $${formatUsd(refBcv).replace('$', '')}`);
         }
         if (config.showRefEuro) {
-            const refEur = valBs / rates.euro.price;
+            const euroPrice = rates?.euro?.price || 0;
+            const refEur = euroPrice > 0 ? valBs / euroPrice : 0;
             lines.push(`Ref. Euro: €${formatUsd(refEur).replace('$', '').replace('€', '')}`);
         }
 
         lines.push('');
 
         if (selectedAccountId) {
-            const acc = accounts.find(a => a.id === selectedAccountId);
+            const acc = accountList.find(a => a.id === selectedAccountId);
             if (acc) {
                 // Support both structures just in case
                 const d = acc.data || acc;
@@ -166,7 +171,7 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
                 {/* 3. Selector de Cuenta */}
                 <div>
                     <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Cuenta Receptora</label>
-                    {accounts.length === 0 ? (
+                    {accountList.length === 0 ? (
                         <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-xs text-slate-500 text-center">
                             No tienes cuentas guardadas aún.
                         </div>
@@ -177,7 +182,7 @@ export const ProductShareModal = ({ isOpen, onClose, product, rates, accounts, s
                             className="w-full bg-slate-50 dark:bg-slate-800 p-3 rounded-xl text-sm font-medium text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-brand/50 border border-slate-200 dark:border-slate-700"
                         >
                             <option value="">-- Sin datos bancarios --</option>
-                            {accounts.map(acc => (
+                            {accountList.map(acc => (
                                 <option key={acc.id} value={acc.id}>
                                     {acc.type === 'pago_movil' ? '📱' : acc.type === 'binance' ? '🟡' : '🏦'} {acc.alias}
                                 </option>

@@ -22,8 +22,10 @@ export default function TransactionModal({
     handleTransaction
 }) {
     const handleClose = () => setTransactionModal({ isOpen: false, type: null, customer: null });
-    useEscapeToClose(handleClose, transactionModal.isOpen);
-    if (!transactionModal.isOpen || !transactionModal.customer) return null;
+    // FIX 2026-10-01 (M3): guard antes de leer transactionModal.isOpen — el
+    // hook sigue antes del early return (orden estable).
+    useEscapeToClose(handleClose, !!transactionModal?.isOpen);
+    if (!transactionModal?.isOpen || !transactionModal.customer) return null;
 
     // Calcular preview del saldo resultante en tiempo real
     const rawAmt = parseFloat(transactionAmount) || 0;

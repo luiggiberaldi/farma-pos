@@ -9,12 +9,15 @@ export default function DiscountModal({
     currentDiscount,
     onApply,
     onClose,
-    cartSubtotalUsd,
+    cartSubtotalUsd: rawCartSubtotalUsd,
     cart = [],
     effectiveRate,
     tasaCop,
     copEnabled
 }) {
+    // FIX 2026-10-01 (M3): guard defensivo — ningún render debe lanzar por un
+    // prop ausente. Con props presentes el comportamiento es idéntico.
+    const cartSubtotalUsd = Number(rawCartSubtotalUsd) || 0;
     const { usuarioActivo, usuarios, issueApproval, checkApproval } = useAuthStore();
     const isCajero = usuarioActivo?.rol === 'CAJERO';
     const approvers = usuarios.filter(user => user.rol === 'DUENO' && user.pin);

@@ -224,11 +224,11 @@ export default function BulkPriceAdjustModal({
                             onChange={e => setSelectedCategory(e.target.value)}
                             className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-4 text-sm font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all appearance-none cursor-pointer"
                         >
-                            <option value="todos">Todos los productos ({products.length})</option>
-                            {categories
+                            <option value="todos">Todos los productos ({(products || []).length})</option>
+                            {(categories || [])
                                 .filter(c => c.id !== 'todos')
                                 .map(cat => {
-                                    const count = products.filter(p => p.category === cat.id).length;
+                                    const count = (products || []).filter(p => p.category === cat.id).length;
                                     return count > 0 ? (
                                         <option key={cat.id} value={cat.id}>
                                             {cat.label} ({count})

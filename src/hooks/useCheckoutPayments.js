@@ -10,7 +10,7 @@ const BS_QUICK = [100, 500, 1000, 5000];
 
 export function useCheckoutPayments(props) {
     const {
-        cartTotalUsd, cartTotalBs, effectiveRate, customers,
+        cartTotalUsd, cartTotalBs, effectiveRate, customers = [],
         selectedCustomerId, setSelectedCustomerId, paymentMethods,
         onConfirmSale, requiresPrescription, triggerHaptic,
         onCreateCustomer, tasaCop, isProcessingSale,
