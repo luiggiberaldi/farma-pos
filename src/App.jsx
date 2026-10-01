@@ -459,11 +459,8 @@ export default function App() {
       />
     );
   }
-  if (!usuarioActivo) return (
-    <div className="h-[100dvh] w-full bg-[#F8FAFC] flex items-center justify-center">
-      <div className="w-8 h-8 rounded-full border-4 border-[#0B8D63] border-t-transparent animate-spin" />
-    </div>
-  );
+  // NOTA 2026-10-01 (B2): aquí había un segundo gate duplicado que era
+  // código muerto — el bloque anterior ya retorna siempre.
 
   return (
     <div className="font-sans antialiased bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-[100dvh] flex flex-col overflow-clip">

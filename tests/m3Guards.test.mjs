@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, unlink } from 'node:fs/promises';
 import { createProcessorFixture } from './helpers/realModule.mjs';
 
 // Regresión 2026-10-01 (Plan Maestro de Fixeo, Fase 4):
@@ -56,7 +56,9 @@ async function loadRenderHarness({ file, mocks = {}, namedExport = null, wrapHoo
   await mkdir(outDir, { recursive: true });
   const outFile = resolve(outDir, `harness-${Date.now()}-${Math.random().toString(36).slice(2)}.cjs`);
   await writeFile(outFile, result.outputFiles[0].text);
-  return import(pathToFileURL(outFile).href);
+  const mod = await import(pathToFileURL(outFile).href);
+  await unlink(outFile).catch(() => {});
+  return mod;
 }
 
 const noop = () => {};

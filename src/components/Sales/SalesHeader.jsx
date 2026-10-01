@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { RefreshCw, ShoppingCart, Keyboard, Lock, Landmark, Euro, PenTool } from 'lucide-react';
 import Tooltip from '../Tooltip';
 import { useAuthStore } from '../../hooks/store/useAuthStore';
@@ -46,7 +46,12 @@ export default function SalesHeader({
     };
     const ageLabel = rateAgeLabel(rates?.lastUpdate);
     // B7 móvil: la tasa desactualizada se marca en ámbar (stale del API o >5h).
-    const rateAgeMs = rates?.lastUpdate ? Date.now() - new Date(rates.lastUpdate).getTime() : Infinity;
+    // FIX 2026-10-01 (B3): Date.now() en el render es impuro (el "hace X min"
+    // puede variar entre renders). Se memoiza por lastUpdate.
+    const rateAgeMs = useMemo(
+        () => (rates?.lastUpdate ? Date.now() - new Date(rates.lastUpdate).getTime() : Infinity),
+        [rates?.lastUpdate]
+    );
     const isStaleRate = rates?.stale === true || rateAgeMs > 5 * 60 * 60 * 1000;
     const tooltipText = isLocked
         ? 'Solo los administradores pueden fijar la tasa'
