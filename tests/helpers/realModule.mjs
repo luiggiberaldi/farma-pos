@@ -17,6 +17,8 @@ export async function loadRealModule(file, mocks = {}, { dev = false, exportsFro
   } } : { entryPoints: [resolve(root, file)] };
   const result = await build({
     ...entry, bundle: true, write: false, format: 'esm', platform: 'node',
+    // Entradas fuera del repo (p. ej. /tmp) también resuelven node_modules del repo.
+    nodePaths: [resolve(root, 'node_modules')],
     // Match Vite: .js compatibility exports must win over .jsx providers.
     resolveExtensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
     logLevel: 'silent', define: {
