@@ -10,7 +10,7 @@ async function authFixture(t) {
   installMemoryBrowser(t);
   const mod = await loadRealModule('src/hooks/store/useAuthStore.js', {
     'src/services/auditService.js': 'export const logEvent = async () => {};',
-    'src/hooks/useCloudSync.js': 'export const pushCloudSync = async () => ({ status: "paused" });',
+    'src/hooks/useCloudSync.js': 'export const pushCloudSync = async (...a) => { (globalThis.__identityPushes ||= []).push(a); return { status: "paused" }; };',
   });
   const store = mod.useAuthStore;
   store.setState({ usuarioActivo: null, usuarios: [
@@ -111,9 +111,18 @@ for (const mutation of ['pin', 'role', 'delete']) {
     t.mock.method(crypto.subtle, 'deriveBits', async (...args) => gateKdf(deriveBits, args));
     const pending = store.getState().login('817263', 2);
     await suspended;
+    const pushesBefore = (globalThis.__identityPushes || []).length;
     if (mutation === 'pin') await store.getState().cambiarPin(2, '192837');
     if (mutation === 'role') store.getState().editarUsuario(2, { rol: 'CAJERO', sedeId: 'norte' });
     if (mutation === 'delete') assert.equal(store.getState().eliminarUsuario(2), true);
+    // Las mutaciones disparan pushUsersSoon (async): el endurecimiento de PINs
+    // y la asignación de syncIds aplican antes del push. Esperar a que dispare
+    // para que la foto post-mutación sea estable.
+    const waitStart = Date.now();
+    while ((globalThis.__identityPushes || []).length <= pushesBefore) {
+      if (Date.now() - waitStart > 5000) throw new Error('pushUsersSoon no disparó tras la mutación');
+      await new Promise(r => setTimeout(r, 10));
+    }
     const afterMutation = JSON.stringify(store.getState().usuarios);
     release();
     assert.equal(await pending, false);

@@ -31,7 +31,24 @@ const SYNCED_USER_FIELDS = Object.freeze([
     'credentialVersion', 'updatedAt', 'factoryPin',
 ]);
 
-function newSyncId() {
+// Orden canónico de campos: evita que el merge se vea como "cambio" en cada
+// poll solo por el orden de las claves (el ganador puede ser el registro
+// local o el de la nube, con distinto orden original).
+export const USER_FIELD_ORDER = Object.freeze([
+    'id', 'syncId', 'nombre', 'rol', 'sedeId', 'sinPin',
+    'pin', 'pinSalt', 'pinKdf', 'pinHashed', 'factoryPin',
+    'credentialVersion', 'updatedAt', 'permanente',
+]);
+
+export function canonicalUser(u) {
+    if (!u || typeof u !== 'object') return u;
+    const out = {};
+    for (const f of USER_FIELD_ORDER) if (u[f] !== undefined) out[f] = u[f];
+    for (const k of Object.keys(u)) if (!(k in out)) out[k] = u[k];
+    return out;
+}
+
+export function newSyncId() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
         return crypto.randomUUID();
     }
@@ -152,19 +169,19 @@ export function mergeUsers(localUsers, cloudUsers) {
         const l = bySyncId.get(c.syncId);
         if (!l) {
             maxId += 1;
-            merged.push({ ...c, id: maxId });
+            merged.push(canonicalUser({ ...c, id: maxId }));
         } else {
             seen.add(c.syncId);
             const winner = compareUserRecords(l, c) >= 0 ? l : c;
             const keep = { ...winner, id: l.id };
             if (l.permanente !== undefined) keep.permanente = l.permanente;
-            merged.push(keep);
+            merged.push(canonicalUser(keep));
         }
     }
     for (const [syncId, l] of bySyncId) {
-        if (!seen.has(syncId)) merged.push({ ...(l || {}) });
+        if (!seen.has(syncId)) merged.push(canonicalUser({ ...(l || {}) }));
     }
-    for (const u of noSyncId) merged.push(u);
+    for (const u of noSyncId) merged.push(canonicalUser(u));
     return merged;
 }
 
@@ -209,7 +226,7 @@ export function reconcileUsers(localUsers, cloudUsers) {
     }
     const out = [];
     for (const [, g] of groups) {
-        if (g.length === 1) { out.push(g[0]); continue; }
+        if (g.length === 1) { out.push(canonicalUser(g[0])); continue; }
         let winner = g[0];
         for (let i = 1; i < g.length; i++) {
             if (compareUserRecords(g[i], winner) > 0) winner = g[i];
@@ -220,12 +237,36 @@ export function reconcileUsers(localUsers, cloudUsers) {
             keep.id = localTwin.id;
             if (localTwin.permanente !== undefined) keep.permanente = localTwin.permanente;
         }
-        out.push(keep);
+        out.push(canonicalUser(keep));
     }
     return out;
 }
 
-// ─── Política de tasa ───────────────────────────────────────────────────────
+// ─── Higiene del sobre de auth (backup en la nube) ──────────────────────────
+
+/**
+ * Sanitiza el sobre `abasto-auth-storage` para el espejo de backup en la
+ * nube: los PINs en texto plano se eliminan (solo viajan hashes PBKDF2).
+ * Devuelve el string del sobre saneado (o el original si no es parseable).
+ */
+export function sanitizeAuthEnvelopeForCloud(raw) {
+    if (typeof raw !== 'string' || !raw) return raw;
+    try {
+        const env = JSON.parse(raw);
+        const state = env?.state;
+        if (!state || !Array.isArray(state.usuarios)) return raw;
+        const cleanUsers = state.usuarios.map(u => {
+            if (!u || typeof u !== 'object') return u;
+            if (u.pinHashed === true) return u;
+            const { pin, ...rest } = u;
+            return rest;
+        });
+        return JSON.stringify({ ...env, state: { ...state, usuarios: cleanUsers } });
+    } catch {
+        return raw;
+    }
+}
+
 
 export function sanitizeRatePolicy(p) {
     if (!p || typeof p !== 'object') return null;

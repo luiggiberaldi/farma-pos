@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
-import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId, captureStorageContext, getActiveSedeId } from '../config/storageScope';
 import { buildCloudDocumentId, parseCloudDocumentId, isCloudDocumentForContext, isSalesChunkKey, buildSalesChunkDocumentId, salesChunkDocIdLike, salesChunkDateOf } from '../config/cloudDocumentScope.js';
 import { recordSyncMetric } from '../utils/syncMetrics';
 import { syncV2Paused, pausedCloudOperation } from '../config/operationSafety.js';
-import { sanitizeBackup } from '../utils/backupSafety.js';
 import { SUPABASE_FREE_PROFILE, inspectSyncPayload, fingerprintSyncPayload } from '../config/supabaseFreeTier.js';
 import { SALES_ARCHIVE_KEY, SALES_HOT_DAYS, saleTimestampMs, splitByAge, appendToArchive } from '../utils/localRetention.js';
 import { SYNC_KEYS, LOCAL_KEYS, REALTIME_KEYS, POLLING_ONLY_KEYS, MERGEABLE_KEYS, PULL_IGNORE_KEYS, HEAVY_KEYS, DEBOUNCE_MS, DEBOUNCE_MS_HEAVY } from './cloudSync/syncKeys.js';
@@ -288,6 +286,18 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     // Llaves legadas subidas por versiones viejas de la app: ignorar para no
     // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
     if (PULL_IGNORE_KEYS.includes(cloudKey)) return;
+    // Documentos propios a nivel de cuenta (usuarios, tasa, negocio): ramas
+    // dedicadas con merge/auditoría; nunca el camino genérico de localStorage.
+    if (cloudKey === 'bodega_users_v1' || cloudKey === 'bodega_rate_policy_v1' || cloudKey === 'bodega_business_v1') {
+        const { applyAccountDocFromCloud } = await import('./cloudSync/accountDocs.js');
+        const { useAuthStore } = await import('./store/useAuthStore.js');
+        await applyAccountDocFromCloud(cloudKey, payload, cloudUpdatedAt, {
+            getState: useAuthStore.getState,
+            setState: partial => useAuthStore.setState(partial),
+            push: pushCloudSync,
+        });
+        return;
+    }
     // Los chunks diarios de ventas se fusionan en la llave caliente local.
     const localKey = isSalesChunkKey(cloudKey) ? 'bodega_sales_v1' : cloudKey;
 
@@ -317,22 +327,7 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     isSyncingFromCloud = true;
     try {
         if (collection === 'local') {
-            let finalPayload = payload;
-
-            // Preserve only non-secret account display metadata. Never restore a password.
-            if (localKey === 'abasto-auth-storage') {
-                try {
-                    const incoming = typeof payload === 'string' ? JSON.parse(payload) : JSON.parse(JSON.stringify(payload));
-                    const existingRaw = localStorage.getItem('abasto-auth-storage');
-                    if (existingRaw) {
-                        const existing = JSON.parse(existingRaw);
-                        if (existing?.state?.adminEmail && !incoming?.state?.adminEmail) {
-                            incoming.state.adminEmail = existing.state.adminEmail;
-                        }
-                    }
-                    finalPayload = sanitizeBackup(incoming);
-                } catch { /* keep original payload on parse error */ }
-            }
+            const finalPayload = payload;
 
             const stringPayload = typeof finalPayload === 'string' ? finalPayload : JSON.stringify(finalPayload);
             _nativeSetItem(localKey, stringPayload);   // Escribe sin pasar por el interceptor
@@ -341,9 +336,6 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                 newValue: stringPayload,
                 storageArea: localStorage
             }));
-            if (localKey === 'abasto-auth-storage') {
-                useAuthStore.persist.rehydrate();
-            }
         } else {
             // Colección 'store' → IndexedDB
             const { default: localforage } = await import('localforage');
@@ -599,6 +591,18 @@ export function useCloudSync() {
                         // Pausa entre keys para no saturar Supabase con burst
                         await new Promise(r => setTimeout(r, SUPABASE_FREE_PROFILE.catchUpSpacingMs));
                     }
+                    // ── Catch-up del documento propio de usuarios ──
+                    // No vive en localStorage bajo su llave: se empuja explícito
+                    // tras el merge inicial (el hash-dedup salta si no hay cambios).
+                    try {
+                        const { pushUsersDoc } = await import('./cloudSync/accountDocs.js');
+                        const { useAuthStore } = await import('./store/useAuthStore.js');
+                        if (isCurrent() && navigator.onLine) await pushUsersDoc({
+                            getState: useAuthStore.getState,
+                            setState: partial => useAuthStore.setState(partial),
+                            push: pushCloudSync,
+                        });
+                    } catch { /* best-effort */ }
                 })().catch(() => {});
                 }
 

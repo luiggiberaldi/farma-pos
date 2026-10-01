@@ -8,6 +8,9 @@ import { sanitizeBackup } from '../../utils/backupSafety.js';
 import { assertLocalOperationAllowed, hasPendingLocalWrites } from '../../services/localOperationGuard.js';
 import { generatePinSalt, hashPinPbkdf2, isStrongPinRecord } from '../../utils/pinCrypto.js';
 import { lockoutMsFor } from '../../utils/operatorLockPolicy.js';
+import { ensureSyncIds, newSyncId } from '../cloudSync/accountSync.js';
+import { pushUsersDoc } from '../cloudSync/accountDocs.js';
+import { pushCloudSync } from '../useCloudSync.js';
 
 // A3: SHA-256 sin salt (formato legado). Solo se usa para comparar registros
 // viejos; todo PIN nuevo o verificado se migra a PBKDF2 (ver pinCrypto.js).
@@ -340,7 +343,8 @@ export const useAuthStore = create(persist((set, get) => ({
         approvals.clear();
         pinResetGrace = null;
         set(state => ({ usuarios: state.usuarios.map(u => u.id === owner.id
-            ? { ...u, ...strong, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+            ? { ...u, ...strong, credentialVersion: (u.credentialVersion || 0) + 1, updatedAt: new Date().toISOString() } : u) }));
+        pushUsersSoon();
         const active = get().usuarioActivo;
         if (active?.id === owner.id) {
             get().logout('PIN restablecido');
@@ -372,8 +376,9 @@ export const useAuthStore = create(persist((set, get) => ({
         if (epoch !== authEpoch || !isStorageContextActive(context) || get().usuarioActivo?.id !== actor.id) throw new Error('La sesión cambió durante la actualización del PIN.');
         approvals.clear();
         set(state => ({ usuarios: state.usuarios.map(u => u.id === userId
-            ? { ...u, ...strong, factoryPin: isFactoryPin(String(nuevoPin)), credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+            ? { ...u, ...strong, factoryPin: isFactoryPin(String(nuevoPin)), credentialVersion: (u.credentialVersion || 0) + 1, updatedAt: new Date().toISOString() } : u) }));
         void logEvent('AUTH', 'PIN_CAMBIADO', `PIN cambiado para ${target.nombre || 'usuario'}`, actor, null, context);
+        pushUsersSoon();
         if (actor.id === userId) get().logout('PIN actualizado');
     },
 
@@ -388,7 +393,8 @@ export const useAuthStore = create(persist((set, get) => ({
         if (epoch !== authEpoch || !isStorageContextActive(context) || get().usuarioActivo?.id !== actor.id) throw new Error('La sesión cambió durante la actualización.');
         approvals.clear();
         set(state => ({ usuarios: state.usuarios.map(u => u.id === userId
-            ? { ...u, pin: null, pinHashed: false, pinSalt: null, sinPin: true, factoryPin: false, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+            ? { ...u, pin: null, pinHashed: false, pinSalt: null, sinPin: true, factoryPin: false, credentialVersion: (u.credentialVersion || 0) + 1, updatedAt: new Date().toISOString() } : u) }));
+        pushUsersSoon();
         // El dueño quitó el PIN en este equipo: activar el acceso sin PIN aquí mismo
         // para que "quitar PIN" funcione como se espera. El opt-in sigue siendo por
         // equipo: otros dispositivos requieren su propia activación.
@@ -413,10 +419,12 @@ export const useAuthStore = create(persist((set, get) => ({
         requireOwner(get().usuarioActivo);
         const newUserId = Math.max(0, ...get().usuarios.map(u => Number(u.id) || 0)) + 1;
         set(state => ({ usuarios: [...state.usuarios, {
-            id: newUserId,
+            id: newUserId, syncId: newSyncId(),
             nombre: nombre.trim(), rol, ...strong, factoryPin: pinlessCashier ? false : isFactoryPin(String(pin)),
             sedeId: rol === 'CAJERO' ? sedeId : null, credentialVersion: 0,
+            updatedAt: new Date().toISOString(),
         }] }));
+        pushUsersSoon();
         // Cajero creado sin PIN por el dueño en este equipo: activar el acceso sin
         // PIN aquí mismo para que pueda entrar sin un segundo paso manual.
         if (pinlessCashier) setPinlessOptIn(newUserId, context, true);
@@ -430,6 +438,7 @@ export const useAuthStore = create(persist((set, get) => ({
         approvals.clear();
         set(state => ({ usuarios: state.usuarios.filter(u => u.id !== userId) }));
         void logEvent('USUARIO', 'USUARIO_ELIMINADO', `Usuario ${target.nombre} eliminado`, get().usuarioActivo);
+        pushUsersSoon();
         return true;
     },
 
@@ -444,8 +453,10 @@ export const useAuthStore = create(persist((set, get) => ({
             || (updated.rol === 'CAJERO' && !['central', 'norte', 'sur'].includes(updated.sedeId))) throw new Error('Rol o sede inválido.');
         if (updated.rol !== 'CAJERO') updated.sedeId = null;
         updated.credentialVersion = (target.credentialVersion || 0) + 1;
+        updated.updatedAt = new Date().toISOString();
         approvals.clear();
         set(state => ({ usuarios: state.usuarios.map(u => u.id === userId ? updated : u) }));
+        pushUsersSoon();
         if (get().usuarioActivo?.id === userId) get().logout('usuario actualizado');
     },
 
@@ -474,7 +485,7 @@ export const useAuthStore = create(persist((set, get) => ({
         authEpoch += 1;
         approvals.clear();
         const clean = sanitizeBackup(persisted || {});
-        const usuarios = normalizeUsers(clean.usuarios || current.usuarios);
+        const usuarios = ensureSyncIds(normalizeUsers(clean.usuarios || current.usuarios));
         const requireLogin = clean.requireLogin === true;
         const session = readOperatorSession(usuarios, captureStorageContext(), requireLogin);
         // Restaura el bloqueo de sesión si sigue siendo el mismo operador;
@@ -518,3 +529,14 @@ export const useAuthStore = create(persist((set, get) => ({
         removeItem: name => localStorage.removeItem(name),
     },
 }));
+
+// Push best-effort del documento de usuarios a la nube tras cada mutación del
+// store. Grafo acíclico: accountDocs no importa el store ni el motor de sync;
+// recibe todo inyectado.
+function pushUsersSoon() {
+    void pushUsersDoc({
+        getState: useAuthStore.getState,
+        setState: partial => useAuthStore.setState(partial),
+        push: pushCloudSync,
+    }).catch(() => {});
+}

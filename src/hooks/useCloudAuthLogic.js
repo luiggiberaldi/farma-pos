@@ -187,6 +187,14 @@ export function useCloudAuthLogic() {
             const val = localStorage.getItem(key);
             if (val !== null) lsData[key] = val;
         }
+        // Higiene de credenciales: el sobre de auth nunca sube PINs en texto
+        // plano al backup en la nube (solo hashes PBKDF2).
+        if (typeof lsData['abasto-auth-storage'] === 'string') {
+            try {
+                const { sanitizeAuthEnvelopeForCloud } = await import('./cloudSync/accountDocs.js');
+                lsData['abasto-auth-storage'] = sanitizeAuthEnvelopeForCloud(lsData['abasto-auth-storage']);
+            } catch { /* si falla, sanitizeBackup lo trata como antes */ }
+        }
         return sanitizeBackup({
             timestamp: new Date().toISOString(),
             version: '2.0',
