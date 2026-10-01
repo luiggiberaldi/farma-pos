@@ -135,3 +135,15 @@ test('LoginPinModal: PinEntry recibe isOpen como prop', async t => {
   assert.match(src, /<PinEntry[^>]*isOpen=\{isOpen\}/, 'LoginPinModal pasa isOpen a PinEntry');
   assert.match(src, /function PinEntry\(\{\s*isOpen,/, 'PinEntry declara isOpen en sus props');
 });
+
+test('LoginPinModal: el campo de PIN no abre el teclado del móvil (inputmode=none)', async t => {
+  createProcessorFixture(t);
+  const { React, renderToString, Component: LoginPinModal } =
+    await loadRenderHarness('src/components/security/LoginPinModal.jsx', { 'src/hooks/store/useAuthStore.js': AUTH_MOCK });
+  const html = renderToString(React.createElement(LoginPinModal, { isOpen: true, user: dueno, onClose: noop, onSubmit: async () => true }));
+  // El modal trae su propio teclado numérico en pantalla; el input no debe
+  // pedirle al SO que abra el suyo (reporte 2026-10-01: el teclado de Android
+  // tapaba el teclado de la app en "Autoriza el cambio de sede").
+  assert.match(html, /id="operator-pin"[^>]*inputmode="none"/i, 'el input del PIN usa inputmode="none"');
+  assert.doesNotMatch(html, /id="operator-pin"[^>]*inputmode="numeric"/i, 'ya no pide teclado numérico del SO');
+});

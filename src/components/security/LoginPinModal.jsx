@@ -99,7 +99,7 @@ function PinEntry({ isOpen, user, onClose, onSubmit, forcePin, purpose }) {
                 {pinless && pinlessAttempted && error && <button type="button" disabled={processing} onClick={() => void submit('', true)} className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold">Reintentar acceso local</button>}
                 {!pinless && <>
                     <label className="block text-xs font-bold text-slate-500 mb-2" htmlFor="operator-pin">PIN de {pinLength} dígitos</label>
-                    <input id="operator-pin" aria-label={`PIN de ${pinLength} dígitos`} ref={inputRef} type="password" inputMode="numeric" autoComplete="off" maxLength={pinLength}
+                    <input id="operator-pin" aria-label={`PIN de ${pinLength} dígitos`} ref={inputRef} type="password" inputMode="none" autoComplete="off" maxLength={pinLength}
                         value={pin} onChange={event => changePin(event.target.value)} disabled={processing}
                         className="w-full mb-4 p-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-center text-xl tracking-[0.5em] text-slate-800 dark:text-white bg-white dark:bg-slate-800 focus:border-emerald-500 outline-none" />
                     {/* Puntos de progreso del PIN */}
