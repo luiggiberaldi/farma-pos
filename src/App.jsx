@@ -35,6 +35,7 @@ import { supabaseCloud, isCloudConfigured as envCloudConfigured } from './config
 import { useConfirm } from './hooks/confirmState.js';
 import { getActiveAccountId, setActiveAccountId, ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY } from './config/storageScope';
 import { applyCloudSession, signOutCloudAccount } from './services/cloudSessionLifecycle.js';
+import { saveSessionBackup, readSessionBackup, clearSessionBackup, restoreSessionWithRetry } from './services/cloudSessionRestore.js';
 import { OPERATOR_SESSION_KEY } from './utils/operatorSession.js';
 import { useSedeStore } from './hooks/store/useSedeStore';
 import { REMOTE_OPERATIONS_PAUSED } from './config/operationSafety.js';
@@ -160,15 +161,41 @@ export default function App() {
     window.addEventListener('cloud_logout_completed', onCloudLogoutCompleted);
 
     const initialRevision = sessionEventRevision;
-    supabaseCloud.auth.getSession().then(({ data, error }) => {
-      if (sessionEventRevision === initialRevision) applySession(error ? null : data?.session);
+    supabaseCloud.auth.getSession().then(async ({ data, error }) => {
+      if (sessionEventRevision !== initialRevision || !mounted) return;
+      const session = error ? null : data?.session;
+      if (session) { applySession(session); return; }
+      // Sin sesión en el SDK: intentar restaurarla con el respaldo del refresh
+      // token antes de mostrar "Conectar Estación". Cubre fallos transitorios
+      // de red y sesiones descartadas localmente sin confirmación del servidor.
+      // El respaldo SOLO se borra si el servidor confirma que murió ('invalid').
+      const backup = readSessionBackup(localStorage);
+      if (!backup?.refresh_token) { applySession(null); return; }
+      try {
+        const result = await restoreSessionWithRetry(supabaseCloud.auth, backup, { maxAttempts: 2 });
+        if (sessionEventRevision !== initialRevision || !mounted) return;
+        if (result.status === 'restored' && result.session) { applySession(result.session); return; }
+        if (result.status === 'invalid') clearSessionBackup(localStorage);
+        // 'unreachable': se conserva el respaldo para reintentar en el próximo arranque.
+        applySession(null);
+      } catch {
+        if (mounted && sessionEventRevision === initialRevision) applySession(null);
+      }
     }).catch(() => { if (sessionEventRevision === initialRevision) applySession(null); });
 
     const { data: { subscription } } = supabaseCloud.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       sessionEventRevision += 1;
       if (event === 'SIGNED_OUT') applySession(null);
-      else if (['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) applySession(session);
+      else if (['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
+        // Respaldo del refresh token en cada sesión válida: es lo que permite
+        // recuperar la sesión al arrancar aunque el SDK la haya descartado.
+        // No se borra en SIGNED_OUT: el logout explícito ya lo limpia en
+        // signOutCloudAccount; un SIGNED_OUT por fallo de refresh conserva el
+        // respaldo para el reintento del próximo arranque.
+        if (session?.refresh_token) saveSessionBackup(localStorage, session);
+        applySession(session);
+      }
     });
 
     return () => {
