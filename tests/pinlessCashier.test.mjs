@@ -41,3 +41,33 @@ test('login real rechaza identidad inexistente sin crear sesion', async t => {
   assert.equal(useAuthStore.getState().usuarioActivo, null);
   assert.equal(localStorage.getItem('abasto-device-session'), null);
 });
+
+// quitarPin: el dueño puede dejar un cajero sin PIN; se rechaza para otros roles o si ya es sin PIN.
+test('quitarPin deja al cajero en sinPin y protege el flujo', async t => {
+  installMemoryBrowser(t);
+  const { useAuthStore } = await loadRealModule('src/hooks/store/useAuthStore.js', {
+    'src/services/auditService.js': 'export const logEvent = () => {};',
+  });
+  const dueno = { id: 1, nombre: 'Cesar', rol: 'DUENO', sedeId: 'central' };
+  const cajero = { id: 2, nombre: 'Caja Sur', rol: 'CAJERO', sedeId: 'sur', pin: 'hashed', pinHashed: true, credentialVersion: 1 };
+  const cajeroLibre = { id: 3, nombre: 'Caja Norte', rol: 'CAJERO', sedeId: 'norte', sinPin: true, pin: null };
+  useAuthStore.setState({ usuarioActivo: dueno, usuarios: [dueno, cajero, cajeroLibre] });
+
+  await useAuthStore.getState().quitarPin(2);
+  const tras = useAuthStore.getState().usuarios.find(u => u.id === 2);
+  assert.equal(tras.pin, null);
+  assert.equal(tras.pinHashed, false);
+  assert.equal(tras.sinPin, true);
+  assert.equal(tras.credentialVersion, 2);
+  // El dueño sigue con sesión activa: quitar el PIN no lo expulsa.
+  assert.equal(useAuthStore.getState().usuarioActivo.id, 1);
+
+  // Error si ya está sin PIN.
+  await assert.rejects(() => useAuthStore.getState().quitarPin(3), /ya no tiene PIN/);
+  // Error si el objetivo no es cajero.
+  await assert.rejects(() => useAuthStore.getState().quitarPin(1), /Solo se puede quitar el PIN a un cajero/);
+
+  // Un cajero no puede quitar PINes.
+  useAuthStore.setState({ usuarioActivo: { id: 2, nombre: 'Caja Sur', rol: 'CAJERO', sedeId: 'sur' } });
+  await assert.rejects(() => useAuthStore.getState().quitarPin(3), /Solo el dueño/);
+});

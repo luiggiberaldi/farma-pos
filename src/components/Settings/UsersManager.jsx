@@ -5,7 +5,7 @@ import { isPinlessOptedIn, setPinlessOptIn } from '../../utils/operatorSession.j
 import { captureStorageContext } from '../../config/storageScope.js';
 import {
     UserPlus, Trash2, KeyRound, ShoppingCart,
-    Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2, Fingerprint
+    Crown, X, Check, Eye, EyeOff, AlertTriangle, Edit2, Fingerprint, LockOpen
 } from 'lucide-react';
 
 const ROLE_CONFIG = {
@@ -75,11 +75,12 @@ function PinInput({ value, onChange, label, length = 4 }) {
 }
 
 // ─── User Row ──────────────────────────────────────
-function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, triggerHaptic }) {
+function UserRow({ user, currentUserId, onChangePin, onRemovePin, onDelete, onEditName, triggerHaptic }) {
     const roleConf = ROLE_CONFIG[user.rol] || ROLE_CONFIG.CAJERO;
     const RoleIcon = roleConf.icon;
     const isCurrentUser = user.id === currentUserId;
     const isOwner = user.rol === 'DUENO';
+    const hasPin = !(user.sinPin === true && !user.pin);
     // A10: el acceso sin PIN requiere opt-in explícito del dueño en este equipo.
     const canOptInPinless = user.rol === 'CAJERO' && user.sinPin === true && !user.pin;
     const [pinlessOn, setPinlessOn] = useState(() => canOptInPinless && isPinlessOptedIn(user.id));
@@ -141,6 +142,15 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
                 >
                     <KeyRound size={16} />
                 </button>
+                {!isOwner && hasPin && (
+                    <button
+                        onClick={() => { triggerHaptic?.(); onRemovePin(user); }}
+                        className="p-2 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all active:scale-90"
+                        title="Quitar PIN (permitir acceso sin PIN)"
+                    >
+                        <LockOpen size={16} />
+                    </button>
+                )}
                 <button
                     onClick={() => { triggerHaptic?.(); onEditName(user); }}
                     className="p-2 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all active:scale-90"
@@ -164,7 +174,7 @@ function UserRow({ user, currentUserId, onChangePin, onDelete, onEditName, trigg
 
 // ═══════════════════════════════════════════════════ MAIN
 export default function UsersManager({ triggerHaptic }) {
-    const { usuarios, usuarioActivo, agregarUsuario, eliminarUsuario, cambiarPin, editarUsuario } = useAuthStore();
+    const { usuarios, usuarioActivo, agregarUsuario, eliminarUsuario, cambiarPin, quitarPin, editarUsuario, requireLogin } = useAuthStore();
 
     // States
     const [showAddForm, setShowAddForm] = useState(false);
@@ -178,6 +188,8 @@ export default function UsersManager({ triggerHaptic }) {
     const [showPin, setShowPin] = useState(false);
 
     const [deleteUser, setDeleteUser] = useState(null);
+
+    const [removePinUser, setRemovePinUser] = useState(null);
 
     const [editNameUser, setEditNameUser] = useState(null);
     const [editNameValue, setEditNameValue] = useState('');
@@ -211,6 +223,15 @@ export default function UsersManager({ triggerHaptic }) {
         } catch (error) { showToast(error.message || 'No se pudo eliminar el usuario.', 'error'); }
     };
 
+    const handleRemovePin = async () => {
+        if (!removePinUser) return;
+        try {
+            await quitarPin(removePinUser.id);
+            showToast(`PIN eliminado: ${removePinUser.nombre} quedó sin PIN`, 'success');
+            triggerHaptic?.(); setRemovePinUser(null);
+        } catch (error) { showToast(error.message || 'No se pudo quitar el PIN.', 'error'); }
+    };
+
     const handleEditName = () => {
         if (!editNameValue.trim()) return showToast('Ingresa un nombre válido', 'error');
         try {
@@ -231,6 +252,7 @@ export default function UsersManager({ triggerHaptic }) {
                         user={user}
                         currentUserId={usuarioActivo?.id}
                         onChangePin={u => { setChangePinUser(u); setPinValue(''); setShowPin(false); }}
+                        onRemovePin={u => setRemovePinUser(u)}
                         onEditName={u => { setEditNameUser(u); setEditNameValue(u.nombre); }}
                         onDelete={u => setDeleteUser(u)}
                         triggerHaptic={triggerHaptic}
@@ -387,6 +409,40 @@ export default function UsersManager({ triggerHaptic }) {
                                 className="flex-1 py-3 text-sm font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 active:scale-95 transition-all"
                             >
                                 Si, eliminar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Remove PIN Confirmation ─────────────── */}
+            {removePinUser && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setRemovePinUser(null)}>
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200 text-center" onClick={e => e.stopPropagation()}>
+                        <div className="w-14 h-14 mx-auto bg-amber-100 dark:bg-amber-900/30 text-amber-500 rounded-full flex items-center justify-center mb-4">
+                            <LockOpen size={28} />
+                        </div>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">Quitar PIN</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+                            <strong>"{removePinUser.nombre}"</strong> quedará sin PIN. Para que pueda entrar sin PIN debes además autorizarlo en este equipo con el botón de huella.
+                        </p>
+                        {requireLogin && (
+                            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl px-3 py-2 mb-4">
+                                "Pedir PIN al iniciar" está activado: aunque le quites el PIN, este cajero no podrá entrar hasta desactivarlo.
+                            </p>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setRemovePinUser(null)}
+                                className="flex-1 py-3 text-sm font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 rounded-xl active:scale-95 transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleRemovePin}
+                                className="flex-1 py-3 text-sm font-bold text-white bg-amber-500 rounded-xl hover:bg-amber-600 active:scale-95 transition-all"
+                            >
+                                Quitar PIN
                             </button>
                         </div>
                     </div>

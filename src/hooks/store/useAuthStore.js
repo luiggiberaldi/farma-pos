@@ -304,6 +304,21 @@ export const useAuthStore = create(persist((set, get) => ({
         if (actor.id === userId) get().logout('PIN actualizado');
     },
 
+    quitarPin: async (userId) => {
+        const actor = get().usuarioActivo;
+        requireOwner(actor);
+        const target = get().usuarios.find(u => u.id === userId);
+        if (!target || target.rol !== 'CAJERO') throw new Error('Solo se puede quitar el PIN a un cajero.');
+        if (target.sinPin === true && !target.pin) throw new Error('Este cajero ya no tiene PIN.');
+        const context = captureStorageContext();
+        const epoch = authEpoch;
+        if (epoch !== authEpoch || !isStorageContextActive(context) || get().usuarioActivo?.id !== actor.id) throw new Error('La sesión cambió durante la actualización.');
+        approvals.clear();
+        set(state => ({ usuarios: state.usuarios.map(u => u.id === userId
+            ? { ...u, pin: null, pinHashed: false, pinSalt: null, sinPin: true, factoryPin: false, credentialVersion: (u.credentialVersion || 0) + 1 } : u) }));
+        void logEvent('AUTH', 'PIN_ELIMINADO', `PIN eliminado para ${target.nombre || 'usuario'} (acceso sin PIN)`, actor, null, context);
+    },
+
     agregarUsuario: async (nombre, rol, pin, sedeId = getActiveSedeId()) => {
         requireOwner(get().usuarioActivo);
         if (!nombre?.trim() || !['DUENO', 'CAJERO'].includes(rol)) throw new Error('Nombre o rol inválido.');
