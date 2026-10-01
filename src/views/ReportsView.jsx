@@ -14,6 +14,7 @@ import { getLocalISODate, getDateRange } from '../utils/dateHelpers';
 import { calculateReportsData, groupSalesByCierreId } from '../utils/reportsProcessor';
 import { processVoidSale } from '../utils/voidSaleProcessor';
 import { loadClosures } from '../utils/closureService';
+import { readSalesForSede } from '../utils/localRetention';
 import { SEDES } from '../config/sedes';
 import { canSeeConsolidatedReports } from '../config/permissionsFarmacia';
 import { useSedeStore } from '../hooks/store/useSedeStore';
@@ -25,8 +26,6 @@ import PaymentBreakdown from '../components/Reports/PaymentBreakdown';
 import CasheaIcon from '../components/CasheaIcon';
 import { showToast } from '../components/Toast';
 
-
-const SALES_KEY = 'bodega_sales_v1';
 
 const RANGE_OPTIONS = [
     { id: 'today', label: 'Hoy' },
@@ -97,13 +96,15 @@ export default function ReportsView({ rates, triggerHaptic, onNavigate, isActive
         const load = async () => {
             setIsLoading(true);
             let merged = [];
+            // readSalesForSede incluye el archivo de retención: los reportes
+            // de rangos largos deben ver ventas viejas (utils/localRetention).
             if (canConsolidate && sedeFilter === 'todas') {
-                const lists = await Promise.all(SEDES.map(s => storageService.getItemForSede(SALES_KEY, s.id, [])));
+                const lists = await Promise.all(SEDES.map(s => readSalesForSede(storageService, s.id)));
                 merged = lists.flat();
             } else if (canConsolidate && sedeFilter !== 'activa') {
-                merged = await storageService.getItemForSede(SALES_KEY, sedeFilter, []);
+                merged = await readSalesForSede(storageService, sedeFilter);
             } else {
-                merged = await storageService.getItemForSede(SALES_KEY, effectiveSedeFilter, []);
+                merged = await readSalesForSede(storageService, effectiveSedeFilter);
             }
             // Cierres: solo en modo sede activa (son datos sede-scoped)
             const savedClosures = effectiveSedeFilter !== 'todas'

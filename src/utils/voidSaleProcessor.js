@@ -9,6 +9,7 @@ import { drainSnapshotWrites } from '../services/localSnapshotQueue.js';
 import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
 import { productIdentity, quantityRound, isPackageProduct } from './inventoryQuantities.js';
 import { customerCredit } from './salePlan.js';
+import { AUDIT_HOT_DAYS, auditTimestampMs, splitByAge, appendToArchive } from './localRetention.js';
 
 export async function processVoidSale(request, _currentSales, _currentProducts, options = {}) {
     const context = options.storageContext || captureStorageContext();
@@ -27,16 +28,28 @@ export async function processVoidSale(request, _currentSales, _currentProducts, 
     try {
         await drainSnapshotWrites(context);
         const timestamp = new Date().toISOString();
-        return await storageService.transaction(ledgerRecords(['sales', 'products', 'customers', 'lots', 'controlled', 'audit', 'queue'], context), state => {
+        return await storageService.transaction(ledgerRecords(['sales', 'salesArchive', 'products', 'customers', 'lots', 'controlled', 'audit', 'auditArchive', 'queue'], context), state => {
             verify(); assertLedgerArrays(state);
-            const sale = state.sales.find(item => item.id === request.id);
+            // La venta puede estar archivada (>90 días): al tocarse vuelve a
+            // caliente para que la anulación opere sobre ella con normalidad.
+            let hotSales = state.sales;
+            let salesArchive = state.salesArchive;
+            let sale = hotSales.find(item => item.id === request.id);
+            if (!sale) {
+                const idx = salesArchive.findIndex(item => item.id === request.id);
+                if (idx >= 0) {
+                    sale = salesArchive[idx];
+                    salesArchive = [...salesArchive.slice(0, idx), ...salesArchive.slice(idx + 1)];
+                    hotSales = [sale, ...hotSales];
+                }
+            }
             if (!sale || (sale.sedeId || sale.huella?.sedeId) !== context.sedeId || sale.accountId != null && sale.accountId !== context.accountId) throw new Error('No se encontró la venta en la sede activa.');
             if (!['VENTA', 'VENTA_FIADA', 'VENTA_CASHEA'].includes(sale.tipo)) throw new Error('Este movimiento no admite anulación de venta.');
             const id = `void_${sale.id}`;
             const queued = assertQueueOwnership(state.queue, id, 'VOID', context);
-            const prior = state.sales.find(item => item.originSaleId === sale.id && item.tipo === 'ANULACION_VENTA');
+            const prior = hotSales.find(item => item.originSaleId === sale.id && item.tipo === 'ANULACION_VENTA');
             if (!prior && queued) throw new Error('Existe un reverso pendiente sin historial. Requiere conciliación.');
-            if (prior) return { writes: {}, result: { updatedSales: state.sales, updatedProducts: state.products, updatedCustomers: state.customers, duplicate: true, reversal: prior } };
+            if (prior) return { writes: {}, result: { updatedSales: hotSales, updatedProducts: state.products, updatedCustomers: state.customers, duplicate: true, reversal: prior } };
             if (sale.relatedVoidId || sale.status === 'ANULADA' || sale.estado === 'ANULADA' || sale.anuladaEn) throw new Error('La venta ya fue anulada; revisa su reverso antes de actuar.');
             const products = structuredClone(state.products), lots = structuredClone(state.lots), customers = structuredClone(state.customers);
             if (!options.skipRestock) {
@@ -95,17 +108,18 @@ export async function processVoidSale(request, _currentSales, _currentProducts, 
             const huella = movementStamp('ANULACION_VENTA', id, context, actor, timestamp, { ventaId: sale.id, skipRestock: Boolean(options.skipRestock) });
             const reversal = { ...sale, id, operationId: id, syncQueueId: id, schemaVersion: 3, tipo: 'ANULACION_VENTA', status: 'PENDIENTE_SYNC', syncMode: 'offline',
                 originSaleId: sale.id, originSaleType: sale.tipo, relatedVoidId: null, voidedAt: null, operationIntent: null,
-                timestamp, fechaComercial: getOpenCashSession(state.sales)?.businessDate || getLocalISODate(now), horaComercial: getLocalISOTime(now), cajaCerrada: false, cierreId: null,
+                timestamp, fechaComercial: getOpenCashSession(hotSales)?.businessDate || getLocalISODate(now), horaComercial: getLocalISOTime(now), cajaCerrada: false, cierreId: null,
                 huella, skipRestock: Boolean(options.skipRestock), skipRevertMoney: false,
                 items: (sale.items || []).map(item => ({ ...item, qty: -Math.abs(item.qty), ...(item.quantityBase != null ? { quantityBase: -item.quantityBase } : {}) })),
                 payments: (sale.payments || []).map(payment => Object.fromEntries(Object.entries(payment).map(([key, value]) => [key, ['amount', 'amountInput', 'amountUsd', 'amountBs', 'amountCop'].includes(key) && typeof value === 'number' ? -value : value]))),
             };
             for (const key of ['totalUsd', 'totalBs', 'totalCop', 'cartSubtotalUsd', 'discountAmountUsd', 'fiadoUsd', 'casheaUsd', 'changeUsd', 'changeBs']) reversal[key] = -(sale[key] || 0);
             reversal.customerDelta = sale.customerDelta ? { netDelta: -sale.customerDelta.netDelta, casheaDelta: -sale.customerDelta.casheaDelta } : null;
-            const sales = [reversal, ...state.sales.map(item => item.id === sale.id ? { ...item, relatedVoidId: id, voidedAt: timestamp, voidedBy: actor.id } : item)];
+            const sales = [reversal, ...hotSales.map(item => item.id === sale.id ? { ...item, relatedVoidId: id, voidedAt: timestamp, voidedBy: actor.id } : item)];
             const queue = [...state.queue.map(entry => entry.queue_id === sale.syncQueueId ? { ...entry, relatedVoidId: id } : entry), pendingOperation(id, 'VOID', reversal, context, actor, timestamp)];
             const controlled = state.controlled.some(item => item.ventaId === sale.id) ? [{ id, ventaId: sale.id, tipo: 'ANULACION', ...huella }, ...state.controlled] : state.controlled;
-            return { writes: { sales, products, lots, customers, queue, controlled, audit: [ledgerAudit(id, 'VENTA_ANULADA', context, actor, timestamp, { saleId: sale.id }), ...state.audit] },
+            const auditSplit = splitByAge([ledgerAudit(id, 'VENTA_ANULADA', context, actor, timestamp, { saleId: sale.id }), ...state.audit], auditTimestampMs, AUDIT_HOT_DAYS, Date.parse(timestamp));
+            return { writes: { sales, salesArchive, products, lots, customers, queue, controlled, audit: auditSplit.hot, auditArchive: appendToArchive(auditSplit.archived, state.auditArchive) },
                 result: { updatedSales: sales, updatedProducts: products, updatedCustomers: customers, reversal } };
         }, context);
     } finally { release(); }

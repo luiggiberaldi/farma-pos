@@ -7,6 +7,7 @@ import { drainSnapshotWrites } from '../services/localSnapshotQueue.js';
 import { discountAuthorizationDetails } from './discountAuthorization.js';
 import { prepareSale } from './salePlan.js';
 import { REMOTE_OPERATIONS_PAUSED } from '../config/operationSafety.js';
+import { SALES_ARCHIVE_KEY, AUDIT_ARCHIVE_KEY } from './localRetention.js';
 
 export async function processSaleTransaction(input) {
     const options = structuredClone({ ...input, products: undefined, customers: undefined });
@@ -45,6 +46,10 @@ export async function processSaleTransaction(input) {
             { name: 'queue', key: 'offline_sales_queue', context: { ...context, accountId: context.accountId || 'local' }, fallback: [] },
             { name: 'controlled', key: 'farmacia_controlados_v1', fallback: [] },
             { name: 'audit', key: 'abasto_audit_log_v1', fallback: [] },
+            // Archivo de retención local (localRetention.js): las ventas y la
+            // auditoría viejas se mueven aquí, en la misma transacción atómica.
+            { name: 'salesArchive', key: SALES_ARCHIVE_KEY, fallback: [] },
+            { name: 'auditArchive', key: AUDIT_ARCHIVE_KEY, fallback: [] },
         ];
         const result = await storageService.transaction(records, snapshot => {
             assertActor();

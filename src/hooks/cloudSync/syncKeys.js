@@ -114,7 +114,13 @@ export const MERGEABLE_KEYS = [
 
 // Llaves legadas que dispositivos con versiones viejas aún pueden subir a
 // sync_documents; se ignoran al recibir para no pisar el estado local.
-export const PULL_IGNORE_KEYS = ['abasto_audit_log_v1'];
+// Los archivos de retención local nunca salen del dispositivo.
+// (Defensa en profundidad: tampoco están en SYNC_KEYS.)
+export const PULL_IGNORE_KEYS = [
+    'abasto_audit_log_v1',
+    'bodega_sales_archive_v1',
+    'abasto_audit_archive_v1',
+];
 // Llaves con payloads grandes: debounce largo para agrupar ráfagas (ej. hora
 // pico de ventas) en un solo upsert y reducir el Disk I/O de Supabase.
 export const HEAVY_KEYS = [

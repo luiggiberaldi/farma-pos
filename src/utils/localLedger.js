@@ -3,7 +3,8 @@ import { getLocalISODate, getLocalISOTime } from './dateHelpers.js';
 
 const KEYS = Object.freeze({ products: 'bodega_products_v1', sales: 'bodega_sales_v1', customers: 'bodega_customers_v1', lots: 'farmacia_lotes_v1',
     transfers: 'farmacia_transferencias_v1', controlled: 'farmacia_controlados_v1', audit: 'abasto_audit_log_v1', queue: 'offline_sales_queue', closures: 'bodega_cierres_v1',
-    suppliers: 'bodega_suppliers_v1', invoices: 'bodega_supplier_invoices_v1' });
+    suppliers: 'bodega_suppliers_v1', invoices: 'bodega_supplier_invoices_v1',
+    salesArchive: 'bodega_sales_archive_v1', auditArchive: 'abasto_audit_archive_v1' });
 export function ledgerRecords(names, context) {
     return names.map(name => {
         if (!KEYS[name]) throw new Error('Colección de operación desconocida.');

@@ -3,6 +3,7 @@ import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { beginLocalOperation } from '../services/localOperationGuard.js';
 import { drainSnapshotWrites } from '../services/localSnapshotQueue.js';
 import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
+import { AUDIT_HOT_DAYS, SALES_HOT_DAYS, auditTimestampMs, saleTimestampMs, splitByAge, appendToArchive } from './localRetention.js';
 import { round2 } from './dinero.js';
 import { normalizeTender } from './tenderMath.js';
 import { assertUsableStock, isBulkProduct, quantityRound } from './inventoryQuantities.js';
@@ -32,7 +33,12 @@ export async function processLocalAdminOperation(command, input) {
     const release = beginLocalOperation(command, context);
     try {
         await drainSnapshotWrites(context);
-        return await repo.transaction(ledgerRecords([...commands[command], 'queue', 'audit'], context), state => {
+        // Las operaciones que tocan ventas/auditoría también mueven lo viejo al
+        // archivo de retención local (nada se borra del dispositivo).
+        const recordNames = [...commands[command], 'queue', 'audit', 'auditArchive'];
+        const touchesSales = recordNames.includes('sales');
+        if (touchesSales) recordNames.push('salesArchive');
+        return await repo.transaction(ledgerRecords(recordNames, context), state => {
             repo.assertActive(); assertLedgerArrays(state);
             const prior = assertQueueOwnership(state.queue, id, command, context);
             if (prior) {
@@ -114,6 +120,16 @@ export async function processLocalAdminOperation(command, input) {
             }
             writes.audit = [ledgerAudit(id, command, context, operator, timestamp, { recordId: record.id }), ...state.audit];
             writes.queue = [...state.queue, pendingOperation(id, command, { intent, record }, context, operator, timestamp)];
+            // Retención local por archivo (utils/localRetention.js).
+            const nowMs = Date.parse(timestamp);
+            if (touchesSales && writes.sales) {
+                const salesSplit = splitByAge(writes.sales, saleTimestampMs, SALES_HOT_DAYS, nowMs);
+                writes.sales = salesSplit.hot;
+                if (salesSplit.archived.length) writes.salesArchive = appendToArchive(salesSplit.archived, state.salesArchive);
+            }
+            const auditSplit = splitByAge(writes.audit, auditTimestampMs, AUDIT_HOT_DAYS, nowMs);
+            writes.audit = auditSplit.hot;
+            if (auditSplit.archived.length) writes.auditArchive = appendToArchive(auditSplit.archived, state.auditArchive);
             return { writes, result: { ...state, ...writes, record, duplicate: false } };
         });
     } finally { release(); }

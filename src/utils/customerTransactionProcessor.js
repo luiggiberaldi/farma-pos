@@ -6,6 +6,7 @@ import { getOpenCashSession } from './closureLogic.js';
 import { normalizeTender } from './tenderMath.js';
 import { customerCredit } from './salePlan.js';
 import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
+import { AUDIT_HOT_DAYS, SALES_HOT_DAYS, auditTimestampMs, saleTimestampMs, splitByAge, appendToArchive } from './localRetention.js';
 
 export async function processCustomerTransaction(input) {
     const options = structuredClone(input);
@@ -25,7 +26,7 @@ export async function processCustomerTransaction(input) {
     const timestamp = new Date().toISOString();
     const release = beginLocalOperation('CUSTOMER_TRANSACTION', context);
     try {
-        return await repo.transaction(ledgerRecords(['customers', 'sales', 'queue', 'audit'], context), state => {
+        return await repo.transaction(ledgerRecords(['customers', 'sales', 'salesArchive', 'queue', 'audit', 'auditArchive'], context), state => {
             repo.assertActive(); assertLedgerArrays(state);
             const current = state.customers.find(item => item.id === customer.id);
             if (!current) throw new Error('El cliente ya no existe.');
@@ -53,10 +54,16 @@ export async function processCustomerTransaction(input) {
                 fiadoCollectedUsd: type === 'ABONO' ? Math.min(debt, payment.amountUsd) : 0,
                 creditAddedUsd: type === 'ABONO' ? Math.max(0, round2(payment.amountUsd - debt)) : 0,
                 payments: type === 'ABONO' ? [payment] : [], items: [], customerDelta: { netDelta, casheaDelta: 0 }, huella };
-            return { writes: { customers: newCustomers, sales: [movement, ...state.sales],
+            // Retención local por archivo (no se borra nada del dispositivo).
+            const nowMs = Date.parse(timestamp);
+            const salesSplit = splitByAge([movement, ...state.sales], saleTimestampMs, SALES_HOT_DAYS, nowMs);
+            const auditSplit = splitByAge([ledgerAudit(operationId, type, context, operator, timestamp, { customerId: current.id, amount: payment.amountUsd }), ...state.audit], auditTimestampMs, AUDIT_HOT_DAYS, nowMs);
+            const writes = { customers: newCustomers, sales: salesSplit.hot,
                 queue: [...state.queue, pendingOperation(operationId, 'CUSTOMER_MOVEMENT', movement, context, operator, timestamp)],
-                audit: [ledgerAudit(operationId, type, context, operator, timestamp, { customerId: current.id, amount: payment.amountUsd }), ...state.audit] },
-                result: { updatedCustomer, newCustomers, movement } };
+                audit: auditSplit.hot };
+            if (salesSplit.archived.length) writes.salesArchive = appendToArchive(salesSplit.archived, state.salesArchive);
+            if (auditSplit.archived.length) writes.auditArchive = appendToArchive(auditSplit.archived, state.auditArchive);
+            return { writes, result: { updatedCustomer, newCustomers, movement } };
         });
     } finally { release(); }
 }

@@ -24,6 +24,10 @@
 import { storageService } from '../utils/storageService';
 import { captureStorageContext } from '../config/storageScope';
 import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE, pausedCloudOperation } from '../config/operationSafety.js';
+import {
+    AUDIT_ARCHIVE_KEY, AUDIT_HOT_DAYS,
+    auditTimestampMs, splitByAge, appendToArchive, readFullAuditLog,
+} from '../utils/localRetention.js';
 
 const AUDIT_KEY = 'abasto_audit_log_v1';
 const AUDIT_SYNC_CURSOR = 'abasto_audit_sync_cursor';
@@ -56,9 +60,19 @@ export async function logEvent(cat, action, desc, user = null, meta = null, cont
         };
         if (meta) entry.meta = meta;
 
-        await storageService.transaction([{ name: 'audit', key: AUDIT_KEY, fallback: [] }], state => {
-            if (!Array.isArray(state.audit)) throw new Error('Bitácora inválida; no se sobrescribirá.');
-            return { writes: { audit: [entry, ...state.audit] } };
+        // Retención local por archivo: las entradas viejas se mueven al archivo
+        // del dispositivo en la misma transacción (no se borran). Ver
+        // utils/localRetention.js — es la "política de retención explícita y
+        // respaldada" que pedía purgeOldEntries.
+        await storageService.transaction([
+            { name: 'audit', key: AUDIT_KEY, fallback: [] },
+            { name: 'auditArchive', key: AUDIT_ARCHIVE_KEY, fallback: [] },
+        ], state => {
+            if (!Array.isArray(state.audit) || !Array.isArray(state.auditArchive)) throw new Error('Bitácora inválida; no se sobrescribirá.');
+            const split = splitByAge([entry, ...state.audit], auditTimestampMs, AUDIT_HOT_DAYS, entry.ts);
+            const writes = { audit: split.hot };
+            if (split.archived.length) writes.auditArchive = appendToArchive(split.archived, state.auditArchive);
+            return { writes };
         }, context);
     } catch (err) {
         // Silencioso — el audit log nunca debe romper la app
@@ -80,7 +94,8 @@ export async function logEvent(cat, action, desc, user = null, meta = null, cont
  */
 export async function getAuditLog(filters = {}) {
     try {
-        let log = await storageService.getItem(AUDIT_KEY, []);
+        // Lee caliente + archivo: el visor muestra el historial completo.
+        let log = await readFullAuditLog(storageService, captureStorageContext());
 
         if (filters.cat) {
             log = log.filter(e => e.cat === filters.cat);
@@ -122,9 +137,19 @@ export async function getAuditCount() {
 /**
  * Elimina registros con más de MAX_AGE_DAYS días.
  * Llamar al iniciar la app.
+ *
+ * Política vigente (2026-10-01): NO se borra evidencia. En su lugar,
+ * logEvent archiva automáticamente las entradas de más de AUDIT_HOT_DAYS
+ * (90) días a `abasto_audit_archive_v1` en el mismo dispositivo, y el
+ * archivo entra en el auto-backup local. Esa es la "política de retención
+ * explícita y respaldada" que exigía este comentario: el log caliente
+ * queda acotado y nada se pierde. Esta función se conserva como no-op
+ * intencional por compatibilidad.
  */
 export async function purgeOldEntries() {
-    // Business evidence is retained until an explicit, backed-up retention policy exists.
+    // Business evidence is retained: logEvent archives entries older than
+    // AUDIT_HOT_DAYS to abasto_audit_archive_v1 (on-device + local backup)
+    // instead of deleting them. See utils/localRetention.js.
     return { status: 'retained' };
     /* Legacy retention, intentionally not executed.
     try {

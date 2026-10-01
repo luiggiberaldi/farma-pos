@@ -8,11 +8,15 @@ import { sanitizeBackup } from '../utils/backupSafety.js';
 const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
 const BACKUP_KEY = 'bodega_autobackup_v2';
 
-// Claves criticas que se respaldan
+// Claves criticas que se respaldan (incluye los archivos de retención local:
+// el archivo sigue en el dispositivo y debe sobrevivir a una restauración).
 const CRITICAL_KEYS = [
     'bodega_products_v1',
     'bodega_customers_v1',
     'bodega_sales_v1',
+    'bodega_sales_archive_v1',
+    'abasto_audit_log_v1',
+    'abasto_audit_archive_v1',
     'bodega_payment_methods_v1',
     'monitor_rates_v12',
 ];

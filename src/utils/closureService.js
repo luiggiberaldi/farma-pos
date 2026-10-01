@@ -5,6 +5,7 @@ import { useAuthStore } from '../hooks/store/useAuthStore.js';
 import { logEvent } from '../services/auditService';
 import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
 import { parseSafeFloat } from './rateResolver.js';
+import { readAllSales, AUDIT_HOT_DAYS, SALES_HOT_DAYS, auditTimestampMs, saleTimestampMs, splitByAge, appendToArchive } from './localRetention.js';
 import {
     CLOSURE_BACKUP_KEY,
     CLOSURE_STORAGE_KEY,
@@ -34,7 +35,12 @@ export async function loadClosures(context = captureStorageContext()) {
 }
 
 export async function loadSales(context = captureStorageContext()) {
-    return storageService.getItem(SALES_KEY, [], context);
+    // Incluye el archivo de retención: los cierres y correcciones históricas
+    // deben ver ventas viejas aunque ya no estén en la clave caliente.
+    // ATENCIÓN: no escribir este arreglo mezclado de vuelta a SALES_KEY
+    // (desharía el archivo). Al reactivar las rutas pausadas, partir con
+    // splitByAge() antes de escribir. Ver utils/localRetention.js.
+    return readAllSales(storageService, context);
 }
 
 export async function createClosureBackup(correctionId) {
@@ -443,7 +449,7 @@ export async function commitNormalClosure({ fechaComercial, tasaBcv, reconData =
     const release = beginLocalOperation('CLOSE_CASH', context);
     try {
         const timestamp = new Date().toISOString();
-        return await storageService.transaction(ledgerRecords(['sales', 'closures', 'queue', 'audit'], context), state => {
+        return await storageService.transaction(ledgerRecords(['sales', 'salesArchive', 'closures', 'queue', 'audit', 'auditArchive'], context), state => {
             assertActor(); assertLedgerArrays(state);
             if (typeof cashSessionId !== 'string' || !cashSessionId) throw new Error('Identifica la caja que estás cerrando. Vuelve a abrir el formulario de cierre.');
             const id = `close_${cashSessionId}`;
@@ -464,9 +470,17 @@ export async function commitNormalClosure({ fechaComercial, tasaBcv, reconData =
             const huella = movementStamp('CIERRE_CAJA', id, context, operator, timestamp);
             const closure = { ...result.closure, operationId: id, operationIntent: intent, cashSessionId, sedeId: context.sedeId, accountId: context.accountId, huella };
             const closures = result.updatedClosures.map(item => item.cierreId === result.closure.cierreId ? closure : item);
-            return { writes: { sales: result.updatedSales, closures,
+            // Retención local por archivo (no se borra nada del dispositivo).
+            const nowMs = Date.parse(timestamp);
+            const salesSplit = splitByAge(result.updatedSales, saleTimestampMs, SALES_HOT_DAYS, nowMs);
+            const auditSplit = splitByAge([ledgerAudit(id, 'CIERRE_CAJA', context, operator, timestamp, { cierreId: closure.cierreId }), ...state.audit],
+                auditTimestampMs, AUDIT_HOT_DAYS, nowMs);
+            const writes = { sales: salesSplit.hot, closures,
                 queue: [...state.queue, pendingOperation(id, 'CLOSE_CASH', closure, context, operator, timestamp)],
-                audit: [ledgerAudit(id, 'CIERRE_CAJA', context, operator, timestamp, { cierreId: closure.cierreId }), ...state.audit] },
+                audit: auditSplit.hot };
+            if (salesSplit.archived.length) writes.salesArchive = appendToArchive(salesSplit.archived, state.salesArchive);
+            if (auditSplit.archived.length) writes.auditArchive = appendToArchive(auditSplit.archived, state.auditArchive);
+            return { writes,
                 result: { ...result, closure, updatedClosures: closures } };
         }, context);
     } finally { release(); }

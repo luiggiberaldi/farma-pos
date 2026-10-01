@@ -6,6 +6,7 @@ import { drainSnapshotWrites } from '../services/localSnapshotQueue.js';
 import { assertUsableStock, isBulkProduct, packageFactor, consumeLots, quantityRound } from './inventoryQuantities.js';
 import { getLocalISODate } from './dateHelpers.js';
 import { ledgerRecords, assertLedgerArrays, assertQueueOwnership, movementStamp, ledgerAudit, pendingOperation } from './localLedger.js';
+import { AUDIT_HOT_DAYS, auditTimestampMs, splitByAge, appendToArchive } from './localRetention.js';
 
 export const getTransferencias = () => storageService.getItem('farmacia_transferencias_v1', []);
 export const getTransferenciasPendientesPara = (list, sede) => list.filter(item => item.estado === 'ENVIADA' && item.destinoId === sede);
@@ -29,7 +30,7 @@ async function transfer(kind, input) {
         const timestamp = new Date().toISOString();
         const requestedId = kind === 'SEND' ? options.operationId || crypto.randomUUID() : options.transferencia?.id;
         if (typeof requestedId !== 'string' || !requestedId) throw new Error('Identificador de transferencia inválido.');
-        return await storageService.transaction(ledgerRecords(['products', 'lots', 'transfers', 'audit', 'queue'], context), state => {
+        return await storageService.transaction(ledgerRecords(['products', 'lots', 'transfers', 'audit', 'auditArchive', 'queue'], context), state => {
             verify(); assertLedgerArrays(state);
             let products = structuredClone(state.products), lots = structuredClone(state.lots), record;
             const prior = state.transfers.find(item => item.id === requestedId);
@@ -91,9 +92,14 @@ async function transfer(kind, input) {
                     [kind === 'RECEIVE' ? 'huellaRecepcion' : 'huellaCancelacion']: movementStamp('TRANSFERENCIA', eventId, context, operator, timestamp) };
             }
             const transfers = prior ? state.transfers.map(item => item.id === record.id ? record : item) : [record, ...state.transfers];
-            return { writes: { products, lots, transfers,
+            // Retención local de auditoría por archivo (no se borra nada).
+            const auditSplit = splitByAge([ledgerAudit(eventId, `TRANSFER_${kind}`, context, operator, timestamp, { transferId: record.id }), ...state.audit],
+                auditTimestampMs, AUDIT_HOT_DAYS, Date.parse(timestamp));
+            const writes = { products, lots, transfers,
                 queue: [...state.queue, pendingOperation(eventId, `TRANSFER_${kind}`, record, context, operator, timestamp)],
-                audit: [ledgerAudit(eventId, `TRANSFER_${kind}`, context, operator, timestamp, { transferId: record.id }), ...state.audit] },
+                audit: auditSplit.hot };
+            if (auditSplit.archived.length) writes.auditArchive = appendToArchive(auditSplit.archived, state.auditArchive);
+            return { writes,
                 result: { transferencia: record, updatedProducts: products, duplicate: false } };
         }, context);
     } finally { release(); }

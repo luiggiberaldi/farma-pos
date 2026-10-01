@@ -9,6 +9,7 @@ import { syncV2Paused, pausedCloudOperation } from '../config/operationSafety.js
 import { sanitizeBackup } from '../utils/backupSafety.js';
 import { SUPABASE_FREE_PROFILE, inspectSyncPayload, fingerprintSyncPayload } from '../config/supabaseFreeTier.js';
 import { _trimSalesForSync } from './cloudSync/syncUtils.js';
+import { SALES_ARCHIVE_KEY, SALES_HOT_DAYS, saleTimestampMs, splitByAge, appendToArchive } from '../utils/localRetention.js';
 import { SYNC_KEYS, LOCAL_KEYS, REALTIME_KEYS, POLLING_ONLY_KEYS, MERGEABLE_KEYS, PULL_IGNORE_KEYS, HEAVY_KEYS, DEBOUNCE_MS, DEBOUNCE_MS_HEAVY } from './cloudSync/syncKeys.js';
 import { _mergeArraysById, _computePushHash, sanitizeForPush } from './cloudSync/syncUtils.js';
 export { broadcastFactoryReset, broadcastForceReload } from './cloudSync/syncBroadcast.js';
@@ -256,6 +257,21 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             }
 
             await localforage.setItem(getScopedStorageKey(docId), finalData);
+            // Retención local: si el merge del pull trae ventas viejas a la
+            // clave caliente, se archivan en el dispositivo (no se borran).
+            if (docId === 'bodega_sales_v1' && Array.isArray(finalData)) {
+                try {
+                    const archiveKey = getScopedStorageKey(SALES_ARCHIVE_KEY);
+                    const existing = await localforage.getItem(archiveKey);
+                    const split = splitByAge(finalData, saleTimestampMs, SALES_HOT_DAYS);
+                    if (split.archived.length) {
+                        await localforage.setItem(getScopedStorageKey(docId), split.hot);
+                        await localforage.setItem(archiveKey, appendToArchive(split.archived, existing));
+                    }
+                } catch (e) {
+                    console.warn('[CloudSync] Archivo de retención falló, se conserva caliente:', e.message);
+                }
+            }
             const serializedPayload = typeof finalData === 'string' ? finalData : JSON.stringify(finalData);
             recordSyncMetric(docId, 'pull');
             recordSyncMetric(docId, 'downloadBytes', new TextEncoder().encode(serializedPayload).byteLength);

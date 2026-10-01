@@ -6,6 +6,10 @@ import { productIdentity, isBulkProduct, isPackageProduct, packageFactor, quanti
 import { getLocalISODate, getLocalISOTime } from './dateHelpers.js';
 import { getOpenCashSession } from './closureLogic.js';
 import { assertQueueOwnership } from './localLedger.js';
+import {
+    SALES_ARCHIVE_KEY, AUDIT_ARCHIVE_KEY, SALES_HOT_DAYS, AUDIT_HOT_DAYS,
+    saleTimestampMs, auditTimestampMs, splitByAge, appendToArchive, purgeDeadLots,
+} from './localRetention.js';
 
 const closeMoney = (left, right) => Number.isFinite(left) && Number.isFinite(right) && Math.round(left * 100) === Math.round(right * 100);
 const samePrice = (left, right) => Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 1e-9;
@@ -21,8 +25,8 @@ export function customerCredit(customer) {
 }
 
 export function prepareSale(options, state, { operationId, operator, context, timestamp, discountAuthorization = null }) {
-    const { products, customers, sales, lots, queue, controlled, audit } = state;
-    if (![products, customers, sales, lots, queue, controlled, audit].every(Array.isArray)) throw new Error('Datos locales inválidos; no se sobrescribirá el historial.');
+    const { products, customers, sales, lots, queue, controlled, audit, salesArchive = [], auditArchive = [] } = state;
+    if (![products, customers, sales, lots, queue, controlled, audit, salesArchive, auditArchive].every(Array.isArray)) throw new Error('Datos locales inválidos; no se sobrescribirá el historial.');
     const intent = JSON.stringify({
         account: context.accountId, branch: context.sedeId, operator: operator.id,
         cart: Array.isArray(options.cart) ? options.cart.map(item => [productIdentity(item || {}), item?.qty, item?.priceUsd, item?.exactBs ?? null, item?.mode || item?._mode || null]) : null,
@@ -144,7 +148,21 @@ export function prepareSale(options, state, { operationId, operator, context, ti
         payload, sync_status: 'pending', attempts: 0, created_at: timestamp, next_attempt_at: null };
     const controlledEntries = items.some(item => item.isControlled) ? [{ id: operationId, ventaId: operationId, ...huella, clienteDocumento: sale.customerDocument, prescription: sale.prescription, items: items.filter(item => item.isControlled) }, ...controlled] : controlled;
     const auditEntry = { id: operationId, ts: now.getTime(), cat: 'VENTA', action: 'VENTA_CONFIRMADA_LOCAL', desc: `Venta ${correlativo} confirmada localmente`, userId: operator.id, userName: operator.nombre, userRole: operator.rol, sedeId: context.sedeId, meta: { saleId: operationId, total: sale.totalUsd } };
-    return { writes: { products: updatedProducts, customers: updatedCustomers, sales: [sale, ...sales], lots: allocation.lots,
-        queue: [...queue, entry], controlled: controlledEntries, audit: [auditEntry, ...audit] },
-        result: { success: true, sale, updatedProducts, updatedCustomers, syncMode: 'offline' } };
+    // Retención local: las ventas y la auditoría viejas se archivan en el
+    // dispositivo (no se borran). La venta recién creada siempre queda en
+    // caliente (su timestamp es "ahora"), así que saleNumber = max+1 sigue
+    // siendo monótono: lo archivado es estrictamente más viejo.
+    const nowMs = now.getTime();
+    const salesSplit = splitByAge([sale, ...sales], saleTimestampMs, SALES_HOT_DAYS, nowMs);
+    const auditSplit = splitByAge([auditEntry, ...audit], auditTimestampMs, AUDIT_HOT_DAYS, nowMs);
+    const liveLots = purgeDeadLots(allocation.lots, today).lots;
+    const writes = { products: updatedProducts, customers: updatedCustomers, sales: salesSplit.hot, lots: liveLots,
+        queue: [...queue, entry], controlled: controlledEntries, audit: auditSplit.hot };
+    // El archivo solo se escribe cuando realmente se movió algo: evita
+    // escrituras redundantes en cada venta y conserva el conteo de writes.
+    if (salesSplit.archived.length) writes.salesArchive = appendToArchive(salesSplit.archived, salesArchive);
+    if (auditSplit.archived.length) writes.auditArchive = appendToArchive(auditSplit.archived, auditArchive);
+    return { writes,
+        result: { success: true, sale, updatedProducts, updatedCustomers, syncMode: 'offline',
+            retention: { salesArchived: salesSplit.archived.length, auditArchived: auditSplit.archived.length } } };
 }
