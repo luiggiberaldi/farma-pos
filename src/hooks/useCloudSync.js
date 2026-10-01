@@ -3,15 +3,15 @@ import localforage from 'localforage';
 import { supabaseCloud } from '../config/supabaseCloud';
 import { useAuthStore } from './store/useAuthStore';
 import { APP_STORAGE_DB_NAME, APP_STORAGE_STORE_NAME, getScopedStorageKey, setActiveAccountId, captureStorageContext, getActiveSedeId } from '../config/storageScope';
-import { buildCloudDocumentId, parseCloudDocumentId, isCloudDocumentForContext } from '../config/cloudDocumentScope.js';
+import { buildCloudDocumentId, parseCloudDocumentId, isCloudDocumentForContext, isSalesChunkKey, buildSalesChunkDocumentId, salesChunkDocIdLike, salesChunkDateOf } from '../config/cloudDocumentScope.js';
 import { recordSyncMetric } from '../utils/syncMetrics';
 import { syncV2Paused, pausedCloudOperation } from '../config/operationSafety.js';
 import { sanitizeBackup } from '../utils/backupSafety.js';
 import { SUPABASE_FREE_PROFILE, inspectSyncPayload, fingerprintSyncPayload } from '../config/supabaseFreeTier.js';
-import { _trimSalesForSync } from './cloudSync/syncUtils.js';
 import { SALES_ARCHIVE_KEY, SALES_HOT_DAYS, saleTimestampMs, splitByAge, appendToArchive } from '../utils/localRetention.js';
 import { SYNC_KEYS, LOCAL_KEYS, REALTIME_KEYS, POLLING_ONLY_KEYS, MERGEABLE_KEYS, PULL_IGNORE_KEYS, HEAVY_KEYS, DEBOUNCE_MS, DEBOUNCE_MS_HEAVY } from './cloudSync/syncKeys.js';
-import { _mergeArraysById, _computePushHash, sanitizeForPush } from './cloudSync/syncUtils.js';
+import { _mergeArraysById, _computePushHash, sanitizeForPush, SALES_SYNC_WINDOW_DAYS } from './cloudSync/syncUtils.js';
+import { planSalesChunkPushes, saleChunkDay, staleChunkKeys, SALES_CHUNK_PRUNE_INTERVAL_MS, SALES_CHUNK_PRUNE_TS_KEY } from './cloudSync/salesChunks.js';
 export { broadcastFactoryReset, broadcastForceReload } from './cloudSync/syncBroadcast.js';
 export { sanitizeForPush } from './cloudSync/syncUtils.js';
 // ─── Estado Global del Motor ───────────────────────────────────────────────
@@ -42,6 +42,172 @@ const _pendingPushValues = {}; // último valor pendiente por llave, para flush 
  * Llamado desde storageService (colección 'store') y el interceptor localStorage (colección 'local').
  * Soporta un parámetro bypassDebounce para subidas iniciales o forzadas inmediatas.
  */
+/**
+ * Upsert genérico de UN documento a sync_documents.
+ * docKey: llave lógica para métricas y hash-dedup (ej. 'bodega_sales_20261001').
+ * pendingKey/pendingValue: qué reintentar si el envío falla (por defecto el
+ * propio documento; ventas reintentan la llave lógica para re-fragmentar).
+ */
+async function performDocumentUpsert({ docKey, docId, collectionType, value, context, sanitizeKey, pendingKey, pendingValue }) {
+    try {
+        const sanitizedValue = sanitizeForPush(sanitizeKey, value);
+
+        const { serialized, bytes, allowed, warning } = inspectSyncPayload(sanitizedValue);
+        if (!allowed) {
+            recordSyncMetric(docKey, 'oversized');
+            _pendingPushValues[pendingKey || docKey] = { value: pendingValue !== undefined ? pendingValue : value, context };
+            console.warn(`[CloudSync] ${docKey} supera el límite local de 1 MiB; datos conservados sin marcar envío.`);
+            return { status: 'deferred', code: 'FREE_TIER_PAYLOAD_LIMIT', bytes };
+        }
+        if (warning) console.warn(`[CloudSync] ${docKey} supera 250 KiB; conviene usar deltas antes de ampliar.`);
+        const hash = await _computePushHash(serialized);
+        if (_lastPushHash[docKey] === hash) {
+            recordSyncMetric(docKey, 'skipHash');
+            return { status: 'ok', skipped: true };
+        } // Sin cambios reales → skip
+        // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
+
+        const { data: { session } } = await supabaseCloud.auth.getSession();
+        if (!session?.user?.id || session.user.id !== context.accountId) return;
+
+        const { error } = await supabaseCloud.from('sync_documents').upsert({
+            user_id: session.user.id,
+            collection: collectionType,
+            doc_id: docId,
+            data: { payload: sanitizedValue, sourceKey: docKey, sedeId: context.sedeId },
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,collection,doc_id' });
+        if (error) throw error;
+
+        // Solo marcar como enviado si el push fue exitoso
+        _lastPushHash[docKey] = hash;
+        recordSyncMetric(docKey, 'push');
+        recordSyncMetric(docKey, 'uploadBytes', bytes);
+
+        // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
+        // Usa canal Broadcast en vez de postgres_changes para NO activar
+        // la decodificación lógica de WAL en la base de datos.
+        if (SUPABASE_FREE_PROFILE.realtimeEnabled && REALTIME_KEYS.includes(docKey) && realtimeChannel) {
+            try {
+                await realtimeChannel.send({
+                    type: 'broadcast',
+                    event: 'sync_update',
+                    payload: { doc_id: docId, collection: collectionType, data: sanitizedValue }
+                });
+            } catch (bcastErr) {
+                // No crítico: el otro dispositivo lo verá en el próximo pull
+                console.warn('[CloudSync] Broadcast falló (no crítico):', bcastErr?.message);
+            }
+        }
+        return { status: 'ok', bytes };
+    } catch (e) {
+        _pendingPushValues[pendingKey || docKey] = { value: pendingValue !== undefined ? pendingValue : value, context };
+        recordSyncMetric(docKey, 'error');
+        console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
+        return { status: 'deferred', code: 'SYNC_SEND_FAILED' };
+    }
+}
+
+/**
+ * Push de ventas fragmentado por día comercial (chunks append-only).
+ * Reemplaza el documento monolítico de 30 días: cada chunk se sube por
+ * separado y el gate de 1 MiB aplica por día (~600 ventas/día de techo),
+ * no al agregado mensual. Los chunks fuera de la ventana cloud no se suben
+ * (quedan en el dispositivo) y los viejos se podan una vez al día.
+ */
+async function pushSalesChunks(sales, context) {
+    const plans = planSalesChunkPushes(sales);
+    if (plans.length === 0) return { status: 'ok', chunks: 0 };
+    const { data: { session } } = await supabaseCloud.auth.getSession();
+    if (!session?.user?.id || session.user.id !== context.accountId) return;
+
+    let pushed = 0, deferred = 0, failed = 0;
+    for (const plan of plans) {
+        const result = await performDocumentUpsert({
+            docKey: plan.chunkKey,
+            docId: buildSalesChunkDocumentId(plan.day, context),
+            collectionType: 'store',
+            value: plan.sales,
+            context,
+            sanitizeKey: plan.chunkKey,
+            pendingKey: 'bodega_sales_v1',
+            pendingValue: sales,
+        });
+        if (result?.code === 'SYNC_SEND_FAILED') failed++;
+        else if (result?.status === 'deferred') deferred++;
+        else pushed++;
+        // Un solo día con >1 MiB (~600 ventas) no bloquea los demás días.
+    }
+    // Poda oportunista: best-effort, una vez al día por dispositivo.
+    maybePruneStaleSalesChunks(context).catch(() => {});
+    if (failed > 0) return { status: 'deferred', code: 'SYNC_SEND_FAILED' };
+    if (deferred > 0) return { status: 'deferred', code: 'FREE_TIER_PAYLOAD_LIMIT', chunks: plans.length, deferred };
+    return { status: 'ok', chunks: pushed };
+}
+
+/**
+ * Elimina de sync_documents los chunks de ventas más viejos que la ventana
+ * cloud. Corre como máximo una vez cada 24 h por dispositivo; los datos no
+ * se pierden (siguen en el dispositivo y en cloud_backups).
+ */
+async function maybePruneStaleSalesChunks(context) {
+    try {
+        const last = Number(localStorage.getItem(SALES_CHUNK_PRUNE_TS_KEY) || 0);
+        if (Date.now() - last < SALES_CHUNK_PRUNE_INTERVAL_MS) return;
+        const { data: { session } } = await supabaseCloud.auth.getSession();
+        if (!session?.user?.id || session.user.id !== context.accountId) return;
+        const { data: metas, error } = await supabaseCloud
+            .from('sync_documents')
+            .select('doc_id')
+            .eq('user_id', session.user.id)
+            .like('doc_id', salesChunkDocIdLike({ accountId: session.user.id, sedeId: context.sedeId }));
+        if (error) throw error;
+        const keys = (metas || [])
+            .map(m => parseCloudDocumentId(m.doc_id))
+            .filter(p => p && isSalesChunkKey(p.key))
+            .map(p => p.key);
+        const stale = staleChunkKeys(keys);
+        if (stale.length > 0) {
+            const staleIds = stale.map(k => buildSalesChunkDocumentId(salesChunkDateOf(k), context));
+            const { error: delError } = await supabaseCloud
+                .from('sync_documents')
+                .delete()
+                .eq('user_id', session.user.id)
+                .in('doc_id', staleIds);
+            if (delError) throw delError;
+            console.log(`[CloudSync] Poda de chunks de ventas: ${stale.length} documento(s) >${SALES_SYNC_WINDOW_DAYS}d eliminados.`);
+        }
+        localStorage.setItem(SALES_CHUNK_PRUNE_TS_KEY, String(Date.now()));
+    } catch (e) {
+        console.warn('[CloudSync] Poda de chunks de ventas falló (no crítico):', e.message ?? e);
+    }
+}
+
+/**
+ * Descubre chunks de ventas en la nube para cuenta/sede.
+ * metaOnly: solo doc_id/collection/updated_at (fase 1 del polling).
+ */
+async function _discoverSalesChunks(userId, sedeId, updatedAfter = null, metaOnly = false) {
+    try {
+        let query = supabaseCloud
+            .from('sync_documents')
+            .select(metaOnly ? 'doc_id, collection, updated_at' : 'collection, doc_id, data, updated_at')
+            .eq('user_id', userId)
+            .like('doc_id', salesChunkDocIdLike({ accountId: userId, sedeId }));
+        if (updatedAfter) query = query.gt('updated_at', updatedAfter);
+        const { data, error } = await query;
+        if (error) throw error;
+        const ctx = { accountId: userId, sedeId };
+        return (data || []).filter(d => {
+            const parsed = parseCloudDocumentId(d.doc_id);
+            return parsed && isSalesChunkKey(parsed.key) && isCloudDocumentForContext(d.doc_id, parsed.key, ctx);
+        });
+    } catch (e) {
+        console.warn('[CloudSync] Discovery de chunks de ventas falló:', e.message ?? e);
+        return [];
+    }
+}
+
 export const pushCloudSync = async (key, value, bypassDebounce = false, storageContext = captureStorageContext()) => {
     const context = Object.freeze({ ...storageContext });
     if (syncV2Paused()) return pausedCloudOperation();
@@ -52,67 +218,18 @@ export const pushCloudSync = async (key, value, bypassDebounce = false, storageC
     // Esto evita que otro sistema o la cuenta anterior contamine la nube activa.
     if (!initialSyncReady) return;
 
-    const performUpsert = async () => {
-        try {
-            const sanitizedValue = sanitizeForPush(key, value);
-
-            const { serialized, bytes, allowed, warning } = inspectSyncPayload(sanitizedValue);
-            if (!allowed) {
-                recordSyncMetric(key, 'oversized');
-                _pendingPushValues[key] = { value, context };
-                console.warn(`[CloudSync] ${key} supera el límite local de 1 MiB; datos conservados sin marcar envío.`);
-                return { status: 'deferred', code: 'FREE_TIER_PAYLOAD_LIMIT', bytes };
-            }
-            if (warning) console.warn(`[CloudSync] ${key} supera 250 KiB; conviene usar deltas antes de ampliar.`);
-            const hash = await _computePushHash(serialized);
-            if (_lastPushHash[key] === hash) {
-                recordSyncMetric(key, 'skipHash');
-                return;
-            } // Sin cambios reales → skip
-            // NOTA: hash se actualiza DESPUÉS del push exitoso para garantizar reintentos si falla
-
-            const { data: { session } } = await supabaseCloud.auth.getSession();
-            if (!session?.user?.id || session.user.id !== context.accountId) return;
-
-            const collectionType = LOCAL_KEYS.includes(key) ? 'local' : 'store';
-            const docId = buildCloudDocumentId(key, context);
-
-            const { error } = await supabaseCloud.from('sync_documents').upsert({
-                user_id: session.user.id,
-                collection: collectionType,
-                doc_id: docId,
-                data: { payload: sanitizedValue, sourceKey: key, sedeId: context.sedeId },
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id,collection,doc_id' });
-            if (error) throw error;
-
-            // Solo marcar como enviado si el push fue exitoso
-            _lastPushHash[key] = hash;
-            recordSyncMetric(key, 'push');
-            recordSyncMetric(key, 'uploadBytes', bytes);
-
-            // Broadcast ligero para llaves de Realtime (tasas/config < 1KB)
-            // Usa canal Broadcast en vez de postgres_changes para NO activar
-            // la decodificación lógica de WAL en la base de datos.
-            if (SUPABASE_FREE_PROFILE.realtimeEnabled && REALTIME_KEYS.includes(key) && realtimeChannel) {
-                try {
-                    await realtimeChannel.send({
-                        type: 'broadcast',
-                        event: 'sync_update',
-                        payload: { doc_id: docId, collection: collectionType, data: sanitizedValue }
-                    });
-                } catch (bcastErr) {
-                    // No crítico: el otro dispositivo lo verá en el próximo pull
-                    console.warn('[CloudSync] Broadcast falló (no crítico):', bcastErr?.message);
-                }
-            }
-
-        } catch (e) {
-            _pendingPushValues[key] = { value, context };
-            recordSyncMetric(key, 'error');
-            console.warn('[CloudSync] Error al enviar a la nube:', e.message ?? e);
-            return { status: 'deferred', code: 'SYNC_SEND_FAILED' };
-        }
+    const performPush = async () => {
+        // Ventas: push fragmentado por día (chunks append-only). Elimina el
+        // techo de ~21 ventas/día/sede del documento monolítico.
+        if (key === 'bodega_sales_v1') return pushSalesChunks(value, context);
+        return performDocumentUpsert({
+            docKey: key,
+            docId: buildCloudDocumentId(key, context),
+            collectionType: LOCAL_KEYS.includes(key) ? 'local' : 'store',
+            value,
+            context,
+            sanitizeKey: key,
+        });
     };
 
     if (bypassDebounce) {
@@ -121,7 +238,7 @@ export const pushCloudSync = async (key, value, bypassDebounce = false, storageC
             delete _pushDebounceTimers[key];
         }
         delete _pendingPushValues[key];
-        return await performUpsert();
+        return await performPush();
     } else {
         _pendingPushValues[key] = { value, context };
         if (_pushDebounceTimers[key]) clearTimeout(_pushDebounceTimers[key]);
@@ -159,9 +276,6 @@ export const flushPendingPushes = () => {
  */
 async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     if (syncV2Paused()) return pausedCloudOperation();
-    // Llaves legadas subidas por versiones viejas de la app: ignorar para no
-    // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
-    if (PULL_IGNORE_KEYS.includes(docId)) return;
 
     const context = captureStorageContext();
     const parsedDoc = parseCloudDocumentId(docId);
@@ -170,24 +284,30 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
         console.warn(`[CloudSync] Documento rechazado por contexto: ${docId}`);
         return;
     }
-    docId = parsedDoc.key;
+    const cloudKey = parsedDoc.key;
+    // Llaves legadas subidas por versiones viejas de la app: ignorar para no
+    // pisar el estado local (ej. el audit log, que ahora vive en la tabla audit_log)
+    if (PULL_IGNORE_KEYS.includes(cloudKey)) return;
+    // Los chunks diarios de ventas se fusionan en la llave caliente local.
+    const localKey = isSalesChunkKey(cloudKey) ? 'bodega_sales_v1' : cloudKey;
 
     // ADR-003: todas las llaves mergeables (incluido el inventario) se mezclan
     // por ID con LWW por updatedAt. Ya no hay reemplazo autoritativo.
-    const isMergeable = MERGEABLE_KEYS.includes(docId) && collection === 'store';
+    // Los chunks de ventas siempre son mergeables: solo agregan ventas por ID.
+    const isMergeable = (MERGEABLE_KEYS.includes(localKey) || isSalesChunkKey(cloudKey)) && collection === 'store';
 
     // Protección contra sobreescritura para llaves NO mergeables.
     if (!isMergeable && cloudUpdatedAt) {
         try {
-            const localTs = localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + docId));
+            const localTs = localStorage.getItem(getScopedStorageKey('_sync_local_ts_' + localKey));
             if (localTs && localTs > cloudUpdatedAt) {
-                console.log(`[CloudSync] Skip ${docId}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
+                console.log(`[CloudSync] Skip ${localKey}: local (${localTs}) más reciente que nube (${cloudUpdatedAt}). Resubiendo...`);
                 const { default: lf } = await import('localforage');
                 lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
-                const localData = await lf.getItem(getScopedStorageKey(docId));
+                const localData = await lf.getItem(getScopedStorageKey(localKey));
                 if (localData !== null) {
-                    delete _lastPushHash[docId];
-                    pushCloudSync(docId, localData).catch(() => {});
+                    delete _lastPushHash[localKey];
+                    pushCloudSync(localKey, localData).catch(() => {});
                 }
                 return;
             }
@@ -200,7 +320,7 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             let finalPayload = payload;
 
             // Preserve only non-secret account display metadata. Never restore a password.
-            if (docId === 'abasto-auth-storage') {
+            if (localKey === 'abasto-auth-storage') {
                 try {
                     const incoming = typeof payload === 'string' ? JSON.parse(payload) : JSON.parse(JSON.stringify(payload));
                     const existingRaw = localStorage.getItem('abasto-auth-storage');
@@ -215,13 +335,13 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             }
 
             const stringPayload = typeof finalPayload === 'string' ? finalPayload : JSON.stringify(finalPayload);
-            _nativeSetItem(docId, stringPayload);   // Escribe sin pasar por el interceptor
+            _nativeSetItem(localKey, stringPayload);   // Escribe sin pasar por el interceptor
             window.dispatchEvent(new StorageEvent('storage', {
-                key: docId,
+                key: localKey,
                 newValue: stringPayload,
                 storageArea: localStorage
             }));
-            if (docId === 'abasto-auth-storage') {
+            if (localKey === 'abasto-auth-storage') {
                 useAuthStore.persist.rehydrate();
             }
         } else {
@@ -234,38 +354,41 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
             // Merge inteligente para arrays con ID (ventas, productos, clientes, etc.)
             if (isMergeable && Array.isArray(payload)) {
                 try {
-                    const localData = await localforage.getItem(getScopedStorageKey(docId));
+                    const localData = await localforage.getItem(getScopedStorageKey(localKey));
                     if (Array.isArray(localData)) {
                         finalData = _mergeArraysById(localData, payload);
-                        console.log(`[CloudSync] Merge ${docId}: local=${localData.length}, nube=${payload.length}, resultado=${finalData.length}`);
+                        console.log(`[CloudSync] Merge ${cloudKey}: local=${localData.length}, nube=${payload.length}, resultado=${finalData.length}`);
 
                         // Si el merge produjo más items que la nube, re-subir el resultado.
-                        // Para ventas se compara la versión recortada: el local siempre
-                        // tiene más historial que la nube (ventana de N días) y comparar
-                        // el array completo causaría re-push infinito en cada poll.
-                        const pushable = docId === 'bodega_sales_v1' ? _trimSalesForSync(finalData) : finalData;
-                        if (pushable.length > payload.length) {
+                        // Para chunks se compara solo el día del chunk: el local
+                        // siempre tiene más historial (90 días calientes) que un
+                        // día de la nube, y comparar el array completo causaría
+                        // re-push en cada poll. El hash por chunk evita re-subir
+                        // los días que ya están iguales en la nube.
+                        const comparable = isSalesChunkKey(cloudKey)
+                            ? finalData.filter(s => saleChunkDay(s) === salesChunkDateOf(cloudKey)).length
+                            : finalData.length;
+                        if (comparable > payload.length) {
                             setTimeout(() => {
-                                delete _lastPushHash[docId];
-                                pushCloudSync(docId, finalData).catch(() => {});
+                                pushCloudSync(localKey, finalData).catch(() => {});
                             }, 500);
                         }
                     }
                 } catch (e) {
-                    console.warn(`[CloudSync] Merge falló para ${docId}, usando datos de nube:`, e.message);
+                    console.warn(`[CloudSync] Merge falló para ${cloudKey}, usando datos de nube:`, e.message);
                 }
             }
 
-            await localforage.setItem(getScopedStorageKey(docId), finalData);
+            await localforage.setItem(getScopedStorageKey(localKey), finalData);
             // Retención local: si el merge del pull trae ventas viejas a la
             // clave caliente, se archivan en el dispositivo (no se borran).
-            if (docId === 'bodega_sales_v1' && Array.isArray(finalData)) {
+            if (localKey === 'bodega_sales_v1' && Array.isArray(finalData)) {
                 try {
                     const archiveKey = getScopedStorageKey(SALES_ARCHIVE_KEY);
                     const existing = await localforage.getItem(archiveKey);
                     const split = splitByAge(finalData, saleTimestampMs, SALES_HOT_DAYS);
                     if (split.archived.length) {
-                        await localforage.setItem(getScopedStorageKey(docId), split.hot);
+                        await localforage.setItem(getScopedStorageKey(localKey), split.hot);
                         await localforage.setItem(archiveKey, appendToArchive(split.archived, existing));
                     }
                 } catch (e) {
@@ -273,11 +396,11 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
                 }
             }
             const serializedPayload = typeof finalData === 'string' ? finalData : JSON.stringify(finalData);
-            recordSyncMetric(docId, 'pull');
-            recordSyncMetric(docId, 'downloadBytes', new TextEncoder().encode(serializedPayload).byteLength);
+            recordSyncMetric(cloudKey, 'pull');
+            recordSyncMetric(cloudKey, 'downloadBytes', new TextEncoder().encode(serializedPayload).byteLength);
 
             // Notificar a los componentes React que lean este store
-            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: docId, source: 'cloud' } }));
+            window.dispatchEvent(new CustomEvent('app_storage_update', { detail: { key: localKey, source: 'cloud' } }));
         }
     } finally {
         isSyncingFromCloud = false;
@@ -411,6 +534,24 @@ export function useCloudSync() {
                             } catch { /* sin seed → push normal, como antes */ }
                         }
                         console.log(`[CloudSync] Pull inicial: ${docs.length} documentos procesados.`);
+                    }
+
+                    // ── Pull inicial de chunks de ventas (doc_ids dinámicos) ──
+                    // El doc monolítico legado (si existe en la nube) ya vino en el
+                    // pull fijo de arriba y converge una sola vez por merge por ID;
+                    // a partir de aquí las ventas viajan en chunks diarios.
+                    const chunkDocs = await _discoverSalesChunks(userId, getActiveSedeId());
+                    for (const doc of chunkDocs) {
+                        await _applyFromCloud(doc.doc_id, doc.collection, doc.data.payload, doc.updated_at);
+                        try {
+                            const p = doc.data.payload;
+                            const serialized = typeof p === 'string' ? p : JSON.stringify(p);
+                            const parsed = parseCloudDocumentId(doc.doc_id);
+                            if (parsed) _lastPushHash[parsed.key] = await _computePushHash(serialized);
+                        } catch { /* sin seed → push normal */ }
+                    }
+                    if (chunkDocs.length > 0) {
+                        console.log(`[CloudSync] Pull inicial: ${chunkDocs.length} chunks de ventas procesados.`);
                     }
                 }
                 if (!isCurrent()) return;
@@ -550,9 +691,15 @@ export function useCloudSync() {
 
                             if (lastSyncTime) {
                                 metaQuery = metaQuery.gt('updated_at', lastSyncTime);
-                            }                            const { data: changedMeta, error: metadataError } = await metaQuery;
-
-                            if (metadataError) throw metadataError;
+                            }
+                            // Chunks de ventas: doc_ids dinámicos → discovery por patrón
+                            // LIKE en paralelo con la lista fija (solo metadatos).
+                            const [fixedMetaRes, chunkMetas] = await Promise.all([
+                                metaQuery,
+                                _discoverSalesChunks(currentSession.user.id, getActiveSedeId(), lastSyncTime, true),
+                            ]);
+                            if (fixedMetaRes.error) throw fixedMetaRes.error;
+                            const changedMeta = [...(fixedMetaRes.data || []), ...chunkMetas];
                             if (!isCurrent()) return;
 
                             // ── Fase 2: bajar solo los docs que realmente cambiaron ───

@@ -7,7 +7,8 @@ import { useAudit } from './useAudit';
 import { useSecurity } from './useSecurity';
 import { showToast } from '../components/Toast';
 import { setActiveAccountId, captureStorageContext } from '../config/storageScope';
-import { buildCloudDocumentId, hasCloudDocumentPolicy } from '../config/cloudDocumentScope.js';
+import { buildCloudDocumentId, buildSalesChunkDocumentId, hasCloudDocumentPolicy } from '../config/cloudDocumentScope.js';
+import { planSalesChunkPushes } from './cloudSync/salesChunks.js';
 import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
 import { beginCloudLogin } from '../services/cloudSessionLifecycle.js';
 import { sanitizeBackup } from '../utils/backupSafety.js';
@@ -38,6 +39,20 @@ export const uploadBackupToCloud = async (email, backupData, { strictSync = fals
     if (cloudContext.accountId !== session.user.id) throw new Error('El contexto local no coincide con la cuenta cloud activa.');
     for (const [key, value] of Object.entries(backupData.data.idb || {})) {
         if (!hasCloudDocumentPolicy(key)) continue;
+        // Ventas: el espejo también va fragmentado por día (chunks append-only);
+        // el monolito de 30 días chocaría con el cap de 1 MiB a ~21 ventas/día.
+        if (key === 'bodega_sales_v1') {
+            for (const plan of planSalesChunkPushes(value)) {
+                syncPayloads.push({
+                    user_id: session.user.id,
+                    collection: 'store',
+                    doc_id: buildSalesChunkDocumentId(plan.day, cloudContext),
+                    data: { payload: sanitizeForPush(plan.chunkKey, plan.sales), sourceKey: plan.chunkKey, sedeId: cloudContext.sedeId },
+                    updated_at: new Date().toISOString()
+                });
+            }
+            continue;
+        }
         syncPayloads.push({
             user_id: session.user.id,
             collection: 'store',

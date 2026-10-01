@@ -52,6 +52,35 @@ function assertAccount(accountId) {
     }
 }
 
+// ─── Chunks diarios de ventas (append-only) ────────────────────────────────
+// Cada día comercial tiene su propio documento: `bodega_sales_YYYYMMDD`.
+// El formato cabe en el CHECK de la tabla sync_documents
+// (^v2:[a-zA-Z0-9_-]{1,120}:account:...(:sede:...)?$) sin migración.
+// Son sede-scoped como el documento monolítico que reemplazan.
+export const SALES_CHUNK_KEY_PATTERN = /^bodega_sales_(\d{8})$/;
+
+export function isSalesChunkKey(key) {
+    return typeof key === 'string' && SALES_CHUNK_KEY_PATTERN.test(key);
+}
+
+export function salesChunkDateOf(key) {
+    const m = typeof key === 'string' ? key.match(SALES_CHUNK_KEY_PATTERN) : null;
+    return m ? m[1] : null; // YYYYMMDD
+}
+
+export function assertSalesChunkDate(dateStr) {
+    if (typeof dateStr !== 'string' || !/^\d{8}$/.test(dateStr)) {
+        throw new Error('Fecha de chunk de ventas inválida (se espera YYYYMMDD).');
+    }
+    const y = Number(dateStr.slice(0, 4));
+    const m = Number(dateStr.slice(4, 6));
+    const d = Number(dateStr.slice(6, 8));
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+        throw new Error('Fecha de chunk de ventas inexistente en el calendario.');
+    }
+}
+
 function assertEntity(key) {
     if (typeof key !== 'string' || !/^[a-zA-Z0-9_-]{1,120}$/.test(key)) {
         throw new Error('Entidad cloud inválida para documento sincronizado.');
@@ -59,7 +88,7 @@ function assertEntity(key) {
 }
 
 export function isCloudSedeScopedKey(key) {
-    return CLOUD_SEDE_SCOPED_KEYS.has(key);
+    return CLOUD_SEDE_SCOPED_KEYS.has(key) || isSalesChunkKey(key);
 }
 
 export function isCloudAccountScopedKey(key) {
@@ -79,6 +108,28 @@ export function buildCloudDocumentId(key, { accountId, sedeId } = {}) {
     }
     if (!isCloudAccountScopedKey(key)) throw new Error(`Entidad cloud sin política de alcance: ${key}`);
     return `${CLOUD_DOCUMENT_VERSION}:${key}:account:${accountId}`;
+}
+
+/**
+ * Construye el doc_id del chunk de ventas de un día comercial (YYYYMMDD).
+ * Los chunks son sede-scoped; el doc_id resultante es válido para el CHECK
+ * de sync_documents sin necesidad de migración.
+ */
+export function buildSalesChunkDocumentId(dateYYYYMMDD, { accountId, sedeId } = {}) {
+    assertSalesChunkDate(dateYYYYMMDD);
+    return buildCloudDocumentId(`bodega_sales_${dateYYYYMMDD}`, { accountId, sedeId });
+}
+
+/**
+ * Patrón LIKE para descubrir chunks de ventas de una cuenta/sede.
+ * Los `_` de `bodega_sales_` actúan como comodín de un carácter en LIKE
+ * (también casan con el `_` literal); el filtrado estricto se hace en el
+ * cliente con isSalesChunkKey/parseCloudDocumentId.
+ */
+export function salesChunkDocIdLike({ accountId, sedeId } = {}) {
+    assertAccount(accountId);
+    if (!VALID_SEDES.has(sedeId)) throw new Error('Sede cloud inválida para documento sede-scoped.');
+    return `${CLOUD_DOCUMENT_VERSION}:bodega_sales_%:account:${accountId}:sede:${sedeId}`;
 }
 
 export function parseCloudDocumentId(docId) {

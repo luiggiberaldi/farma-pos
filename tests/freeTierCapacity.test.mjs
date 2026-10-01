@@ -5,11 +5,20 @@
 // motor (SUPABASE_FREE_PROFILE) + límites OFICIALES auditados el 2026-09-30 en
 // supabase.com/docs. Todo el modelo es aritmética pura y reproducible.
 //
+// Ventas (2026-10-01): viajan en CHUNKS DIARIOS append-only
+// (`bodega_sales_YYYYMMDD`), un documento por día comercial. El gate de 1 MiB
+// aplica por chunk (~616 ventas/día de techo con la venta medida), no al
+// agregado de 30 días: el techo de ~21 ventas/día del monolito quedó eliminado.
+// La ventana cloud sigue siendo SALES_SYNC_WINDOW_DAYS (+1 día por el borde
+// inclusivo); los chunks viejos se podan.
+//
 // Sobre operativo declarado:
 //   - 3 sedes, 1-2 equipos por sede (una sola caja por sede, decisión 2026-09-29)
 //   - BASE: 15 ventas/sede/día · 6 ráfagas de actividad/día · 12 h de operación
 //   - STRESS: 40 ventas/sede/día · 10 ráfagas/día
-// El debounce pesado (30 min) coalescea las ventas de cada ráfaga en 1 push.
+// El debounce pesado (30 min) coalescea las ventas de cada ráfaga en 1 push del
+// chunk del día (el chunk crece durante el día; el modelo usa el peor caso:
+// el día completo en cada ráfaga).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -17,7 +26,8 @@ import {
   SUPABASE_FREE_PROFILE,
   inspectSyncPayload,
 } from '../src/config/supabaseFreeTier.js';
-import { _trimSalesForSync, SALES_SYNC_WINDOW_DAYS } from '../src/hooks/cloudSync/syncUtils.js';
+import { SALES_SYNC_WINDOW_DAYS } from '../src/hooks/cloudSync/syncUtils.js';
+import { planSalesChunkPushes } from '../src/hooks/cloudSync/salesChunks.js';
 
 // ── Constantes medidas ──────────────────────────────────────────────────────
 // Doc canónico live (2026-10-01): 657_749 bytes / 1539 productos.
@@ -67,18 +77,20 @@ function buildSale(i) {
 }
 
 // ── Modelo de egress mensual (bytes), aritmética pura ───────────────────────
+// Con chunks diarios, cada ráfaga sube el chunk del día (peor caso: el día
+// completo ya acumulado) en vez del monolito de 30 días.
 function monthlyEgressBytes({ salesPerDay, burstsPerDay, devicesPerSede }) {
-  const salesDoc = salesPerDay * SALES_SYNC_WINDOW_DAYS * SALE_BYTES;
-  const salesSyncable = salesDoc <= SUPABASE_FREE_PROFILE.payloadMaxBytes;
-  const syncedPerBurst = PRODUCTS_DOC_BYTES + (salesSyncable ? salesDoc : 0);
+  const chunkBytes = salesPerDay * SALE_BYTES; // chunk del día, peor caso
+  const salesSyncable = chunkBytes <= SUPABASE_FREE_PROFILE.payloadMaxBytes;
+  const syncedPerBurst = PRODUCTS_DOC_BYTES + (salesSyncable ? chunkBytes : 0);
   const uploadsPerSedeDay = burstsPerDay * syncedPerBurst + 2 * OTHER_DOCS_BYTES;
   // Cada push lo descarga cada otro equipo de la sede en su poll horario.
   const pollDownloadsPerSedeDay = burstsPerDay * syncedPerBurst * (devicesPerSede - 1);
-  // Un pull inicial completo por equipo y día (peor caso).
-  const initialPullPerSedeDay = devicesPerSede * (syncedPerBurst + OTHER_DOCS_BYTES);
+  // Un pull inicial completo por equipo y día (peor caso): ventana de chunks + resto.
+  const initialPullPerSedeDay = devicesPerSede * ((SALES_SYNC_WINDOW_DAYS + 1) * chunkBytes + OTHER_DOCS_BYTES);
   const metaPollPerSedeDay = devicesPerSede * 24 * META_POLL_BYTES;
   const perSedeDay = uploadsPerSedeDay + pollDownloadsPerSedeDay + initialPullPerSedeDay + metaPollPerSedeDay;
-  return { monthly: perSedeDay * 30 * SEDES, salesSyncable, salesDoc };
+  return { monthly: perSedeDay * 30 * SEDES, salesSyncable, chunkBytes };
 }
 
 // ── 1. Límites oficiales congelados (auditoría 2026-09-30, supabase.com) ─────
@@ -102,7 +114,8 @@ test('capacidad: parámetros del perfil Free usados por el modelo', () => {
 
 // ── 3. Base de datos: holgura enorme incluso en estrés ───────────────────────
 test('capacidad: 3 sedes a 200 ventas/día usan <10% de los 500 MB', () => {
-  const perSede = PRODUCTS_DOC_BYTES + 200 * SALES_SYNC_WINDOW_DAYS * SALE_BYTES + 300_000;
+  // Ventana de chunks por sede: (30+1) días × 200 ventas × 1702 B ≈ 10.6 MB.
+  const perSede = PRODUCTS_DOC_BYTES + (SALES_SYNC_WINDOW_DAYS + 1) * 200 * SALE_BYTES + 300_000;
   const total = perSede * SEDES;
   assert.ok(total < SUPABASE_FREE_LIMITS.databaseBytesPerProject * 0.1,
     `${(total / 1e6).toFixed(1)} MB de 500 MB`);
@@ -116,25 +129,31 @@ test('capacidad: egress mensual escenario BASE < 50% del límite', () => {
     `${(monthly / 1e9).toFixed(2)} GB/mes de 5 GB`);
 });
 
-// ── 5. Egress escenario STRESS: <50% aunque el doc de ventas se difiera ──────
+// ── 5. Egress escenario STRESS: <50% con las ventas sincronizándose ─────────
 test('capacidad: egress mensual escenario STRESS < 50% del límite', () => {
   const { monthly, salesSyncable } = monthlyEgressBytes({ salesPerDay: 40, burstsPerDay: 10, devicesPerSede: 2 });
-  assert.equal(salesSyncable, false); // el doc de ventas supera 1 MiB: se difiere, no se sube
+  assert.equal(salesSyncable, true); // con chunks, 40/día (68 KB/día) se sube sin diferir
   assert.ok(monthly < SUPABASE_FREE_LIMITS.uncachedEgressBytesPerCycle * 0.5,
     `${(monthly / 1e9).toFixed(2)} GB/mes de 5 GB`);
 });
 
 // ── 6. Frontera determinista del cap de 1 MiB (gate REAL del motor) ──────────
-test('capacidad: doc de ventas a 20/día pasa el gate, a 21/día no', () => {
-  const sales20 = Array.from({ length: 20 * SALES_SYNC_WINDOW_DAYS }, (_, i) => buildSale(i));
-  const sales21 = Array.from({ length: 21 * SALES_SYNC_WINDOW_DAYS }, (_, i) => buildSale(i));
-  // El trim real de 30 días no recorta nada (todas dentro de la ventana).
-  assert.equal(_trimSalesForSync(sales20).length, sales20.length);
-  assert.equal(_trimSalesForSync(sales21).length, sales21.length);
-  const r20 = inspectSyncPayload(sales20);
-  const r21 = inspectSyncPayload(sales21);
-  assert.equal(r20.allowed, true, `${r20.bytes} bytes`);
-  assert.equal(r21.allowed, false, `${r21.bytes} bytes`);
+// El gate ahora aplica por chunk diario usando el planificador real.
+test('capacidad: chunk de ventas a 600/día pasa el gate, a 630/día se difiere solo ese día', () => {
+  const nowMs = Date.parse('2026-10-01T12:00:00.000Z'); // anclado: no rota con el calendario
+  const day600 = Array.from({ length: 600 }, (_, i) => ({ ...buildSale(i), fechaComercial: '2026-09-30' }));
+  const day630 = Array.from({ length: 630 }, (_, i) => ({ ...buildSale(i), fechaComercial: '2026-09-30' }));
+  const plans600 = planSalesChunkPushes(day600, { nowMs });
+  const plans630 = planSalesChunkPushes(day630, { nowMs });
+  assert.equal(plans600.length, 1);
+  assert.equal(plans630.length, 1);
+  const r600 = inspectSyncPayload(plans600[0].sales);
+  const r630 = inspectSyncPayload(plans630[0].sales);
+  assert.equal(r600.allowed, true, `${r600.bytes} bytes`);
+  assert.equal(r630.allowed, false, `${r630.bytes} bytes`);
+  // Techo honesto por chunk: ~616 ventas/día con la venta medida (1702 B).
+  assert.ok(r600.bytes <= SUPABASE_FREE_PROFILE.payloadMaxBytes);
+  assert.ok(r630.bytes > SUPABASE_FREE_PROFILE.payloadMaxBytes);
 });
 
 // ── 7. Degradación elegante: el gate no pierde datos ni lanza ────────────────
