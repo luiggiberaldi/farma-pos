@@ -39,6 +39,12 @@ const SALE_BYTES = 1_702;
 const META_POLL_BYTES = 1_000;
 // Otros docs por sede (clientes, cierres, caja, correlativos, métodos...): ~150 KB.
 const OTHER_DOCS_BYTES = 150_000;
+// Docs a nivel de cuenta (2026-10-01, fases A–E): usuarios + política de tasa +
+// datos del negocio. Medidos del shape real: usuario ~400 B × 10, tasa ~300 B,
+// negocio ~300 B. Se usa cota conservadora con overhead HTTP.
+const ACCOUNT_DOCS_DB_BYTES = 10_000;
+const RATE_POLL_BYTES = 1_000; // doc de tasa + overhead por poll del fast-lane
+const RATE_FAST_LANE_POLLS_PER_DAY = 288; // cada 5 min
 
 const SEDES = 3;
 const BYTES_MIB = 1024 * 1024;
@@ -90,7 +96,11 @@ function monthlyEgressBytes({ salesPerDay, burstsPerDay, devicesPerSede }) {
   const initialPullPerSedeDay = devicesPerSede * ((SALES_SYNC_WINDOW_DAYS + 1) * chunkBytes + OTHER_DOCS_BYTES);
   const metaPollPerSedeDay = devicesPerSede * 24 * META_POLL_BYTES;
   const perSedeDay = uploadsPerSedeDay + pollDownloadsPerSedeDay + initialPullPerSedeDay + metaPollPerSedeDay;
-  return { monthly: perSedeDay * 30 * SEDES, salesSyncable, chunkBytes };
+  // Fast-lane de la política de tasa (2026-10-01): doc a nivel de cuenta, cada
+  // equipo lo sondea cada 5 min. Los docs de usuarios/negocio viajan en el bulk
+  // horario ya modelado arriba (son KB).
+  const rateFastLanePerDay = devicesPerSede * SEDES * RATE_FAST_LANE_POLLS_PER_DAY * RATE_POLL_BYTES;
+  return { monthly: (perSedeDay * SEDES + rateFastLanePerDay) * 30, salesSyncable, chunkBytes };
 }
 
 // ── 1. Límites oficiales congelados (auditoría 2026-09-30, supabase.com) ─────
@@ -119,6 +129,12 @@ test('capacidad: 3 sedes a 200 ventas/día usan <10% de los 500 MB', () => {
   const total = perSede * SEDES;
   assert.ok(total < SUPABASE_FREE_LIMITS.databaseBytesPerProject * 0.1,
     `${(total / 1e6).toFixed(1)} MB de 500 MB`);
+});
+
+// ── 3b. Docs a nivel de cuenta: despreciables frente a los 500 MB ──────────
+test('capacidad: docs de cuenta (usuarios, tasa, negocio) < 0.01% de los 500 MB', () => {
+  assert.ok(ACCOUNT_DOCS_DB_BYTES < SUPABASE_FREE_LIMITS.databaseBytesPerProject * 0.0001,
+    `${ACCOUNT_DOCS_DB_BYTES} B de 500 MB`);
 });
 
 // ── 4. Egress escenario BASE: <50% de los 5 GB ───────────────────────────────
