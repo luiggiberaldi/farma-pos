@@ -36,14 +36,22 @@ document.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 import { ConfirmProvider } from './hooks/useConfirm.jsx'
+// FIX 2026-10-01 (C2): ErrorBoundary global que cubre TODA la app, incluida
+// la zona pre-login (CloudAuthModal, LockScreen, ClockInPrompt, Supervisión).
+// Antes el boundary solo envolvía las vistas por pestaña y cualquier throw en
+// login/PIN/cambio de sede/bloqueo producía pantalla blanca total. El fallback
+// no depende de ningún contexto (solo localStorage + recarga).
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ToastProvider>
-      <ConfirmProvider>
-        <AppRouter />
-      </ConfirmProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <ConfirmProvider>
+          <AppRouter />
+        </ConfirmProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )
 

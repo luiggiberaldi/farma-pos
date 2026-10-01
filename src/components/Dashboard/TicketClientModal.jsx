@@ -2,9 +2,12 @@ import { UserPlus, Phone, Send } from 'lucide-react';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function TicketClientModal({ ticketPendingSale, setTicketPendingSale, ticketClientName, setTicketClientName, ticketClientPhone, setTicketClientPhone, ticketClientDocument, setTicketClientDocument, onRegister }) {
-    if (!ticketPendingSale) return null;
+    // FIX 2026-10-01 (C1): los hooks siempre van ANTES de cualquier early
+    // return. Invocar el hook después del return null cambiaba el orden de
+    // hooks al abrir el modal y tumbaba el Dashboard.
     const reset = () => { setTicketPendingSale(null); setTicketClientName(''); setTicketClientPhone(''); setTicketClientDocument(''); };
     useEscapeToClose(reset, !!ticketPendingSale);
+    if (!ticketPendingSale) return null;
     return (
     <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
