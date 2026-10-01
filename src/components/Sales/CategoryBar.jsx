@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Package, Calculator, ChevronDown } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS } from '../../config/categories';
+import { ProductPhoto } from '../Products/ProductPhoto';
 
 const PAGE_SIZE = 30;
 
@@ -82,8 +83,8 @@ export default function CategoryBar({
                                         }`}
                                 >
                                     <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-1.5 overflow-hidden">
-                                        {p.image
-                                            ? <img src={p.image} className="w-full h-full object-contain" alt={p.name} />
+                                        {(p.photoHash || p.image)
+                                            ? <ProductPhoto photoHash={p.photoHash} image={p.image} alt={p.name} className="w-full h-full object-contain" />
                                             : <CatIcon size={18} className="text-slate-400" />
                                         }
                                     </div>

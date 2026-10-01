@@ -4,6 +4,7 @@ import EmptyState from '../EmptyState';
 import Skeleton from '../Skeleton';
 import SwipeableItem from '../SwipeableItem';
 import ProductCard from './ProductCard';
+import { ProductPhoto } from './ProductPhoto';
 
 export default function ProductGrid(props) {
     const {
@@ -172,7 +173,7 @@ export default function ProductGrid(props) {
                                     {/* Product Info (always visible) */}
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                            {p.image ? <img src={p.image} className="w-full h-full object-contain" alt={p.name} loading="lazy" /> : <Tag size={16} className="text-slate-300 dark:text-slate-600" />}
+                                            {(p.photoHash || p.image) ? <ProductPhoto photoHash={p.photoHash} image={p.image} alt={p.name} className="w-full h-full object-contain" /> : <Tag size={16} className="text-slate-300 dark:text-slate-600" />}
                                         </div>
                                         <div className="min-w-0">
                                             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{p.name}</p>

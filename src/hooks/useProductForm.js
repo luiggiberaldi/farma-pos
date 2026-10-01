@@ -4,6 +4,8 @@ import { buildProductPayload } from '../utils/productProcessor';
 import { processLocalAdminOperation } from '../utils/localAdminOperations.js';
 import { crearHuella } from '../utils/huella';
 import { useAuthStore } from './store/useAuthStore';
+import { supabaseCloud } from '../config/supabaseCloud';
+import { compressImageBlob, sha256Hex, uploadProductPhoto, enqueuePendingPhotoUpload } from '../services/productPhotos.js';
 
 // Campos que se comparan en la huella de edición (antes/después)
 const PRODUCT_SNAPSHOT_FIELDS = [
@@ -31,6 +33,10 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
     const [category, setCategory] = useState('otros');
     const [lowStockAlert, setLowStockAlert] = useState('5');
     const [image, setImage] = useState(null);
+    // Referencia a la foto en Supabase Storage (diseño 2026-10-01): los bytes
+    // jamás van en el producto/JSONB; `image` queda solo como preview local o
+    // ruta legada hasta que la migración la reemplace.
+    const [photoHash, setPhotoHash] = useState(null);
     // New packaging states
     const [packagingType, setPackagingType] = useState('suelto');
     const [stockInLotes, setStockInLotes] = useState('');
@@ -54,26 +60,36 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
     const [lotesProducto, setLotesProducto] = useState([]);
     const [productMovements, setProductMovements] = useState([]);
 
-    const handleImageUpload = (e) => {
-        const file = e.target.files[0];
+    // Pipeline de fotos 2026-10-01: comprimir → hash → subir a Storage (dedup).
+    // Solo `photoHash` se guarda en el producto; los bytes nunca entran al
+    // JSONB de sync (tier gratis). Si la subida falla, queda en cola en
+    // IndexedDB y se reintenta en el ciclo de sync; la referencia igual se
+    // guarda para no perder la foto.
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_SIZE = 400;
-                let width = img.width, height = img.height;
-                if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } }
-                else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
-                canvas.width = width;
-                canvas.height = height;
-                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                setImage(canvas.toDataURL('image/webp', 0.7));
-            };
-        };
+        try {
+            const compressed = await compressImageBlob(file);
+            const hash = await sha256Hex(compressed);
+            setPhotoHash(hash);
+            setImage(URL.createObjectURL(compressed)); // preview local
+            try {
+                const { data: { session } } = await supabaseCloud.auth.getSession();
+                if (!session?.access_token) throw new Error('Sin sesión cloud');
+                await uploadProductPhoto({
+                    supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+                    publishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY,
+                    accessToken: session.access_token,
+                }, compressed, hash);
+            } catch (uploadErr) {
+                await enqueuePendingPhotoUpload(storageService, { photoHash: hash, blob: compressed });
+                console.warn('[Fotos] Subida diferida a la cola:', uploadErr?.message);
+            }
+        } catch (err) {
+            showToast(err?.message || 'No se pudo procesar la imagen.', 'error');
+        } finally {
+            if (e.target) e.target.value = '';
+        }
     };
 
     // ─── HANDLERS BIMONEDA ──────────────────────────────────
@@ -102,7 +118,7 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
     };
 
     const handleClose = () => {
-        setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setEditingId(null); setIsModalOpen(false);
+        setName(''); setBarcode(''); setPriceUsd(''); setPriceBs(''); setCostUsd(''); setCostBs(''); setStock(''); setUnit('unidad'); setUnitsPerPackage(''); setSellByUnit(false); setUnitPriceUsd(''); setCategory('otros'); setLowStockAlert('5'); setImage(null); setPhotoHash(null); setEditingId(null); setIsModalOpen(false);
         setPackagingType('suelto'); setStockInLotes(''); setGranelUnit('kg');
         setGenericName(''); setLaboratorio(''); setConcentracion(''); setPresentacion('');
         setRequiresPrescription(false); setIsControlled(false); setRequiresRefrigeration(false); setVencimiento('');
@@ -148,7 +164,7 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
                 detalle: { nombre: name, antes: pickProductSnapshot(prev), despues: pickProductSnapshot(productData) }
             });
             const updated = products.map(p =>
-                p.id === editingId ? { ...p, ...productData, image, huella } : p
+                p.id === editingId ? { ...p, ...productData, image: photoHash ? null : image, photoHash: photoHash || null, huella } : p
             );
             storageService.assertActive();
             await saveCheckedProducts(updated);
@@ -162,7 +178,8 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
             const updated = [{
                 id: crypto.randomUUID(),
                 ...productData,
-                image,
+                image: photoHash ? null : image,
+                photoHash: photoHash || null,
                 createdAt: new Date().toISOString(),
                 huella
             }, ...products];
@@ -198,6 +215,7 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
         setCategory(product.category || 'otros');
         setLowStockAlert(product.lowStockAlert ?? 5);
         setImage(product.image);
+        setPhotoHash(product.photoHash || null);
         setGenericName(product.genericName || '');
         setLaboratorio(product.laboratorio || '');
         setConcentracion(product.concentracion || '');
@@ -284,6 +302,7 @@ export function useProductForm({ products, setProducts, effectiveRate, storageSe
         sellByUnit, setSellByUnit, unitPriceUsd, setUnitPriceUsd,
         category, setCategory, lowStockAlert, setLowStockAlert,
         image, setImage,
+        photoHash, setPhotoHash,
         packagingType, setPackagingType, stockInLotes, setStockInLotes, granelUnit, setGranelUnit,
         genericName, setGenericName, laboratorio, setLaboratorio,
         concentracion, setConcentracion, presentacion, setPresentacion,

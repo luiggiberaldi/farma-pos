@@ -10,6 +10,13 @@ import { storageService } from '../utils/storageService';
 const loadPharmacySeed = () => import('../config/pharmacySeed.js');
 import { BODEGA_CATEGORIES } from '../config/categories.js';
 import { normalizeProductPrice } from '../utils/productPrice.js';
+import { supabaseCloud } from '../config/supabaseCloud';
+import productPhotoMap from '../config/productPhotoMap.json';
+import {
+    migrateProductPhotosIfNeeded,
+    processPendingPhotoUploads,
+    uploadProductPhoto,
+} from '../services/productPhotos.js';
 
 
 export function ProductProvider({ children, rates }) {
@@ -220,6 +227,26 @@ export function ProductProvider({ children, rates }) {
                     await seed.seedPharmacyInventoryIfEmpty(storageService, storageContext);
                     await seed.upgradePharmacyCatalogIfNeeded(storageService, storageContext);
                 } catch (err) { console.error('[ProductContext] Semilla/Migración omitida:', err); }
+                // Migración de fotos a Supabase Storage (2026-10-01): los bytes
+                // salen del JSONB; solo queda `photoHash`. Idempotente.
+                try {
+                    const { data: { session } } = await supabaseCloud.auth.getSession();
+                    const photoDeps = session?.access_token ? {
+                        supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+                        publishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY,
+                        accessToken: session.access_token,
+                    } : null;
+                    const uploadPhoto = async (blob, hash) => {
+                        if (!photoDeps) throw new Error('Sin sesión cloud para subir fotos');
+                        await uploadProductPhoto(photoDeps, blob, hash);
+                    };
+                    await migrateProductPhotosIfNeeded(storageService, storageContext, {
+                        barcodeToHash: productPhotoMap,
+                        uploadPhoto,
+                    });
+                    // Cola de subidas diferidas (fotos tomadas sin red/sesión).
+                    if (photoDeps) await processPendingPhotoUploads(storageService, photoDeps);
+                } catch (err) { console.warn('[ProductContext] Fotos pendientes:', err?.message); }
                 const revision = writeRevision.current;
                 const rawProducts = await storageService.getItem('bodega_products_v1', [], storageContext);
                 // Migra precio legado `priceUsdt` → `priceUsd` (el sistema trabaja en USD, no USDT)

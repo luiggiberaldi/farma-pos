@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Camera, X, AlertTriangle, Package, Tag, Scale, Droplets, ChevronDown, ChevronUp, Barcode, Banknote, CheckCircle, Clock, ShoppingBag, CreditCard, ArrowUpRight, Plus, Minus, Pill, Boxes } from 'lucide-react';
 import { Modal } from '../Modal';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
+import { ProductPhoto } from './ProductPhoto';
 
 const PACKAGING_TYPES = [
     { id: 'suelto', label: 'Suelto', Icon: Tag, desc: 'Unidad individual', color: 'emerald' },
@@ -15,6 +16,7 @@ export default function ProductFormModal({
     isEditing,
 
     image, setImage,
+    photoHash, setPhotoHash,
     name, setName,
     barcode, setBarcode,
     category, setCategory,
@@ -101,14 +103,16 @@ export default function ProductFormModal({
             <div className="space-y-4">
                 {/* Upload */}
                 <div onClick={() => fileInputRef.current?.click()} className="h-28 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500 transition-colors relative overflow-hidden">
-                    {image ? <img src={image} className="w-full h-full object-cover" alt="Vista previa del producto" /> : (
+                    {image ? <img src={image} className="w-full h-full object-cover" alt="Vista previa del producto" /> : photoHash ? (
+                        <ProductPhoto photoHash={photoHash} alt="Vista previa del producto" className="w-full h-full object-cover" />
+                    ) : (
                         <>
                             <Camera size={24} className="text-slate-400 mb-2" />
                             <span className="text-xs font-bold text-slate-500">Toca para subir foto</span>
                         </>
                     )}
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                    {image && <button onClick={(e) => { e.stopPropagation(); setImage(null); }} className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full"><X size={12} /></button>}
+                    {(image || photoHash) && <button onClick={(e) => { e.stopPropagation(); setImage(null); setPhotoHash(null); }} className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full"><X size={12} /></button>}
                 </div>
 
                 <div className="space-y-3">

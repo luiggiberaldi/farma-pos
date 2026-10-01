@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import { Search, Mic, Package, X, Box } from 'lucide-react';
 import { BODEGA_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../config/categories';
+import { ProductPhoto } from '../Products/ProductPhoto';
 
 const formatBs = (n) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -95,8 +96,8 @@ const SearchBar = forwardRef(function SearchBar({
                                     ${isOutOfStock ? 'opacity-50' : ''}`}
                             >
                                 <div className="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                                    {p.image
-                                        ? <img src={p.image} className="w-full h-full object-contain" alt={p.name} />
+                                    {(p.photoHash || p.image)
+                                        ? <ProductPhoto photoHash={p.photoHash} image={p.image} alt={p.name} className="w-full h-full object-contain" />
                                         : CatIcon
                                             ? <CatIcon size={20} className="text-slate-400" />
                                             : <Package size={16} className="text-slate-400" />

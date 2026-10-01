@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Tag, Banknote, AlertTriangle, Box, Minus, Plus, Pencil, Trash2, Package, Layers, Clock, Printer, Check, X } from 'lucide-react';
 import { CATEGORY_COLORS, CATEGORY_ICONS, UNITS } from '../../config/categories';
 import { formatUsd, formatBs, smartCashRounding } from '../../utils/calculatorUtils';
+import { ProductPhoto } from './ProductPhoto';
 
 export default function ProductCard({
     product: p,
@@ -40,8 +41,8 @@ export default function ProductCard({
                 <div className="absolute top-1 left-1 z-10 w-6 h-6 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 rounded backdrop-blur-sm">
                     <input type="checkbox" checked={isSelected} onChange={onToggleSelect} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer shadow-sm" />
                 </div>
-                {p.image ? (
-                    <img src={p.image} className="w-full h-full object-contain p-1" alt={p.name} loading="lazy" />
+                {(p.photoHash || p.image) ? (
+                    <ProductPhoto photoHash={p.photoHash} image={p.image} alt={p.name} className="w-full h-full object-contain p-1" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
                         <Tag size={24} />
