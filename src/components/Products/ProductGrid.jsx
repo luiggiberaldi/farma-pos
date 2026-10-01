@@ -66,8 +66,8 @@ export default function ProductGrid(props) {
                 icon={Package}
                 title="Inventario Vacío"
                 description="Aún no tienes productos registrados. Empieza a llenar tus anaqueles para poder vender."
-                actionLabel="NUEVO PRODUCTO"
-                onAction={() => { triggerHaptic && triggerHaptic(); setIsModalOpen(true); }}
+                actionLabel={isCajero ? undefined : "NUEVO PRODUCTO"}
+                onAction={isCajero ? undefined : () => { triggerHaptic && triggerHaptic(); setIsModalOpen(true); }}
             />
         </div>
     ) : filteredProducts.length === 0 ? (
@@ -105,6 +105,7 @@ export default function ProductGrid(props) {
                     {paginatedProducts.map(p => (
                         <SwipeableItem 
                             key={p.id}
+                            disabled={isCajero}
                             onEdit={() => handleEdit(p)}
                             onDelete={() => handleDelete(p.id)}
                             triggerHaptic={triggerHaptic}
@@ -137,24 +138,26 @@ export default function ProductGrid(props) {
                 /* ── LIST VIEW ── */
                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                     {/* Table Header — desktop */}
-                    <div className="hidden sm:grid sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <div className={`hidden sm:grid gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider ${isCajero ? 'sm:grid-cols-[1fr_100px_80px]' : 'sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px]'}`}>
+                        {!isCajero && (
                         <div className="flex items-center justify-center">
                             <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.size > 0 && selectedIds.size === paginatedProducts.length} className="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer" />
                         </div>
+                        )}
                         <button onClick={() => handleSort('name')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-left">
                             Producto {sortField === 'name' && <ArrowUpDown size={10} />}
                         </button>
                         <button onClick={() => handleSort('price')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                             Precio {sortField === 'price' && <ArrowUpDown size={10} />}
                         </button>
-                        <span>{!isCajero && 'Costo'}</span>
+                        {!isCajero && <span>Costo</span>}
                         {!isCajero && <button onClick={() => handleSort('margin')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                             Margen {sortField === 'margin' && <ArrowUpDown size={10} />}
                         </button>}
                         <button onClick={() => handleSort('stock')} className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                             Stock {sortField === 'stock' && <ArrowUpDown size={10} />}
                         </button>
-                        <span className="text-right">Acciones</span>
+                        {!isCajero && <span className="text-right">Acciones</span>}
                     </div>
                     {/* Rows */}
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -164,11 +167,13 @@ export default function ProductGrid(props) {
                             const margin = p.costBs > 0 ? ((valBs - p.costBs) / p.costBs * 100) : null;
                             const catInfo = categories.find(c => c.id === p.category);
                             return (
-                                <div key={p.id} className={`grid grid-cols-[auto_1fr_auto] sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px] gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(p.id) ? 'bg-brand/5 dark:bg-brand/10' : ''} ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''}`}>
+                                <div key={p.id} className={`grid gap-2 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${selectedIds.has(p.id) ? 'bg-brand/5 dark:bg-brand/10' : ''} ${isLowStock ? 'bg-amber-50/50 dark:bg-amber-900/5' : ''} ${isCajero ? 'grid-cols-[1fr_auto] sm:grid-cols-[1fr_100px_80px]' : 'grid-cols-[auto_1fr_auto] sm:grid-cols-[40px_1fr_100px_100px_70px_80px_110px]'}`}>
                                     {/* Checkbox */}
+                                    {!isCajero && (
                                     <div className="flex items-center justify-center px-1">
                                         <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => handleToggleSelect(p.id)} className="w-5 h-5 sm:w-4 sm:h-4 rounded border-slate-300 text-brand focus:ring-brand cursor-pointer focus:ring-offset-0" />
                                     </div>
+                                    )}
 
                                     {/* Product Info (always visible) */}
                                     <div className="flex items-center gap-3 min-w-0">
@@ -190,7 +195,7 @@ export default function ProductGrid(props) {
 
                                     {/* Mobile: compact actions */}
                                     <div className="flex items-center gap-1.5 sm:hidden">
-                                        <button onClick={() => handlePrintSingle(p)} className="p-1.5 text-slate-300 hover:text-brand transition-colors"><Printer size={14} /></button>
+                                        {!isCajero && <button onClick={() => handlePrintSingle(p)} className="p-1.5 text-slate-300 hover:text-brand transition-colors"><Printer size={14} /></button>}
                                         {!isCajero && (
                                         <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg">
                                             <button onClick={() => adjustPending(p.id, -1)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><Minus size={14} /></button>
@@ -216,23 +221,28 @@ export default function ProductGrid(props) {
                                             <p className="text-[10px] font-bold text-amber-500/80 mt-0.5">{(p.priceUsd * tasaCop).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP</p>
                                         )}
                                     </div>
+                                    {!isCajero && (
                                     <div className="hidden sm:block">
-                                        {!isCajero ? <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{p.costUsd ? `$${p.costUsd.toFixed(2)}` : '-'}</p> : <span className="text-[10px] text-slate-300">-</span>}
+                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{p.costUsd ? `$${p.costUsd.toFixed(2)}` : '-'}</p>
                                     </div>
+                                    )}
+                                    {!isCajero && (
                                     <div className="hidden sm:block">
-                                        {!isCajero ? (margin !== null ? (
+                                        {margin !== null ? (
                                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${margin >= 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
                                                 {margin >= 0 ? '+' : ''}{margin.toFixed(0)}%
                                             </span>
-                                        ) : <span className="text-[10px] text-slate-300">-</span>) : <span className="text-[10px] text-slate-300">-</span>}
+                                        ) : <span className="text-[10px] text-slate-300">-</span>}
                                     </div>
+                                    )}
                                     <div className="hidden sm:flex items-center gap-1">
                                         {!isCajero && <button onClick={() => adjustPending(p.id, -1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors active:scale-90"><Minus size={14} /></button>}
                                         <span className={`text-sm font-black min-w-[32px] text-center ${pendingDeltas[p.id] ? 'text-blue-500' : isLowStock ? 'text-amber-500' : 'text-slate-700 dark:text-slate-200'}`}>{(p.stock ?? 0) + (pendingDeltas[p.id] || 0)}</span>
                                         {!isCajero && <button onClick={() => adjustPending(p.id, 1)} className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-colors active:scale-90"><Plus size={14} /></button>}
                                     </div>
+                                    {!isCajero && (
                                     <div className="hidden sm:flex items-center justify-end gap-1">
-                                        {!isCajero && pendingDeltas[p.id] ? (
+                                        {pendingDeltas[p.id] ? (
                                             <>
                                                 <button onClick={() => cancelPending(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><X size={13} /></button>
                                                 <button onClick={() => confirmPending(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"><Check size={13} /></button>
@@ -240,11 +250,12 @@ export default function ProductGrid(props) {
                                         ) : (
                                             <>
                                                 <button onClick={() => handlePrintSingle(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-brand hover:bg-brand/10 transition-all" title="Imprimir Etiqueta"><Printer size={14} /></button>
-                                                {!isCajero && <button onClick={() => handleEdit(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"><Pencil size={14} /></button>}
-                                                {!isCajero && <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 size={14} /></button>}
+                                                <button onClick={() => handleEdit(p)} className="p-1.5 rounded-lg text-slate-300 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"><Pencil size={14} /></button>
+                                                <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 size={14} /></button>
                                             </>
                                         )}
                                     </div>
+                                    )}
                                 </div>
                             );
                         })}

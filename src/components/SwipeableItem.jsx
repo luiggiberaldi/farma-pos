@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Edit2, Trash2 } from 'lucide-react';
 
-export default function SwipeableItem({ children, onEdit, onDelete, triggerHaptic }) {
+export default function SwipeableItem({ children, onEdit, onDelete, triggerHaptic, disabled = false }) {
     const [offset, setOffset] = useState(0);
     const startX = useRef(0);
     const currentX = useRef(0);
@@ -10,6 +10,7 @@ export default function SwipeableItem({ children, onEdit, onDelete, triggerHapti
     const SWIPE_THRESHOLD = 70; // Sensibilidad de activación
 
     const handleTouchStart = (e) => {
+        if (disabled) return;
         startX.current = e.touches[0].clientX;
         isSwiping.current = true;
     };

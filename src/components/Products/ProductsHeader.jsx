@@ -53,13 +53,16 @@ export default function ProductsHeader(props) {
                 {products.length} productos
             </span>
             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+            {!isCajero && (
             <button 
                 onClick={() => { triggerHaptic && triggerHaptic(); setSelectedIds(new Set(products.map(p => p.id))); showToast('Todo el inventario seleccionado', 'success'); }}
                 className="text-[10px] font-bold bg-brand/10 text-brand px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer hover:bg-brand/20 transition-colors active:scale-95"
             >
                 <CheckSquare size={12} /> <span className="hidden sm:inline">Seleccionar todo</span><span className="sm:hidden">Todos</span>
             </button>
+            )}
             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+            {!isCajero && (
             <button 
                 onClick={onSyncCatalog}
                 title="Sincronizar nombres corregidos y fotografías de estudio de alta definición"
@@ -67,6 +70,7 @@ export default function ProductsHeader(props) {
             >
                 <RefreshCw size={12} /> <span className="hidden sm:inline">Sincronizar Fotos & Catálogo</span><span className="sm:hidden">Sincronizar</span>
             </button>
+            )}
             {lowStockCount > 0 && (
                 <>
                     <div className="w-px h-4 bg-slate-200 dark:bg-slate-700" />
@@ -142,12 +146,14 @@ export default function ProductsHeader(props) {
                         {cat.label}
                     </button>
                 ))}
+                {!isCajero && (
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); setIsCategoryManagerOpen(true); }}
                     className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-transparent active:scale-95 flex items-center gap-1 snap-start"
                 >
                     <Pencil size={12} /> Editar
                 </button>
+                )}
             </div>
             {/* Right fade indicator for scroll */}
             <div className="pointer-events-none absolute right-0 top-0 bottom-1.5 w-8 bg-gradient-to-l from-slate-50 dark:from-slate-950 to-transparent sm:hidden" />

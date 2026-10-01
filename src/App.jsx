@@ -429,16 +429,16 @@ export default function App() {
     { id: 'reportes', label: 'Reportes', icon: BarChart3, adminOnly: true },
     { id: 'ajustes', label: 'Config.', icon: Settings, adminOnly: true },
   ];
-  // Modo cajero estricto: POS puro. Sin inventario, contactos ni config.
-  // Sin PIN no hay roles reales, así que todos ven todas las pestañas.
+  // Modo cajero: POS + consulta de inventario de solo lectura.
+  // Sin contactos ni config.
   const TABS = appMode === 'caja'
-    ? ALL_TABS.filter(t => ['ventas', 'inicio'].includes(t.id))
+    ? ALL_TABS.filter(t => ['ventas', 'inicio', 'catalogo'].includes(t.id))
     : ALL_TABS;
 
   // Si el cajero aterrizó en una pestaña oculta, redirigir a Vender
   // (deferido con timeout para no llamar setState síncrono en el efecto)
   useEffect(() => {
-    if (isCajero && !['ventas', 'inicio'].includes(activeTab)) {
+    if (isCajero && !['ventas', 'inicio', 'catalogo'].includes(activeTab)) {
       const id = setTimeout(() => setActiveTab('ventas'), 0);
       return () => clearTimeout(id);
     }

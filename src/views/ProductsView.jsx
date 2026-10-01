@@ -77,7 +77,7 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
         vencimiento, setVencimiento,
         isFormShaking, fileInputRef,
         lotesProducto, productMovements,
-        handleImageUpload, handleSave, handleEdit, handleClose,
+        handleImageUpload, handleSave, handleClose,
         guardarLote, ajustarCantidadLote,
     } = form;
 
@@ -264,7 +264,10 @@ export const ProductsView = ({ rates, triggerHaptic }) => {
 
     // ─── IMAGE HANDLER ──────────────────────────────────────
 
-    const handleDelete = (id) => { triggerHaptic && triggerHaptic(); setDeleteId(id); };
+    const handleDelete = (id) => { if (isCajero) return; triggerHaptic && triggerHaptic(); setDeleteId(id); };
+    // El cajero consulta el inventario en modo lectura: aunque algún gesto
+    // (p. ej. swipe) dispare editar, el formulario nunca se abre para su rol.
+    const handleEdit = (product) => { if (isCajero) return; form.handleEdit(product); };
 
     const handleSyncCatalog = async () => {
         triggerHaptic && triggerHaptic();
