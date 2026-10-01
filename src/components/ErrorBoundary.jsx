@@ -35,13 +35,15 @@ class ErrorBoundary extends React.Component {
             )}
             <button 
               onClick={() => {
-                localStorage.removeItem('calc_history');
-                localStorage.removeItem('bodega_accounts_v2');
+                // FIX 2026-10-01 (A1): la recuperación de errores jamás borra
+                // datos del usuario. Antes este botón eliminaba
+                // 'bodega_accounts_v2' (cuentas de pago/billetera) sin reparar
+                // nada. Solo se recarga la app.
                 window.location.reload();
               }} 
               className="px-6 py-3 bg-brand text-slate-900 rounded-xl font-bold hover:brightness-110 transition-all"
             >
-              Limpiar y Recargar
+              Recargar
             </button>
           </div>
         </div>

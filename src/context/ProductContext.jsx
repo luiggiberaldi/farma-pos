@@ -163,10 +163,17 @@ export function ProductProvider({ children, rates }) {
         const savedMode = localStorage.getItem('bodega_rate_mode');
         if (savedMode) return savedMode;
         
-        // Retrocompatibilidad
+        // Retrocompatibilidad: el valor puede estar corrupto en localStorage;
+        // un JSON.parse sin protección tumbaba ProductProvider (pantalla
+        // blanca) porque esto corre en el inicializador de useState. FIX
+        // 2026-10-01 (A2): try/catch con default 'bcv'.
         const savedAuto = localStorage.getItem('bodega_use_auto_rate');
         if (savedAuto !== null) {
-            return JSON.parse(savedAuto) ? 'bcv' : 'manual';
+            try {
+                return JSON.parse(savedAuto) ? 'bcv' : 'manual';
+            } catch {
+                return 'bcv';
+            }
         }
         return 'bcv';
     });
