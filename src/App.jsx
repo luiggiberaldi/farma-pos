@@ -550,7 +550,7 @@ export default function App() {
           </ErrorBoundary>
         </div>
 
-        {!isCajero && <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
+        <div className={`flex-1 flex flex-col ${activeTab === 'catalogo' ? '' : 'hidden'}`}>
           <ErrorBoundary>
             <ProductsView rates={rates} triggerHaptic={triggerHaptic} />
           </ErrorBoundary>
