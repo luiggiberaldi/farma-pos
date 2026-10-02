@@ -15,12 +15,13 @@ catch {
 }
 const core = await readFile(new URL('../migrations/202609140001_pharmacy_core.sql', import.meta.url), 'utf8');
 const access = await readFile(new URL('../migrations/202609140002_operator_access.sql', import.meta.url), 'utf8');
+const deviceCap = await readFile(new URL('../migrations/202610010001_device_cap.sql', import.meta.url), 'utf8');
 const hex = () => randomBytes(32).toString('hex');
 const setup = `CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
   CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY, is_anonymous boolean NOT NULL DEFAULT false);`;
 const names = ['pharmacy_bootstrap_owner', 'pharmacy_enroll_device', 'pharmacy_operator_directory',
   'pharmacy_reserve_pin_attempt', 'pharmacy_finish_pin_attempt', 'pharmacy_validate_operator_session',
-  'pharmacy_revoke_operator_session'];
+  'pharmacy_revoke_operator_session', 'pharmacy_list_devices', 'pharmacy_revoke_device'];
 
 // PGlite serializes its single connection. Promise batches below exercise the
 // database budget/commit state machine, NOT real multi-connection lock scheduling.
@@ -30,6 +31,7 @@ test('fresh isolated operator SQL contract (synthetic Auth; no network)', async 
   await db.exec(setup);
   await db.exec(core);
   await db.exec(access);
+  await db.exec(deviceCap);
   const q = async (sql, args = []) => (await db.query(sql, args)).rows;
   const rawRpc = async (name, args) => {
     assert.ok(names.includes(name));
@@ -83,10 +85,10 @@ test('fresh isolated operator SQL contract (synthetic Auth; no network)', async 
       }
       assert.equal((await q(`SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='app_private'`))[0].n, 0);
     });
-    await t.test('all seven RPCs deny anon/authenticated/PUBLIC and allow only service execution', async () => {
+    await t.test('all nine RPCs deny anon/authenticated/PUBLIC and allow only service execution', async () => {
       const procs = await q(`SELECT p.oid, p.proname, p.prosecdef, p.proconfig FROM pg_proc p
         JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname LIKE 'pharmacy_%'`);
-      assert.equal(procs.length, 7);
+      assert.equal(procs.length, 9);
       for (const proc of procs) {
         assert.equal(proc.prosecdef, true);
         assert.ok(proc.proconfig.some(s => s.startsWith('search_path=')));
@@ -131,6 +133,42 @@ test('fresh isolated operator SQL contract (synthetic Auth; no network)', async 
       await assert.rejects(rpc('pharmacy_bootstrap_owner', [anonymous, 'No', 'No', 'no', hex(), hex(), 210000]), /Verified owner required/);
       await assert.rejects(rpc('pharmacy_enroll_device', [a.uid, a.did, hex(), 'Again']), /unique|duplicate/);
       assert.equal(await rpc('pharmacy_enroll_device', [randomUUID(), randomUUID(), hex(), 'Unknown']), null);
+    });
+    await t.test('device cap: 6 enabled per tenant, 7th refused, revoke frees a slot', async () => {
+      const c = await fixture('C');
+      // Fixture enrolls 1 device; enroll 5 more to reach the cap.
+      const extra = [];
+      for (let i = 0; i < 5; i++) {
+        const did = randomUUID();
+        const result = await rpc('pharmacy_enroll_device', [c.uid, did, hex(), `Extra ${i}`]);
+        assert.equal(result.device_id, did);
+        extra.push(did);
+      }
+      const seventh = await rpc('pharmacy_enroll_device', [c.uid, randomUUID(), hex(), 'Seventh']);
+      assert.deepEqual(seventh, { error: 'device_limit' });
+      let list = await rpc('pharmacy_list_devices', [c.uid]);
+      assert.equal(list.length, 6);
+      assert.ok(list.every(d => d.enabled === true));
+      assert.deepEqual(Object.keys(list[0]).sort(), ['created_at', 'enabled', 'id', 'label']);
+      // No proof hashes leak through the list.
+      assert.ok(list.every(d => !('proof_hash' in d)));
+      // Revoke one; a new enrollment fits again.
+      const revoked = await rpc('pharmacy_revoke_device', [c.uid, extra[0]]);
+      assert.deepEqual(revoked, { device_id: extra[0], enabled: false });
+      const replacement = randomUUID();
+      assert.equal((await rpc('pharmacy_enroll_device', [c.uid, replacement, hex(), 'Replacement'])).device_id, replacement);
+      list = await rpc('pharmacy_list_devices', [c.uid]);
+      assert.equal(list.filter(d => d.enabled).length, 6);
+      assert.equal(list.filter(d => !d.enabled).length, 1);
+      // Revoking twice or an unknown device returns null; cross-tenant revoke is null.
+      assert.equal(await rpc('pharmacy_revoke_device', [c.uid, extra[0]]), null);
+      assert.equal(await rpc('pharmacy_revoke_device', [c.uid, randomUUID()]), null);
+      assert.equal(await rpc('pharmacy_revoke_device', [a.uid, extra[1]]), null);
+      assert.equal(await rpc('pharmacy_list_devices', [randomUUID()]), null);
+      // Other tenant unaffected by c's cap (enroll then revoke to leave a clean).
+      const aExtra = randomUUID();
+      assert.equal((await rpc('pharmacy_enroll_device', [a.uid, aExtra, hex(), 'A extra'])).device_id, aExtra);
+      assert.deepEqual(await rpc('pharmacy_revoke_device', [a.uid, aExtra]), { device_id: aExtra, enabled: false });
     });
     await t.test('safe directory never returns PIN, credential versions, tenant or device secrets', async () => {
       const directory = await rpc('pharmacy_operator_directory', [a.uid, a.did, a.proof]);
