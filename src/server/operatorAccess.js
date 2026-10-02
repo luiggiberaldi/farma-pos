@@ -10,9 +10,10 @@ const encoder = new TextEncoder();
 const randomToken = () => Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('base64url');
 
 export class OperatorAccessError extends Error {
-  constructor(status = 401) {
-    super(status === 503 ? 'Operator access unavailable' : 'Operator access denied');
+  constructor(status = 401, code = null) {
+    super(code || (status === 503 ? 'Operator access unavailable' : 'Operator access denied'));
     this.status = status;
+    this.code = code;
   }
 }
 const denied = () => { throw new OperatorAccessError(); };
@@ -193,7 +194,8 @@ export function createOperatorAccess({ env = {}, fetchImpl = globalThis.fetch, a
       if (!result || !UUID.test(result.tenant_id) || !UUID.test(result.operator_id)) return denied();
       return { tenant_id: result.tenant_id, operator_id: result.operator_id };
     },
-    // B3: NO EXPONER VÍA HTTP. Solo invocación administrativa de confianza.
+    // Matrícula expuesta SOLO al dueño autenticado por Supabase (administrativeIdentity).
+    // Sigue sin ser pública: ningún otro rol, cuenta o anónimo puede matricular.
     async enrollDevice({ authorization, expectedOwnerAuthUid, label }) {
       const authUid = await administrativeIdentity(authorization, expectedOwnerAuthUid);
       if (typeof label !== 'string' || !label.trim() || label.length > 120) throw new OperatorAccessError(400);
@@ -201,9 +203,23 @@ export function createOperatorAccess({ env = {}, fetchImpl = globalThis.fetch, a
       const proof = randomToken();
       const result = await rpc('pharmacy_enroll_device', { p_auth_uid: authUid,
         p_device_id: deviceId, p_proof_hash: await sha256(proof), p_label: label });
+      if (result?.error === 'device_limit') throw new OperatorAccessError(409, 'device_limit');
       if (!result || result.device_id !== deviceId) return denied();
       // One-time administrative delivery; never persisted in plaintext by SQL.
       return { deviceId, deviceCredential: `${deviceId}.${proof}` };
+    },
+    async listDevices({ authorization, expectedOwnerAuthUid }) {
+      const authUid = await administrativeIdentity(authorization, expectedOwnerAuthUid);
+      const result = await rpc('pharmacy_list_devices', { p_auth_uid: authUid });
+      if (!Array.isArray(result)) return denied();
+      return result;
+    },
+    async revokeDevice({ authorization, expectedOwnerAuthUid, deviceId }) {
+      const authUid = await administrativeIdentity(authorization, expectedOwnerAuthUid);
+      if (!UUID.test(deviceId)) throw new OperatorAccessError(400);
+      const result = await rpc('pharmacy_revoke_device', { p_auth_uid: authUid, p_device_id: deviceId });
+      if (!result || result.device_id !== deviceId) return denied();
+      return { device_id: deviceId, enabled: false };
     },
   };
 }

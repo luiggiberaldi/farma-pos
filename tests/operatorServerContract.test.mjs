@@ -14,7 +14,8 @@ import { resetRateLimitBuckets } from '../src/server/rateLimit.js';
 // No server is started. Every Auth/RPC request uses this synthetic fetch boundary.
 // SQL names/types are checked here, not its locking/RLS behavior (access-contract.mjs).
 const sql = await readFile(new URL('../supabase/migrations/202609140002_operator_access.sql', import.meta.url), 'utf8');
-const signatures = new Map([...sql.matchAll(/CREATE FUNCTION public\.(pharmacy_\w+)\(\s*([\s\S]*?)\) RETURNS/g)]
+const sqlCap = await readFile(new URL('../supabase/migrations/202610010001_device_cap.sql', import.meta.url), 'utf8');
+const signatures = new Map([...(sql + sqlCap).matchAll(/CREATE FUNCTION public\.(pharmacy_\w+)\(\s*([\s\S]*?)\) RETURNS/g)]
   .map(([, name, args]) => [name, args.split(',').map(arg => arg.trim().split(/\s+/))]));
 const PIN = '49382716';
 const BAD_PIN = '48392716';
@@ -30,7 +31,7 @@ const PROOF_HASH = await sha256(PROOF);
 const PIN_RECORD = await hashPin(PIN);
 const ENV = Object.freeze({ SUPABASE_URL: 'https://supabase.operator-test.invalid',
   APP_ORIGIN: 'https://app.operator-test.invalid', SUPABASE_ANON_KEY: 'synthetic-anon-key',
-  SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service-key' });
+  SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service-key', OWNER_AUTH_UID: UID });
 const AUTHORIZATION = 'Bearer synthetic-account-token';
 const USER = { id: UID, is_anonymous: false, role: 'authenticated',
   user_metadata: { role: 'DUENO', tenant_id: 'untrusted', operator_id: 'untrusted' } };
@@ -99,7 +100,19 @@ function fixture(options = {}) {
       if (options.rpcMalformed) return { ok: true, status: 200, json: async () => { throw new SyntaxError('invalid'); } };
       if (options.rpc) return response(await options.rpc(name, args, state));
       if (name === 'pharmacy_bootstrap_owner') return response({ tenant_id: TENANT, operator_id: OPERATOR });
-      if (name === 'pharmacy_enroll_device') return response({ device_id: args.p_device_id });
+      if (name === 'pharmacy_enroll_device') {
+        if (options.enrollLimit) return response({ error: 'device_limit' });
+        return response({ device_id: args.p_device_id });
+      }
+      if (name === 'pharmacy_list_devices') {
+        if (options.emptyDevices) return response([]);
+        return response([{ id: DEVICE, label: 'Synthetic device', enabled: true,
+          created_at: new Date().toISOString() }]);
+      }
+      if (name === 'pharmacy_revoke_device') {
+        if (args.p_device_id !== DEVICE) return response(null);
+        return response({ device_id: DEVICE, enabled: false });
+      }
       const scoped = args.p_device_id === DEVICE && args.p_device_proof_hash === PROOF_HASH;
       if (!scoped) return response(null);
       if (name === 'pharmacy_operator_directory') return response(directory());
@@ -164,8 +177,8 @@ function noSecrets(body, extra = []) {
   assert.doesNotMatch(raw, /pin_hash|pin_salt|pin_iterations|credential_version|token_hash|device_proof/);
 }
 
- test('SQL RPC signature inventory matches the seven service-only helpers', () => {
-  assert.equal(signatures.size, 7);
+ test('SQL RPC signature inventory matches the nine service-only helpers', () => {
+  assert.equal(signatures.size, 9);
   assert.deepEqual(signatures.get('pharmacy_finish_pin_attempt').map(([, type]) => type),
     ['uuid', 'uuid', 'text', 'uuid', 'uuid', 'bigint', 'boolean', 'text']);
 });
@@ -194,7 +207,8 @@ test('weak/default/numeric/oversized PINs and malformed hash parameters are reje
 
 test('server configuration requires explicit distinct keys and HTTPS origins', () => {
   assert.ok(readOperatorConfig(ENV));
-  for (const key of Object.keys(ENV)) assert.equal(readOperatorConfig({ ...ENV, [key]: '' }), null);
+  // OWNER_AUTH_UID gates only the device actions; the core config ignores it.
+  for (const key of Object.keys(ENV).filter(k => k !== 'OWNER_AUTH_UID')) assert.equal(readOperatorConfig({ ...ENV, [key]: '' }), null);
   assert.equal(readOperatorConfig({ ...ENV, SUPABASE_SERVICE_ROLE_KEY: ENV.SUPABASE_ANON_KEY }), null);
   for (const raw of ['http://remote.invalid', 'https://user:pass@remote.invalid', 'https://remote.invalid/path',
     'https://remote.invalid?query=1', 'https://remote.invalid#fragment', 'not-a-url']) {
@@ -442,4 +456,75 @@ test('administrative enrollment returns random proof once while service RPC rece
   assert.equal(rpc.name, 'pharmacy_enroll_device'); assert.equal(rpc.args.p_device_id, second.deviceId);
   assert.equal(rpc.args.p_proof_hash, await sha256(proof));
   assert.ok(!JSON.stringify(rpc.args).includes(proof)); noProtocolErrors(f);
+});
+
+test('enroll-device: owner gets one-time credential; non-owner denied; limit is 409', async () => {
+  const f = fixture();
+  const result = await invoke(f.handler, { action: 'enroll-device', label: 'Chrome · Windows · oct 2026' });
+  assert.equal(result.status, 200);
+  const [deviceId, proof] = result.body.deviceCredential.split('.');
+  assert.ok(uuid.test(deviceId) && /^[A-Za-z0-9_-]{43}$/.test(proof));
+  noSecrets(result.body);
+  const rpc = f.calls.at(-1);
+  assert.equal(rpc.name, 'pharmacy_enroll_device');
+  assert.equal(rpc.args.p_auth_uid, UID);
+  assert.equal(rpc.args.p_device_id, deviceId);
+  assert.match(rpc.args.p_proof_hash, /^[0-9a-f]{64}$/);
+  assert.equal(rpc.args.p_proof_hash, await sha256(proof));
+  assert.equal(rpc.args.p_label, 'Chrome · Windows · oct 2026');
+  noProtocolErrors(f);
+  // Non-owner account is denied before any device RPC.
+  const g = fixture({ user: { ...USER, id: OTHER_UID } });
+  const deniedRes = await invoke(g.handler, { action: 'enroll-device', label: 'X' });
+  assert.equal(deniedRes.status, 401);
+  assert.deepEqual(deniedRes.body, { error: 'Operator access denied' });
+  assert.ok(g.calls.every(c => c.name === 'auth'));
+  // Device limit maps to 409 with a legible code.
+  const h = fixture({ enrollLimit: true });
+  const limited = await invoke(h.handler, { action: 'enroll-device', label: 'Y' });
+  assert.equal(limited.status, 409);
+  assert.deepEqual(limited.body, { error: 'device_limit' });
+  // Bad label, missing label and extra fields are 400.
+  assert.equal((await invoke(f.handler, { action: 'enroll-device', label: '' })).status, 400);
+  assert.equal((await invoke(f.handler, { action: 'enroll-device', label: 'x'.repeat(121) })).status, 400);
+  assert.equal((await invoke(f.handler, { action: 'enroll-device' })).status, 400);
+  assert.equal((await invoke(f.handler, { action: 'enroll-device', label: 'Z', extra: 1 })).status, 400);
+  // Missing owner env fails closed with 503 before Auth.
+  const noEnv = fixture();
+  const noEnvHandler = createOperatorSessionHandler({ env: { ...ENV, OWNER_AUTH_UID: undefined }, fetchImpl: noEnv.fetchImpl });
+  const unavailable = await invoke(noEnvHandler, { action: 'enroll-device', label: 'Z' });
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(unavailable.body, { error: 'Operator access unavailable' });
+  assert.equal(noEnv.calls.length, 0);
+});
+
+test('list-devices: owner sees labels without secrets; non-owner denied', async () => {
+  const f = fixture();
+  const result = await invoke(f.handler, { action: 'list-devices' });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.length, 1);
+  assert.deepEqual(Object.keys(result.body[0]).sort(), ['created_at', 'enabled', 'id', 'label']);
+  assert.equal(result.body[0].id, DEVICE);
+  assert.equal(result.body[0].label, 'Synthetic device');
+  noSecrets(result.body); noProtocolErrors(f);
+  const g = fixture({ user: { ...USER, id: OTHER_UID } });
+  assert.equal((await invoke(g.handler, { action: 'list-devices' })).status, 401);
+  assert.ok(g.calls.every(c => c.name === 'auth'));
+  const e = fixture({ emptyDevices: true });
+  assert.deepEqual((await invoke(e.handler, { action: 'list-devices' })).body, []);
+});
+
+test('revoke-device: owner disables; unknown device denied; bad id is 400', async () => {
+  const f = fixture();
+  const result = await invoke(f.handler, { action: 'revoke-device', deviceId: DEVICE });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { device_id: DEVICE, enabled: false });
+  assert.equal(f.calls.at(-1).args.p_device_id, DEVICE);
+  noProtocolErrors(f);
+  assert.equal((await invoke(f.handler, { action: 'revoke-device', deviceId: randomUUID() })).status, 401);
+  assert.equal((await invoke(f.handler, { action: 'revoke-device', deviceId: 'nope' })).status, 400);
+  assert.equal((await invoke(f.handler, { action: 'revoke-device' })).status, 400);
+  const g = fixture({ user: { ...USER, id: OTHER_UID } });
+  assert.equal((await invoke(g.handler, { action: 'revoke-device', deviceId: DEVICE })).status, 401);
+  assert.ok(g.calls.every(c => c.name === 'auth'));
 });

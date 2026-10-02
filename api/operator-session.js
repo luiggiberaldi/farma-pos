@@ -32,7 +32,9 @@ async function readBody(req) {
 function validPayload(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const allowed = body.action === 'login' ? ['action', 'operatorId', 'branchId', 'pin']
-    : ['directory', 'logout'].includes(body.action) ? ['action'] : null;
+    : body.action === 'enroll-device' ? ['action', 'label']
+    : body.action === 'revoke-device' ? ['action', 'deviceId']
+    : ['directory', 'logout', 'list-devices'].includes(body.action) ? ['action'] : null;
   return allowed && Object.keys(body).every(key => allowed.includes(key))
     && allowed.every(key => Object.hasOwn(body, key));
 }
@@ -42,6 +44,12 @@ function validPayload(body) {
 export function createOperatorSessionHandler({ env = process.env, fetchImpl = globalThis.fetch, allowTestHttp = false } = {}) {
   const serverConfig = readOperatorConfig(env, { allowTestHttp });
   const access = createOperatorAccess({ env, fetchImpl, allowTestHttp });
+  // Registro de dueño verificado por humano; nunca viene de un payload HTTP.
+  const ownerAuthUid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(env.OWNER_AUTH_UID || '')
+    ? env.OWNER_AUTH_UID : null;
+    if (!ownerAuthUid) throw new OperatorAccessError(503);
+    return ownerAuthUid;
+  };
   return async function operatorSession(req, res) {
     res.setHeader('Cache-Control', 'no-store, private');
     res.setHeader('Pragma', 'no-cache');
@@ -54,8 +62,7 @@ export function createOperatorSessionHandler({ env = process.env, fetchImpl = gl
     // M5: frena fuerza bruta contra el login de operadores.
     const rl = checkRateLimit({ key: `login:${clientIp(req)}`, max: 60, windowMs: 60_000 });
     if (!rl.allowed) return rateLimitedResponse(res, rl.retryAfterMs);
-    if (!serverConfig) return res.status(503).json({ error: 'Operator access unavailable' });
-    if (req.headers?.origin !== serverConfig.appOrigin
+    if (!serverConfig) return res.status(503).json({ error: 'Operator access unavailable' });    if (req.headers?.origin !== serverConfig.appOrigin
       || (req.headers?.['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin'))
       return res.status(403).json({ error: 'Operator access denied' });
     if (typeof req.headers?.['content-type'] !== 'string'
@@ -72,12 +79,30 @@ export function createOperatorSessionHandler({ env = process.env, fetchImpl = gl
         res.setHeader('Set-Cookie', sessionCookie(result.token));
         return res.status(200).json({ operator: result.authority });
       }
+      if (body.action === 'enroll-device') {
+        // Matrícula rara: límite propio más estricto que el login.
+        const erl = checkRateLimit({ key: `enroll:${clientIp(req)}`, max: 10, windowMs: 60_000 });
+        if (!erl.allowed) return rateLimitedResponse(res, erl.retryAfterMs);
+        const result = await access.enrollDevice({ authorization: credentials.authorization,
+          expectedOwnerAuthUid: ownerOnly(), label: body.label });
+        return res.status(200).json({ deviceCredential: result.deviceCredential });
+      }
+      if (body.action === 'list-devices') {
+        return res.status(200).json(await access.listDevices({ authorization: credentials.authorization,
+          expectedOwnerAuthUid: ownerOnly() }));
+      }
+      if (body.action === 'revoke-device') {
+        const result = await access.revokeDevice({ authorization: credentials.authorization,
+          expectedOwnerAuthUid: ownerOnly(), deviceId: body.deviceId });
+        return res.status(200).json(result);
+      }
       await access.logout({ ...credentials, token: readSessionCookie(req.headers?.cookie) });
       res.setHeader('Set-Cookie', sessionCookie('', { clear: true }));
       return res.status(200).json({ ok: true });
     } catch (error) {
       const status = error instanceof OperatorAccessError ? error.status : 503;
-      return res.status(status).json({ error: status === 503 ? 'Operator access unavailable' : 'Operator access denied' });
+      const code = error instanceof OperatorAccessError ? error.code : null;
+      return res.status(status).json({ error: code || (status === 503 ? 'Operator access unavailable' : 'Operator access denied') });
     }
   };
 }
