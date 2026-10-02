@@ -635,7 +635,8 @@ export default function DashboardView({ rates, triggerHaptic, onNavigate, theme,
                 finalizingHistoricalBatch={isFinalizingHistoricalBatch}
             />
 
-
+            {/* Marcador de compilación (diagnóstico): qué versión corre este equipo. */}
+            <p className="text-center text-[9px] text-slate-300 dark:text-slate-700 pt-4 select-none" aria-hidden="true">v{typeof __BUILD_SHA__ !== 'undefined' ? __BUILD_SHA__ : 'local'}</p>
         </div>
     );
 }

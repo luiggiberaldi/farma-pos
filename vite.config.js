@@ -4,6 +4,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { assertSupabaseBrowserKey } from './src/config/supabasePublicKey.js'
 
 export default defineConfig({
+  // SHA corto de la compilación (Vercel lo inyecta; local se pasa con BUILD_SHA).
+  // Se muestra diminuto en Inicio para diagnosticar qué versión corre un equipo.
+  define: {
+    __BUILD_SHA__: JSON.stringify(String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.BUILD_SHA || 'local').slice(0, 7)),
+  },
   server: {
     proxy: {
       '/api': {
