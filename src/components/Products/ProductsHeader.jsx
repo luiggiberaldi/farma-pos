@@ -131,9 +131,9 @@ export default function ProductsHeader(props) {
             </div>
         )}
 
-        {/* Category Filter Pills — horizontal scroll with fade */}
+        {/* Category Filter Pills — scroll horizontal en móvil, envueltas en PC */}
         <div className="relative">
-            <div ref={categoryScrollRef} className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-hide scroll-smooth snap-x">
+            <div ref={categoryScrollRef} className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-hide scroll-smooth snap-x lg:flex-wrap lg:overflow-x-visible">
                 {categories.map(cat => (
                     <button
                         key={cat.id}
