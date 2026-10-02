@@ -176,3 +176,13 @@ test('App.jsx: el contenedor de la vista catalogo no está vetado al cajero', ()
   assert.doesNotMatch(src, /\{!isCajero && <div[^>]*activeTab === 'catalogo'/);
   assert.match(src, /<div className=\{`flex-1 flex flex-col \$\{activeTab === 'catalogo'/);
 });
+
+test('App.jsx: el activeTab derivado no revierte catalogo en modo caja', () => {
+  // Regresión 2026-10-01: el tap en Inventario no cambiaba de vista porque
+  // activeTab se forzaba a 'ventas' para todo lo fuera de ['inicio','ventas'].
+  const src = readFileSync(resolve(root, 'src/App.jsx'), 'utf8');
+  assert.match(
+    src,
+    /const activeTab = appMode === 'caja' && !\['inicio', 'ventas', 'catalogo'\]\.includes\(selectedTab\) \? 'ventas' : selectedTab;/
+  );
+});

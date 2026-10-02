@@ -55,7 +55,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState({ identity: null, mode: 'gestion' });
   const workspaceIdentity = `${getActiveAccountId() || 'local'}:${usuarioActivo?.id || 'locked'}`;
   const appMode = usuarioActivo?.rol === 'CAJERO' ? 'caja' : workspace.identity === workspaceIdentity ? workspace.mode : 'gestion';
-  const activeTab = appMode === 'caja' && !['inicio', 'ventas'].includes(selectedTab) ? 'ventas' : selectedTab;
+  const activeTab = appMode === 'caja' && !['inicio', 'ventas', 'catalogo'].includes(selectedTab) ? 'ventas' : selectedTab;
   const syncSedeWithUser = useSedeStore(state => state.syncWithUser);
   const sedeActivaId = useSedeStore(state => state.sedeActivaId);
   const [installPrompt, setInstallPrompt] = useState(() => window.deferredInstallPrompt);
