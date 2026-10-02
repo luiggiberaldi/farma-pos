@@ -29,32 +29,42 @@ export const useSedeStore = create((set) => ({
         }
         const details = { from: context.sedeId, to: sedeId };
         const owner = useAuthStore.getState().usuarios.find(user => Number(user.id) === 1 && user.rol === 'DUENO');
-        if (!owner || String(approverId) !== String(owner.id)) throw new Error('Solo el PIN del Dueño puede cambiar de sede.');
-        const approval = await useAuthStore.getState().issueApproval(pin, owner.id, { action: 'CHANGE_SEDE', details });
-        if (!approval) return false;
+        // El dueño ya autenticado con su PIN no necesita reingresarlo: la sesión
+        // del store es la prueba. Otros casos siguen exigiendo el PIN del dueño.
+        const actorIsOwner = !!actor && !!owner && actor.rol === 'DUENO' && String(actor.id) === String(owner.id);
+        let approval = null;
+        let approver = null;
+        if (actorIsOwner) {
+            approver = actor;
+        } else {
+            if (!owner || String(approverId) !== String(owner.id)) throw new Error('Solo el PIN del Dueño puede cambiar de sede.');
+            approval = await useAuthStore.getState().issueApproval(pin, owner.id, { action: 'CHANGE_SEDE', details });
+            if (!approval) return false;
+            approver = approval.approver;
+        }
         assertStorageContextActive(context);
         assertContextChangeAllowed();
         const release = beginLocalOperation('CHANGE_SEDE', context);
         try {
-            const huella = await crearHuella({ tipo: 'CAMBIO_SEDE', usuario: actor || approval.approver, context,
-                detalle: { sedeAnterior: context.sedeId, sedeNueva: sedeId, aprobadorId: approval.approver.id } });
+            const huella = await crearHuella({ tipo: 'CAMBIO_SEDE', usuario: actor || approver, context,
+                detalle: { sedeAnterior: context.sedeId, sedeNueva: sedeId, aprobadorId: approver.id } });
             const history = await storageService.getItem('farmacia_sede_movimientos_v1', [], context);
             assertStorageContextActive(context);
-            if (!useAuthStore.getState().checkApproval(approval.id, 'CHANGE_SEDE', details)) throw new Error('La autorización de sede expiró.');
+            if (approval && !useAuthStore.getState().checkApproval(approval.id, 'CHANGE_SEDE', details)) throw new Error('La autorización de sede expiró.');
             await storageService.setItem('farmacia_sede_movimientos_v1', [{
                 id: crypto.randomUUID(), tipo: 'CAMBIO_SEDE_AUTORIZADO', sedeAnterior: context.sedeId, sedeNueva: sedeId,
-                usuarioId: actor?.id ?? null, aprobador: approval.approver, huella,
+                usuarioId: actor?.id ?? null, aprobador: approver, huella,
             }, ...history], context);
             assertStorageContextActive(context);
-            useAuthStore.getState().consumeApproval(approval.id, 'CHANGE_SEDE', details);
+            if (approval) useAuthStore.getState().consumeApproval(approval.id, 'CHANGE_SEDE', details);
             setActiveSedeId(sedeId);
             try { useAuthStore.getState().rebindSessionContext(); } catch (error) {
                 setActiveSedeId(context.sedeId);
                 throw error;
             }
             set({ sedeActivaId: sedeId });
-            void logEvent('SISTEMA', 'SEDE_CAMBIADA', `Cambio de sede: ${context.sedeId} → ${sedeId}`, actor || approval.approver,
-                { sedeAnterior: context.sedeId, sedeNueva: sedeId, huella, aprobadorId: approval.approver.id }, context);
+            void logEvent('SISTEMA', 'SEDE_CAMBIADA', `Cambio de sede: ${context.sedeId} → ${sedeId}`, actor || approver,
+                { sedeAnterior: context.sedeId, sedeNueva: sedeId, huella, aprobadorId: approver.id }, context);
             return true;
         } finally { release(); }
     },

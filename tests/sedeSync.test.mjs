@@ -37,6 +37,19 @@ for (const [id, pin, role] of [[1, '918273', 'DUENO']]) {
   });
 }
 
+test('el dueño autenticado cambia de sede sin reingresar el PIN', async t => {
+  const { useAuthStore: auth, useSedeStore: sede, f } = await fixture(t);
+  assert.equal(await auth.getState().login('918273', 1), true);
+  assert.equal(await sede.getState().setSedeActiva('norte'), true);
+  assert.equal(sede.getState().sedeActivaId, 'norte');
+  assert.equal(getActiveSedeId(), 'norte');
+  const movement = (await f.storage.getItem('farmacia_sede_movimientos_v1', [], { accountId: '', sedeId: 'central' }))[0];
+  assert.equal(movement.sedeAnterior, 'central');
+  assert.equal(movement.sedeNueva, 'norte');
+  assert.equal(movement.aprobador.id, 1);
+  assert.ok(movement.huella.correlativo);
+});
+
 test('cambiar sede rechaza admin y PIN incorrecto: solo autoriza el Dueño', async t => {
   const { useSedeStore: sede, f } = await fixture(t);
   await assert.rejects(() => sede.getState().setSedeActiva('norte', { pin: '827364', approverId: 2 }), /Solo el PIN del Dueño/);
