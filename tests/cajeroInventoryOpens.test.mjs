@@ -177,6 +177,29 @@ test('App.jsx: el contenedor de la vista catalogo no está vetado al cajero', ()
   assert.match(src, /<div className=\{`flex-1 flex flex-col \$\{activeTab === 'catalogo'/);
 });
 
+test('App.jsx: sin llaves huerfanas renderizadas como texto en el layout', async () => {
+  // Regresión 2026-10-01: al quitar el veto {!isCajero && ...} quedó un `}`
+  // huérfano tras </div> que se renderizaba como texto en todas las vistas.
+  // Se detecta con parser real: un JSXText cuyo valor es solo "}".
+  const { Parser } = await import('acorn');
+  const jsx = (await import('acorn-jsx')).default;
+  const src = readFileSync(resolve(root, 'src/App.jsx'), 'utf8');
+  const ast = Parser.extend(jsx()).parse(src, { ecmaVersion: 'latest', sourceType: 'module' });
+  const orphans = [];
+  (function walk(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'JSXText' && node.value.trim() === '}' && node.value.trim().length > 0) {
+      orphans.push(node.loc?.start?.line ?? '?');
+    }
+    for (const key of Object.keys(node)) {
+      const child = node[key];
+      if (Array.isArray(child)) child.forEach(walk);
+      else if (child && typeof child === 'object' && child.type) walk(child);
+    }
+  })(ast);
+  assert.deepEqual(orphans, [], `llaves huerfanas como texto JSX en lineas: ${orphans.join(', ')}`);
+});
+
 test('App.jsx: el activeTab derivado no revierte catalogo en modo caja', () => {
   // Regresión 2026-10-01: el tap en Inventario no cambiaba de vista porque
   // activeTab se forzaba a 'ventas' para todo lo fuera de ['inicio','ventas'].

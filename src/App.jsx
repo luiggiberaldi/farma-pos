@@ -554,7 +554,7 @@ export default function App() {
           <ErrorBoundary>
             <ProductsView rates={rates} triggerHaptic={triggerHaptic} />
           </ErrorBoundary>
-        </div>}
+        </div>
 
         <div className={`flex-1 flex flex-col ${activeTab === 'inicio' ? '' : 'hidden'}`}>
           <ErrorBoundary>
