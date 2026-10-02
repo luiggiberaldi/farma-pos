@@ -129,13 +129,68 @@ export function createRemoteOperatorSession({
         try { return { ok: true, payload: await response.json() }; }
         catch { return failure('unavailable', UNAVAILABLE); }
     }
+    // La matrícula no exige ni envía un secreto previo: obtenerlo es el punto.
+    async function enrollRequest(label) {
+        let token;
+        try { token = await getAccessToken(); } catch { return failure('unavailable', UNAVAILABLE); }
+        if (!token) return failure('no-account', 'Inicia sesión en la cuenta cloud para vincular.');
+        let response;
+        try {
+            response = await fetchImpl(endpoint, {
+                method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'error',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ action: 'enroll-device', label }),
+            });
+        } catch { return failure('unavailable', UNAVAILABLE); }
+        if (response.status === 503 || response.status === 404) return failure('unavailable', UNAVAILABLE);
+        if (response.status === 409) {
+            let code = null;
+            try { code = (await response.json())?.error; } catch { /* Cuerpo ilegible: denegación genérica. */ }
+            if (code === 'device_limit') return failure('device_limit', 'Límite de 6 equipos alcanzado.');
+            return failure('denied', DENIED);
+        }
+        if (!response.ok) return failure('denied', DENIED);
+        let payload;
+        try { payload = await response.json(); } catch { return failure('unavailable', UNAVAILABLE); }
+        if (!isValidDeviceCredential(payload?.deviceCredential)) {
+            return failure('invalid', 'El servidor no devolvió un identificador válido.');
+        }
+        return { ok: true, deviceCredential: payload.deviceCredential };
+    }
     return {
         isDeviceLinked: () => Boolean(getDeviceCredential()),
         getDeviceCredential,
+        getDeviceId: () => getDeviceCredential()?.split('.')[0] || null,
         setDeviceCredential,
         getAuthority: readAuthority,
         clear,
         paused: () => REMOTE_OPERATIONS_PAUSED,
+        async enrollDevice(label) {
+            if (typeof label !== 'string' || !label.trim() || label.length > 120) {
+                return failure('invalid', 'La etiqueta del equipo no es válida.');
+            }
+            if (getDeviceCredential()) return { ok: true, already: true };
+            const result = await enrollRequest(label.trim());
+            if (!result.ok) return result;
+            setDeviceCredential(result.deviceCredential);
+            return { ok: true };
+        },
+        async listDevices() {
+            const result = await request({ action: 'list-devices' });
+            if (!result.ok) return result;
+            const devices = Array.isArray(result.payload) ? result.payload.filter(device =>
+                device && UUID.test(device.id) && typeof device.label === 'string'
+                    && typeof device.enabled === 'boolean' && typeof device.created_at === 'string') : null;
+            if (!devices) return failure('invalid', 'La lista de equipos no es válida.');
+            return { ok: true, devices };
+        },
+        async revokeDevice(deviceId) {
+            if (!UUID.test(deviceId || '')) return failure('invalid', 'Identificador de equipo inválido.');
+            const result = await request({ action: 'revoke-device', deviceId });
+            if (!result.ok) return result;
+            if (deviceId === getDeviceCredential()?.split('.')[0]) setDeviceCredential(null);
+            return { ok: true };
+        },
         async directory() {
             const result = await request({ action: 'directory' });
             if (!result.ok) return result;
