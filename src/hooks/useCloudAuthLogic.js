@@ -139,6 +139,11 @@ export function useCloudAuthLogic() {
         window.dispatchEvent(new CustomEvent('cloud_login_completed', {
             detail: { session },
         }));
+        // Matrícula automática del equipo para la verificación remota de operador.
+        // Solo en login explícito (no en restauración de sesión): si falla, el
+        // login sigue su curso; se reintenta en el próximo login.
+        const { autoEnrollDevice } = await import('../services/autoEnrollDevice.js');
+        await autoEnrollDevice();
     };
 
     const applyCloudBackup = async (cloudBackup) => {
