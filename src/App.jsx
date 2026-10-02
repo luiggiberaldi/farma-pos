@@ -72,6 +72,15 @@ export default function App() {
       .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
   }, [usuarioActivo]);
 
+  // Migración única: inventario físico real C&Y 2025 → central (REEMPLAZA el
+  // catálogo previo, que era el de Las 24 Horas y ya vive en sur).
+  useEffect(() => {
+    if (!usuarioActivo) return;
+    import('./utils/migrateCentralInventory')
+      .then(({ migrateCentralInventory }) => migrateCentralInventory())
+      .catch(err => console.error('[Migración] No se pudo ejecutar:', err?.message));
+  }, [usuarioActivo]);
+
   // Inicializar Sincronización Realtime con Supabase
   useCloudSync();
 

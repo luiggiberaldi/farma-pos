@@ -347,7 +347,7 @@ test('B2 App.jsx: sin gate duplicado de usuarioActivo (código muerto)', async t
   const raw = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const src = raw.replace(/\/\/.*$/gm, '');
   const count = (src.match(/if \(!usuarioActivo\)/g) || []).length;
-  assert.equal(count, 5, 'solo quedan los 4 guards en callbacks + el gate de render (el duplicado muerto se eliminó)');
+  assert.equal(count, 6, 'solo quedan los 5 guards en useEffects (incl. las migraciones norte+central) + el gate de render (el duplicado muerto se eliminó)');
 });
 
 test('B3 SalesHeader: rateAgeMs memoizado, sin Date.now() directo en render', async t => {
