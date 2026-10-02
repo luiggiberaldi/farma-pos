@@ -47,6 +47,7 @@ export function createOperatorSessionHandler({ env = process.env, fetchImpl = gl
   // Registro de dueño verificado por humano; nunca viene de un payload HTTP.
   const ownerAuthUid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(env.OWNER_AUTH_UID || '')
     ? env.OWNER_AUTH_UID : null;
+  const ownerOnly = () => {
     if (!ownerAuthUid) throw new OperatorAccessError(503);
     return ownerAuthUid;
   };

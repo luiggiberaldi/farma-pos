@@ -1,16 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldAlert, KeyRound, RefreshCw, LogOut, Link2, Link2Off, Info } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, KeyRound, RefreshCw, LogOut, Link2, Link2Off, Info, MonitorSmartphone, Trash2 } from 'lucide-react';
 import { SectionCard } from '../SettingsShared.jsx';
 import { remoteOperatorSession, REMOTE_ROLES } from '../../services/operatorRemoteSession.js';
+import { autoEnrollDevice } from '../../services/autoEnrollDevice.js';
 
 const ROLE_LABEL = { DUENO: 'Dueño', CAJERO: 'Cajero' };
 const inputClass = 'w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-teal-500/40';
 const buttonClass = 'w-full flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed';
 
+const formatDate = value => {
+    try {
+        return new Date(value).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return ''; }
+};
+
 export default function RemoteOperatorPanel({ triggerHaptic }) {
     const [authority, setAuthority] = useState(() => remoteOperatorSession.getAuthority());
     const [linked, setLinked] = useState(() => remoteOperatorSession.isDeviceLinked());
-    const [deviceInput, setDeviceInput] = useState('');
+    const [devices, setDevices] = useState(null);
     const [directory, setDirectory] = useState(null);
     const [operatorId, setOperatorId] = useState('');
     const [branchId, setBranchId] = useState('');
@@ -32,12 +39,22 @@ export default function RemoteOperatorPanel({ triggerHaptic }) {
         } finally { setBusy(false); triggerHaptic?.(); }
     };
 
-    const saveDevice = () => run(async () => {
-        if (!remoteOperatorSession.setDeviceCredential(deviceInput.trim())) {
-            return { ok: false, message: 'El identificador del equipo no tiene el formato esperado.' };
-        }
-        setDeviceInput(''); setLinked(true); setAuthority(null);
-        return { ok: true };
+    const loadDevices = async () => {
+        const result = await remoteOperatorSession.listDevices();
+        if (result.ok) setDevices(result.devices);
+        return result;
+    };
+
+    useEffect(() => {
+        if (linked) loadDevices();
+        else setDevices(null);
+    }, [linked]);
+
+    const linkDevice = () => run(async () => {
+        const result = await autoEnrollDevice();
+        setLinked(remoteOperatorSession.isDeviceLinked());
+        setAuthority(null);
+        return result;
     }, 'Equipo vinculado en esta pestaña.');
 
     const clearDevice = () => run(async () => {
@@ -45,6 +62,18 @@ export default function RemoteOperatorPanel({ triggerHaptic }) {
         setLinked(false); setDirectory(null); setAuthority(null); setRemotePin('');
         return { ok: true };
     }, 'Vínculo eliminado de esta pestaña.');
+
+    const revokeDevice = device => {
+        if (!window.confirm(`¿Desvincular "${device.label}"? Ese equipo deberá vincularse de nuevo para verificar operadores.`)) return;
+        run(async () => {
+            const result = await remoteOperatorSession.revokeDevice(device.id);
+            if (result.ok) {
+                setLinked(remoteOperatorSession.isDeviceLinked());
+                await loadDevices();
+            }
+            return result;
+        }, 'Equipo desvinculado.');
+    };
 
     const loadDirectory = () => run(async () => {
         const result = await remoteOperatorSession.directory();
@@ -93,17 +122,52 @@ export default function RemoteOperatorPanel({ triggerHaptic }) {
             </div>
 
             {!linked && (
-                <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-slate-500" htmlFor="remote-device">Identificador del equipo</label>
-                    <input id="remote-device" type="password" autoComplete="off" value={deviceInput}
-                        onChange={event => setDeviceInput(event.target.value)} placeholder="uuid.secreto" className={inputClass} />
-                    <button onClick={saveDevice} disabled={busy || !deviceInput.trim()} className={buttonClass}>
-                        <div className="p-2 bg-teal-50 dark:bg-teal-900/30 rounded-lg"><KeyRound size={18} className="text-teal-600" /></div>
-                        <div className="text-left flex-1">
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Vincular equipo</p>
-                            <p className="text-[10px] text-slate-400">Se guarda solo en esta pestaña</p>
-                        </div>
-                    </button>
+                <button onClick={linkDevice} disabled={busy} className={buttonClass}>
+                    <div className="p-2 bg-teal-50 dark:bg-teal-900/30 rounded-lg"><KeyRound size={18} className="text-teal-600" /></div>
+                    <div className="text-left flex-1">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Vincular este equipo</p>
+                        <p className="text-[10px] text-slate-400">Automático al entrar con correo y contraseña</p>
+                    </div>
+                </button>
+            )}
+
+            {linked && devices && (
+                <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-[11px] font-black text-slate-500 uppercase tracking-wide">
+                            Equipos de la cuenta ({devices.filter(d => d.enabled).length}/6)
+                        </p>
+                        <button onClick={() => run(loadDevices, 'Lista actualizada.')} disabled={busy}
+                            className="text-[11px] font-bold text-teal-700 dark:text-teal-400 px-2 py-1 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-900/20">
+                            Actualizar
+                        </button>
+                    </div>
+                    <div className="space-y-1.5">
+                        {devices.map(device => {
+                            const isCurrent = device.id === remoteOperatorSession.getDeviceId();
+                            return (
+                                <div key={device.id}
+                                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border ${device.enabled
+                                        ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                                        : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 opacity-60'}`}>
+                                    <MonitorSmartphone size={16} className="text-slate-400 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">
+                                            {device.label}
+                                            {isCurrent && <span className="ml-1.5 text-[10px] font-black text-teal-700 dark:text-teal-400">· este equipo</span>}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400">{formatDate(device.created_at)}{device.enabled ? '' : ' · desvinculado'}</p>
+                                    </div>
+                                    {device.enabled && (
+                                        <button onClick={() => revokeDevice(device)} disabled={busy} aria-label={`Desvincular ${device.label}`}
+                                            className="shrink-0 p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 
