@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { SectionCard, Toggle } from '../../SettingsShared';
 import AuditLogViewer from '../AuditLogViewer';
-import RemoteOperatorPanel from '../RemoteOperatorPanel.jsx';
 import { downloadEncryptedBackup } from '../../../services/encryptedBackupService.js';
 import { REMOTE_OPERATIONS_PAUSED } from '../../../config/operationSafety.js';
 
@@ -57,7 +56,6 @@ export default function SettingsTabSistema({
     };
     return (
         <>
-            {isAdmin && <RemoteOperatorPanel triggerHaptic={triggerHaptic} />}
             {/* Datos y Respaldo */}
             <SectionCard icon={Database} title="Datos y Respaldo" subtitle="Exportar e importar" iconColor="text-cyan-500">
                 {REMOTE_OPERATIONS_PAUSED && (
