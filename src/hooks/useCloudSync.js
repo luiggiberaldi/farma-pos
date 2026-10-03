@@ -10,6 +10,7 @@ import { SALES_ARCHIVE_KEY, SALES_HOT_DAYS, saleTimestampMs, splitByAge, appendT
 import { SYNC_KEYS, LOCAL_KEYS, REALTIME_KEYS, POLLING_ONLY_KEYS, MERGEABLE_KEYS, PULL_IGNORE_KEYS, HEAVY_KEYS, DEBOUNCE_MS, DEBOUNCE_MS_HEAVY } from './cloudSync/syncKeys.js';
 import { _mergeArraysById, _computePushHash, sanitizeForPush, SALES_SYNC_WINDOW_DAYS } from './cloudSync/syncUtils.js';
 import { planSalesChunkPushes, saleChunkDay, staleChunkKeys, SALES_CHUNK_PRUNE_INTERVAL_MS, SALES_CHUNK_PRUNE_TS_KEY } from './cloudSync/salesChunks.js';
+import { runCatchUpPush, isCatchUpComplete, clearCatchUpComplete } from './cloudSync/catchUpPush.js';
 export { broadcastFactoryReset, broadcastForceReload } from './cloudSync/syncBroadcast.js';
 export { sanitizeForPush } from './cloudSync/syncUtils.js';
 // ─── Estado Global del Motor ───────────────────────────────────────────────
@@ -34,6 +35,10 @@ const _nativeSetItem = localStorage.setItem.bind(localStorage);
 const _lastPushHash = {};
 const _pushDebounceTimers = {};
 const _pendingPushValues = {}; // último valor pendiente por llave, para flush al ocultar
+// Catch-up push resiliente: doc_ids que la nube ya tenía en el último pull
+// (evita que un reintento suba arrays vacíos sobre datos existentes).
+let _lastPullCloudDocIds = new Set();
+let _catchUpRetryTimer = null;
 
 /**
  * Empuja una llave al sincronizador de Supabase.
@@ -423,6 +428,68 @@ async function _applyFromCloud(docId, collection, payload, cloudUpdatedAt) {
     }
 }
 
+/**
+ * Ejecuta el catch-up push con reintentos.
+ * Si el catch-up queda incompleto (pestaña oculta, sin red, ejecución
+ * invalidada, llaves con error), se reintenta automáticamente hasta completar.
+ * La bandera persistente por cuenta evita re-subir lo ya completado.
+ */
+async function runCatchUpWithRetry(userId, isCurrent) {
+    if (syncV2Paused()) return;
+    const checkCurrent = typeof isCurrent === 'function' ? isCurrent : () => true;
+    if (!checkCurrent()) return;
+    try {
+        const { default: lf } = await import('localforage');
+        lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
+        const result = await runCatchUpPush({
+            userId,
+            keys: SYNC_KEYS,
+            readLocal: async (key) => {
+                if (LOCAL_KEYS.includes(key)) {
+                    const raw = localStorage.getItem(key);
+                    return raw == null ? null : raw;
+                }
+                return lf.getItem(getScopedStorageKey(key));
+            },
+            cloudDocIds: _lastPullCloudDocIds,
+            isCurrent: checkCurrent,
+            pushFn: (key, val) => pushCloudSync(key, val, true),
+            pushUsersDoc: async () => {
+                const { pushUsersDoc } = await import('./cloudSync/accountDocs.js');
+                const { useAuthStore } = await import('./store/useAuthStore.js');
+                await pushUsersDoc({
+                    getState: useAuthStore.getState,
+                    setState: partial => useAuthStore.setState(partial),
+                    push: pushCloudSync,
+                });
+            },
+            spacingMs: SUPABASE_FREE_PROFILE.catchUpSpacingMs,
+            log: (...args) => console.log('[CloudSync]', ...args),
+        });
+        if (!result.completed && checkCurrent() && !syncV2Paused()) {
+            // Reintentar en 60s; el timer se limpia al desmontar/cambiar de cuenta.
+            clearTimeout(_catchUpRetryTimer);
+            _catchUpRetryTimer = setTimeout(() => {
+                _catchUpRetryTimer = null;
+                if (checkCurrent()) runCatchUpWithRetry(userId, checkCurrent).catch(() => {});
+            }, 60000);
+            console.log('[CloudSync] Catch-up incompleto, reintento programado en 60s.');
+        } else {
+            clearTimeout(_catchUpRetryTimer);
+            _catchUpRetryTimer = null;
+        }
+    } catch (e) {
+        console.warn('[CloudSync] Catch-up falló inesperadamente, se reintentará:', e?.message ?? e);
+        if (checkCurrent() && !syncV2Paused()) {
+            clearTimeout(_catchUpRetryTimer);
+            _catchUpRetryTimer = setTimeout(() => {
+                _catchUpRetryTimer = null;
+                if (checkCurrent()) runCatchUpWithRetry(userId, checkCurrent).catch(() => {});
+            }, 60000);
+        }
+    }
+}
+
 // ─── Hook de React ─────────────────────────────────────────────────────────
 export function useCloudSync() {
     const [authEpoch, setAuthEpoch] = useState(0);
@@ -576,58 +643,30 @@ export function useCloudSync() {
                 // Desde este punto los cambios nuevos de esta cuenta sí pueden subir.
                 initialSyncReady = true;
 
-                // ── Catch-up push: subir datos locales que la nube no tiene ──
+                // ── Catch-up push resiliente: subir datos locales que la nube no tiene ──
                 // Asegura que claves recién agregadas al sync (ej. categorías, proveedores,
                 // config) queden en Supabase aunque nunca hayan sido modificadas en este
                 // dispositivo desde que se activó el sync.
                 // El hash deduplication evita resubir lo que ya está igual en la nube.
-                // Set de doc_ids que la nube ya tiene (del pull inicial)
-                const cloudDocIds = new Set(docs?.map(d => parseCloudDocumentId(d.doc_id)?.key).filter(Boolean) || []);
+                // Set de doc_ids que la nube ya tiene (del pull inicial). Se guarda a
+                // nivel de módulo para que los reintentos no pisen datos existentes
+                // con arrays vacíos.
+                _lastPullCloudDocIds = new Set(docs?.map(d => parseCloudDocumentId(d.doc_id)?.key).filter(Boolean) || []);
 
-                (async () => {
-                    const { default: lf } = await import('localforage');
-                    lf.config({ name: APP_STORAGE_DB_NAME, storeName: APP_STORAGE_STORE_NAME });
-                    for (const key of SYNC_KEYS) {
-                        if (!isCurrent() || !navigator.onLine || document.visibilityState !== 'visible') return;
-                        if (LOCAL_KEYS.includes(key)) {
-                            const val = localStorage.getItem(key);
-                            if (val != null) {
-                                const result = await pushCloudSync(key, val, true);
-                                if (result?.code === 'SYNC_SEND_FAILED') return;
-                            }
-                        } else {
-                            const val = await lf.getItem(getScopedStorageKey(key));
-                            // No subir arrays vacíos si la nube ya tiene datos para esta llave.
-                            // Esto previene que un dispositivo nuevo borre el inventario de la nube.
-                            if (val != null) {
-                                // ADR-003: el inventario SÍ se sube tras el merge inicial para
-                                // que el stock vivo del equipo llegue a la nube (el merge por ID
-                                // con LWW ya resolvió los conflictos en el pull).
-                                if (Array.isArray(val) && val.length === 0 && cloudDocIds.has(key)) {
-                                    console.log(`[CloudSync] Skip push ${key}: local vacío, nube ya tiene datos`);
-                                    continue;
-                                }
-                                if (!isCurrent()) return;
-                                const result = await pushCloudSync(key, val, true);
-                                if (result?.code === 'SYNC_SEND_FAILED') return;
-                            }
-                        }
-                        // Pausa entre keys para no saturar Supabase con burst
-                        await new Promise(r => setTimeout(r, SUPABASE_FREE_PROFILE.catchUpSpacingMs));
-                    }
-                    // ── Catch-up del documento propio de usuarios ──
-                    // No vive en localStorage bajo su llave: se empuja explícito
-                    // tras el merge inicial (el hash-dedup salta si no hay cambios).
-                    try {
-                        const { pushUsersDoc } = await import('./cloudSync/accountDocs.js');
-                        const { useAuthStore } = await import('./store/useAuthStore.js');
-                        if (isCurrent() && navigator.onLine) await pushUsersDoc({
-                            getState: useAuthStore.getState,
-                            setState: partial => useAuthStore.setState(partial),
-                            push: pushCloudSync,
-                        });
-                    } catch { /* best-effort */ }
-                })().catch(() => {});
+                // Fire-and-forget resiliente: si queda incompleto (pestaña oculta,
+                // sin red, ejecución invalidada), se reintenta solo hasta completar.
+                // La bandera persistente por cuenta evita repetirlo innecesariamente.
+                if (!isCatchUpComplete(userId)) {
+                    runCatchUpWithRetry(userId, isCurrent).catch(() => {});
+                } else {
+                    console.log('[CloudSync] Catch-up ya completado para esta cuenta, se omite.');
+                }
+                } else if (!isCatchUpComplete(userId)) {
+                    // El pull se omitió por alreadySynced pero el catch-up nunca se
+                    // completó (ej. se interrumpió en un arranque anterior): reintentarlo.
+                    // _lastPullCloudDocIds conserva los doc_ids del último pull.
+                    console.log('[CloudSync] Reintentando catch-up incompleto de un arranque anterior.');
+                    runCatchUpWithRetry(userId, isCurrent).catch(() => {});
                 }
 
                 if (!isCurrent()) return;
@@ -800,6 +839,10 @@ export function useCloudSync() {
             // Invalidar cualquier initSync de esta ejecución que siga en vuelo
             // (ej. un pull no terminado cuando el efecto re-ejecute).
             syncGeneration++;
+            // Cancelar el reintento de catch-up pendiente; el próximo initSync
+            // lo reprogramará si la bandera persistente sigue incompleta.
+            clearTimeout(_catchUpRetryTimer);
+            _catchUpRetryTimer = null;
             // NOTA: no se resetean initialSyncReady/activeSyncUserId aquí.
             // Si el efecto se re-ejecuta con la misma cuenta (doble SIGNED_IN
             // al login), initSync lo detecta y omite el pull duplicado.

@@ -5,7 +5,8 @@ import { SUPABASE_FREE_PROFILE } from '../config/supabaseFreeTier.js';
 import { ACTIVE_ACCOUNT_STORAGE_KEY, ACTIVE_SEDE_STORAGE_KEY, captureStorageContext, isStorageContextActive } from '../config/storageScope.js';
 import { offlineQueueService } from '../services/offlineQueueService';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE } from '../config/operationSafety.js';
+import { REMOTE_OPERATIONS_PAUSED, CLOUD_PAUSE_MESSAGE, SYNC_V2_ENABLED } from '../config/operationSafety.js';
+import { getActiveAccountId } from '../config/storageScope.js';
 
 export default function SyncStatus() {
     const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
@@ -159,10 +160,15 @@ export default function SyncStatus() {
         };
     }, []);
 
+    // El indicador refleja el motor de documentos V2 cuando está activo con una
+    // cuenta nube. La cola operacional legada (REMOTE_OPERATIONS_PAUSED) solo
+    // gobierna el badge si V2 no está activo; de lo contrario el "Sync pausada"
+    // es engañoso porque los documentos SÍ se sincronizan.
+    const v2Active = SYNC_V2_ENABLED && !!getActiveAccountId();
     let statusType = 'online';
-    if (REMOTE_OPERATIONS_PAUSED) statusType = 'paused';
+    if (!v2Active && REMOTE_OPERATIONS_PAUSED) statusType = 'paused';
     else if (!isOnline) statusType = 'offline';
-    else if (pendingCount > 0) statusType = 'syncing';
+    else if (pendingCount > 0 && !v2Active) statusType = 'syncing';
 
     const handleForceSync = () => {
         setIsOnline(navigator.onLine);
@@ -191,7 +197,7 @@ export default function SyncStatus() {
                 {statusType === 'offline' && <><WifiOff size={13} strokeWidth={2.5} /><span>Offline</span></>}
             </button>
 
-            {REMOTE_OPERATIONS_PAUSED && (
+            {!v2Active && REMOTE_OPERATIONS_PAUSED && (
                 <p role="status" className="hidden sm:block max-w-xs text-[10px] text-amber-800 dark:text-amber-200">
                     Operación local; pendientes conservados en este equipo. Sin envío a la nube.
                 </p>
