@@ -152,9 +152,9 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
       <div className="relative z-10 flex flex-col lg:flex-row items-center justify-center flex-1 p-6 my-auto gap-10 lg:gap-20 w-full max-w-6xl mx-auto">
         {/* Panel de marca lateral (solo PC): aire de sobra, sin apilar */}
         <div className="hidden lg:flex flex-col items-center text-center max-w-xs shrink-0">
-          <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-44 w-auto drop-shadow-lg cursor-default mb-6" />
-          <SedeName nombre={sedeNombre} size="md" className="text-slate-700" />
-          <p className="text-xs text-slate-400 mt-3 leading-relaxed">Punto de venta · control de turnos por PIN.<br />Toca tu cuenta para operar.</p>
+          <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-60 w-auto drop-shadow-lg cursor-default mb-6" />
+          <SedeName nombre={sedeNombre} size="lg" className="text-slate-700" />
+          <p className="text-sm text-slate-400 mt-3 leading-relaxed">Punto de venta · control de turnos por PIN.<br />Toca tu cuenta para operar.</p>
         </div>
 
         <div className="w-full max-w-[520px] flex flex-col items-center">

@@ -242,6 +242,9 @@ test('LockScreen: render de "¿Quién está operando?" no lanza', async t => {
   assert.match(html, /¿Quién está/, 'muestra el selector de operador');
   assert.match(html, /operando/, 'muestra el título completo');
   assert.match(html, /Dueño/, 'lista al dueño');
+  // En PC el panel lateral lleva el logo grande y el nombre de la sede destacado
+  assert.match(html, /h-60/, 'logo grande en el panel de PC');
+  assert.match(html, /text-xl/, 'nombre de sede grande en el panel de PC');
 });
 
 test('LockScreen: footer táctil en móvil (44px, sin texto de 10px)', async t => {

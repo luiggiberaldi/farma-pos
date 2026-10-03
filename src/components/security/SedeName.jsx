@@ -4,6 +4,7 @@ const SIZES = {
     xs: { base: 'text-[10px]', chip: 'text-[9px] px-1.5 py-px' },
     sm: { base: 'text-xs', chip: 'text-[10px] px-1.5 py-px' },
     md: { base: 'text-sm', chip: 'text-xs px-2 py-0.5' },
+    lg: { base: 'text-xl', chip: 'text-sm px-2.5 py-1' },
 };
 
 // Nombre de sede con el año siempre visible como chip enfatizado
