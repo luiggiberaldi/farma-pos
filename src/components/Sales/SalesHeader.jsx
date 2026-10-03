@@ -72,13 +72,13 @@ export default function SalesHeader({
           + (ageLabel ? ` (${ageLabel})` : '');
 
     return (
-        <div className="shrink-0 mb-2 lg:mb-1.5 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-3 sm:p-4 lg:p-3 shadow-sm border border-slate-100 dark:border-slate-800">
+        <div className="shrink-0 mb-1 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl px-3 py-2 sm:px-4 shadow-sm border border-slate-100 dark:border-slate-800">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-2 lg:mb-1">
                 <div className="flex justify-between items-center w-full sm:w-auto gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                        <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2 shrink-0">
-                            <div className="bg-emerald-500 text-white p-1.5 sm:p-2 rounded-xl shadow-lg shadow-emerald-500/30">
-                                <ShoppingCart size={20} className="sm:w-[22px] sm:h-[22px]" />
+                        <h2 className="text-lg sm:text-xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2 shrink-0">
+                            <div className="bg-emerald-500 text-white p-1.5 rounded-xl shadow-lg shadow-emerald-500/30">
+                                <ShoppingCart size={18} className="sm:w-[20px] sm:h-[20px]" />
                             </div>
                             Punto de Venta
                         </h2>
@@ -136,7 +136,7 @@ export default function SalesHeader({
                 <div className="hidden sm:flex items-center gap-2">
                     <button 
                         onClick={() => setShowKeyboardHelp(true)}
-                        className="hidden md:flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 min-h-[44px] px-4 py-2 rounded-xl transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                        className="hidden md:flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 min-h-[40px] px-4 py-2 rounded-xl transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
                     >
                         <Keyboard size={14} />
                         <span className="text-xs font-bold">Atajos (PC)</span>
@@ -146,7 +146,7 @@ export default function SalesHeader({
                         <button 
                             onClick={handleRateToggle} 
                             disabled={isLocked}
-                            className={`flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl border transition-all group ${
+                            className={`flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-xl border transition-all group ${
                                 isLocked 
                                     ? 'bg-slate-100 border-slate-200 dark:bg-slate-800/80 dark:border-slate-800 cursor-not-allowed opacity-80 text-slate-400' 
                                     : rateMode === 'bcv'

@@ -119,7 +119,7 @@ export function OperatorChipButton({ onClick }) {
             onClick={onClick}
             title="Cambiar operador"
             aria-label={`Operador en turno: ${usuarioActivo.nombre}. Toca para cambiar.`}
-            className="flex items-center gap-1.5 min-h-[44px] pl-1.5 pr-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 active:scale-95 transition-transform"
+            className="flex items-center gap-1.5 min-h-[44px] sm:min-h-[40px] pl-1.5 pr-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 active:scale-95 transition-transform"
         >
             <span className="w-7 h-7 rounded-full bg-teal-500 text-white text-xs font-black flex items-center justify-center shrink-0">
                 {usuarioActivo.nombre?.charAt(0)?.toUpperCase() || '?'}

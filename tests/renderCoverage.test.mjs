@@ -390,3 +390,17 @@ test('B3 SalesHeader: rateAgeMs memoizado, sin Date.now() directo en render', as
   assert.ok(!/const rateAgeMs = rates\?\.lastUpdate \? Date\.now\(\)/.test(src),
     'ya no hay Date.now() directo en el cuerpo del render');
 });
+
+test('B4 SalesHeader: header compacto (menos alto vertical)', async t => {
+  createProcessorFixture(t);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/components/Sales/SalesHeader.jsx', import.meta.url), 'utf8');
+  // Tarjeta: padding vertical reducido y margen inferior mínimo
+  assert.ok(src.includes('px-3 py-2 sm:px-4'), 'padding vertical compacto en la tarjeta');
+  assert.ok(src.includes('shrink-0 mb-1 bg-white'), 'margen inferior mínimo');
+  // Título reducido
+  assert.ok(src.includes('text-lg sm:text-xl font-black'), 'título compacto');
+  // Botones de escritorio a 40px (el de móvil queda en 44px)
+  assert.ok(src.includes('min-h-[40px] px-4 py-2 rounded-xl border transition-all group'), 'tasa desktop a 40px');
+  assert.ok(src.includes('min-h-[40px] px-4 py-2 rounded-xl transition-colors'), 'Atajos a 40px');
+});
