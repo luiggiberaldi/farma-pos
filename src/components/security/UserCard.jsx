@@ -10,7 +10,7 @@ const toTitleCase = (str) => {
     .replace(/\bC&y\b/g, 'C&Y');
 };
 
-export default function UserCard({ user, onClick, size = 'lg' }) {
+export default function UserCard({ user, onClick }) {
   const isOwner = user.rol === 'DUENO';
 
   return (
@@ -44,11 +44,11 @@ export default function UserCard({ user, onClick, size = 'lg' }) {
 
               {isOwner ? (
                 <div className="relative z-10 flex justify-center items-center transition-transform hover:scale-105 duration-300">
-                  <LoginAvatar user={user} size={size} className="relative z-10" />
+                  <LoginAvatar user={user} className="relative z-10" />
                 </div>
               ) : (
                 <div className="relative z-10 flex justify-center items-center transition-transform hover:scale-105 duration-300">
-                  <LoginAvatar user={user} size={size} className="relative z-10" />
+                  <LoginAvatar user={user} className="relative z-10" />
                 </div>
               )}
             </div>

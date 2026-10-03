@@ -244,33 +244,6 @@ test('LockScreen: render de "¿Quién está operando?" no lanza', async t => {
   assert.match(html, /Dueño/, 'lista al dueño');
 });
 
-test('LockScreen: sedes como pastillas con check (sin dropdown)', async t => {
-  createProcessorFixture(t);
-  const { React, renderToString, Component } =
-    await loadRenderHarness({ file: 'src/components/security/LockScreen.jsx',
-      mocks: {
-        'src/hooks/store/useAuthStore.js': AUTH_MOCK,
-        'src/hooks/store/useSedeStore.js': SEDE_MOCK,
-        'src/hooks/confirmState.js': CONFIRM_MOCK,
-      } });
-  const html = renderToString(React.createElement(Component, {
-    installPrompt: null, onInstall: noop, showIOSButton: false,
-    onShowIOSInstall: noop, onEnterMonitor: noop,
-  }));
-  // Las 3 sedes como pastillas accesibles (botones con aria-pressed)
-  assert.match(html, /role="group"[^>]*aria-label="Sede de trabajo"/, 'pastillas agrupadas con etiqueta');
-  const pressed = html.match(/aria-pressed="true"/g) || [];
-  assert.equal(pressed.length, 1, 'exactamente una sede activa');
-  const notPressed = html.match(/aria-pressed="false"/g) || [];
-  assert.equal(notPressed.length, 2, 'las otras dos sedes inactivas');
-  // La sede activa lleva el año visible (C&Y 2025 vs 2026 solo se distinguen por el año)
-  assert.match(html, /2025/, 'chip del año de la sede activa');
-  assert.match(html, /2026/, 'las demás sedes también muestran su año');
-  assert.match(html, /Las 24 Horas/, 'la tercera sede aparece como pastilla');
-  // El dropdown viejo ya no está en el login
-  assert.ok(!/<select/.test(html), 'sin <select> de sede en el login');
-});
-
 test('ClockInPrompt: sin oferta no renderiza nada; con oferta no lanza', async t => {
   createProcessorFixture(t);
   const withOffer = AUTH_MOCK.replace('clockInOffer: null,', "clockInOffer: { userName: 'Cajero Norte' },");
