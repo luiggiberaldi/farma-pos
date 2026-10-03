@@ -41,6 +41,9 @@ export default function SalesHeader({
     const isLocked = usuarioActivo?.rol === 'CAJERO';
     const [showSwitch, setShowSwitch] = useState(false);
     const openSwitch = () => { triggerHaptic?.(); setShowSwitch(true); };
+    // Borrador del modo manual: tocar "Manual" solo muestra el input; el modo
+    // real (rateMode) cambia únicamente al pulsar "Aceptar" con valor válido.
+    const [manualDraft, setManualDraft] = useState(false);
 
     // Publica el cambio de tasa a la nube (solo dueño; publishRatePolicy tiene
     // gate duro). Best-effort: no bloquea la UI.
@@ -53,6 +56,7 @@ export default function SalesHeader({
 
     const handleRateToggle = () => {
         if (isLocked) return;
+        if (!showRateConfig) setManualDraft(false);
         setShowRateConfig(!showRateConfig);
     };
     const ageLabel = rateAgeLabel(rates?.lastUpdate);
@@ -232,14 +236,14 @@ export default function SalesHeader({
                         {/* Botón Manual */}
                         <button
                             type="button"
-                            onClick={() => { triggerHaptic && triggerHaptic(); setRateMode('manual'); }}
+                            onClick={() => { triggerHaptic && triggerHaptic(); setManualDraft(true); }}
                             className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-center select-none ${
-                                rateMode === 'manual'
+                                rateMode === 'manual' || manualDraft
                                     ? 'bg-indigo-50 border-indigo-400 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-800 dark:text-indigo-400 ring-2 ring-indigo-500/10'
                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                             }`}
                         >
-                            <PenTool size={20} className={rateMode === 'manual' ? 'text-indigo-500' : 'text-slate-400 dark:text-slate-500'} />
+                            <PenTool size={20} className={rateMode === 'manual' || manualDraft ? 'text-indigo-500' : 'text-slate-400 dark:text-slate-500'} />
                             <span className="text-[10px] font-black tracking-tight leading-none mt-1">Manual</span>
                             <span className="text-[9px] font-bold opacity-80 mt-1">
                                 {parseFloat(customRate) > 0 ? formatBs(customRate) : 'Fijar'}
@@ -247,7 +251,7 @@ export default function SalesHeader({
                         </button>
                     </div>
 
-                    {rateMode === 'manual' && (
+                    {(rateMode === 'manual' || manualDraft) && (
                         <div className="mb-2">
                             <input 
                                 type="number" 
@@ -260,7 +264,14 @@ export default function SalesHeader({
                         </div>
                     )}
                     <button
-                        onClick={() => { triggerHaptic && triggerHaptic(); setShowRateConfig(false); publishRate(rateMode, customRate); }}
+                        onClick={() => {
+                            triggerHaptic && triggerHaptic();
+                            const wantsManual = manualDraft && parseFloat(customRate) > 0;
+                            if (wantsManual) setRateMode('manual');
+                            setManualDraft(false);
+                            setShowRateConfig(false);
+                            publishRate(wantsManual ? 'manual' : rateMode, customRate);
+                        }}
                         className="w-full min-h-[44px] py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-sm shadow-emerald-500/20 active:scale-95 transition-all"
                     >
                         Aceptar

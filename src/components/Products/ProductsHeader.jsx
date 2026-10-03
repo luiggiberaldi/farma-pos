@@ -150,8 +150,9 @@ export default function ProductsHeader(props) {
                 <button
                     onClick={() => { triggerHaptic && triggerHaptic(); setIsCategoryManagerOpen(true); }}
                     className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-transparent active:scale-95 flex items-center gap-1 snap-start"
+                    aria-label="Gestionar categorías"
                 >
-                    <Pencil size={12} /> Editar
+                    <Pencil size={12} /> Categorías
                 </button>
                 )}
             </div>

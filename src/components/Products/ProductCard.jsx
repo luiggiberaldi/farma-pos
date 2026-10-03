@@ -120,7 +120,7 @@ export default function ProductCard({
                 <div className="mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-xl p-1">
                         {!readOnly && (
-                        <button onClick={() => setPendingDelta(d => d - 1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-red-500 shadow-sm active:scale-95 transition-all">
+                        <button onClick={() => setPendingDelta(d => d - 1)} aria-label="Reducir stock" className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-red-500 shadow-sm active:scale-95 transition-all">
                             <Minus size={18} strokeWidth={2.5} />
                         </button>
                         )}
@@ -134,7 +134,7 @@ export default function ProductCard({
                             )}
                         </div>
                         {!readOnly && (
-                        <button onClick={() => setPendingDelta(d => d + 1)} className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-emerald-500 shadow-sm active:scale-95 transition-all">
+                        <button onClick={() => setPendingDelta(d => d + 1)} aria-label="Aumentar stock" className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-emerald-500 shadow-sm active:scale-95 transition-all">
                             <Plus size={18} strokeWidth={2.5} />
                         </button>
                         )}
@@ -145,6 +145,7 @@ export default function ProductCard({
                         <div className="flex gap-1.5 mt-1.5">
                             <button
                                 onClick={() => setPendingDelta(0)}
+                                aria-label="Cancelar ajuste de stock"
                                 className="w-9 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-900/20 transition-all active:scale-95">
                                 <X size={14} strokeWidth={2.5} />
                             </button>
@@ -178,9 +179,9 @@ export default function ProductCard({
             {/* Actions */}
             {!readOnly && (
             <div className="flex border-t border-slate-100 dark:border-slate-800">
-                <button onClick={onPrint} className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-brand hover:bg-brand/10 transition-colors" title="Imprimir Etiqueta"><Printer size={12} /></button>
-                {!readOnly && <button onClick={() => onEdit(p)} className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"><Pencil size={12} /></button>}
-                {!readOnly && <button onClick={() => onDelete(p.id)} className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"><Trash2 size={12} /></button>}
+                <button onClick={onPrint} aria-label="Imprimir etiqueta" className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-brand hover:bg-brand/10 transition-colors" title="Imprimir Etiqueta"><Printer size={12} /></button>
+                {!readOnly && <button onClick={() => onEdit(p)} aria-label="Editar producto" className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"><Pencil size={12} /></button>}
+                {!readOnly && <button onClick={() => onDelete(p.id)} aria-label="Eliminar producto" className="flex-1 py-1.5 flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"><Trash2 size={12} /></button>}
             </div>
             )}
         </div >

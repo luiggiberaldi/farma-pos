@@ -17,6 +17,8 @@ export default function FactoryPinBanner({ affectedNames = [], onGoToUsers }) {
 
     const names = affectedNames.slice(0, 3).join(', ');
     const extra = affectedNames.length > 3 ? ` y ${affectedNames.length - 3} más` : '';
+    // Oración en un solo string: no depende del whitespace entre expresiones JSX.
+    const sentence = `${names}${extra} ${affectedNames.length === 1 ? 'usa' : 'usan'} el PIN de fábrica (0000 / 000000). Cualquiera que conozca la app puede entrar a tu caja. Cambia los PINs en Ajustes → Usuarios.`;
 
     return (
         <div role="alert" className="shrink-0 mx-3 mt-2 rounded-2xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-600 p-3 flex items-start gap-3">
@@ -26,9 +28,7 @@ export default function FactoryPinBanner({ affectedNames = [], onGoToUsers }) {
                     PIN de fábrica en uso — cámbialo cuanto antes
                 </p>
                 <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
-                    {names}{extra} {affectedNames.length === 1 ? 'usa' : 'usan'} el PIN de fábrica
-                    (0000 / 000000). Cualquiera que conozca la app puede entrar a tu caja.
-                    Cambia los PINs en Ajustes → Usuarios.
+                    {sentence}
                 </p>
                 {onGoToUsers && (
                     <button

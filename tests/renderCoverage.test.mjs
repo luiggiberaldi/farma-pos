@@ -404,3 +404,55 @@ test('B4 SalesHeader: header compacto (menos alto vertical)', async t => {
   assert.ok(src.includes('min-h-[40px] px-4 py-2 rounded-xl border transition-all group'), 'tasa desktop a 40px');
   assert.ok(src.includes('min-h-[40px] px-4 py-2 rounded-xl transition-colors'), 'Atajos a 40px');
 });
+
+test('B5 FactoryPinBanner: oración en un solo string con espacios correctos', async t => {
+  createProcessorFixture(t);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/components/security/FactoryPinBanner.jsx', import.meta.url), 'utf8');
+  // La oración se construye como un solo template string (no depende del whitespace JSX)
+  const m = src.match(/const sentence = `([^`]+)`/);
+  assert.ok(m, 'existe el template string sentence');
+  const rendered = m[1]
+    .replace(/\$\{names\}/, 'Cajero Farmacia Las 24 Horas')
+    .replace(/\$\{extra\}/, '')
+    .replace(/\$\{affectedNames\.length === 1 \? 'usa' : 'usan'\}/, 'usan');
+  assert.ok(!/Horasusan|usanel/.test(rendered), 'sin palabras pegadas: ' + rendered);
+  assert.ok(/Horas usan el PIN/.test(rendered), 'espacios correctos: ' + rendered);
+});
+
+test('B6 ProductsHeader: el botón de categorías no dice "Editar"', async t => {
+  createProcessorFixture(t);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/components/Products/ProductsHeader.jsx', import.meta.url), 'utf8');
+  assert.ok(src.includes('<Pencil size={12} /> Categorías'), 'etiqueta "Categorías"');
+  assert.ok(!src.includes('<Pencil size={12} /> Editar'), 'ya no dice "Editar"');
+});
+
+test('B7 ProductCard: botones de icono con nombre accesible', async t => {
+  createProcessorFixture(t);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/components/Products/ProductCard.jsx', import.meta.url), 'utf8');
+  for (const label of ['Reducir stock', 'Aumentar stock', 'Cancelar ajuste de stock', 'Imprimir etiqueta', 'Editar producto', 'Eliminar producto']) {
+    assert.ok(src.includes(`aria-label="${label}"`), `aria-label "${label}" presente`);
+  }
+});
+
+test('B8 SalesHeader: "Manual" no cambia el modo hasta Aceptar', async t => {
+  createProcessorFixture(t);
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/components/Sales/SalesHeader.jsx', import.meta.url), 'utf8');
+  assert.ok(src.includes('setManualDraft(true)'), 'el botón Manual solo arma el borrador');
+  assert.ok(!/Botón Manual[\s\S]{0,400}setRateMode\('manual'\)/.test(src), 'el botón Manual ya no toca rateMode directo');
+  assert.ok(src.includes("if (wantsManual) setRateMode('manual')"), 'Aceptar aplica el modo solo con valor válido');
+});
+
+test('B9 calculatorUtils: formatBsSafe no pinta "NaN"', async t => {
+  createProcessorFixture(t);
+  const { formatBsSafe, formatUsdSafe } = await import('../src/utils/calculatorUtils.js');
+  assert.equal(formatBsSafe(NaN), '—');
+  assert.equal(formatBsSafe(undefined), '—');
+  assert.equal(formatBsSafe(null), '—');
+  assert.equal(formatBsSafe(1234.5), '1.234,50');
+  assert.equal(formatUsdSafe(NaN), '—');
+  assert.equal(formatUsdSafe(10), '10.00');
+});

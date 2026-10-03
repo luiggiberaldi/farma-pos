@@ -1,7 +1,7 @@
 import { Ban, ChevronDown, ChevronUp, Clock, DollarSign, Recycle, Send, Shuffle } from 'lucide-react';
 import CasheaIcon from '../CasheaIcon';
 import { PAYMENT_ICONS, getPaymentLabel } from '../../config/paymentMethods';
-import { formatBs } from '../../utils/calculatorUtils';
+import { formatBs, formatBsSafe } from '../../utils/calculatorUtils';
 import { formatOfficialRate } from '../../utils/rateResolver';
 import { generateTicketPDF } from '../../utils/ticketGenerator';
 
@@ -71,7 +71,7 @@ export default function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle,
                         {s.totalUsd < 0 ? `-$${Math.abs(s.totalUsd).toFixed(2)}` : `$${(s.totalUsd || 0).toFixed(2)}`}
                     </p>
                     <p className="text-[10px] text-slate-400 font-medium">
-                        {s.totalBs < 0 ? `-${formatBs(Math.abs(s.totalBs))} Bs` : `${formatBs(s.totalBs || (s.totalUsd * (s.rate || bcvRate)))} Bs`}
+                        {s.totalBs < 0 ? `-${formatBs(Math.abs(s.totalBs))} Bs` : `${formatBsSafe(s.totalBs ?? (s.totalUsd != null ? s.totalUsd * (s.rate || bcvRate) : NaN))} Bs`}
                     </p>
                     <div className="flex justify-end mt-0.5">
                         {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
@@ -100,7 +100,7 @@ export default function TransactionRow({ sale: s, bcvRate, isExpanded, onToggle,
 
                         <div className="flex justify-between items-center text-[11px]">
                             <span className="text-slate-500">Total en Bs</span>
-                            <span className="font-bold text-slate-700 dark:text-slate-200">{formatBs(s.totalBs)} Bs</span>
+                            <span className="font-bold text-slate-700 dark:text-slate-200">{formatBsSafe(s.totalBs)} Bs</span>
                         </div>
 
                         <div className="flex justify-between items-center text-[11px]">

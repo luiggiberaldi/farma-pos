@@ -4,6 +4,11 @@
 // Formateadores
 export const formatBs = (val) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 export const formatUsd = (val) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+// Versión segura: transacciones viejas pueden traer campos numéricos ausentes;
+// en vez de pintar "NaN" muestra un guion.
+const _num = (val) => (val === null || val === undefined || val === '' ? NaN : Number(val));
+export const formatBsSafe = (val) => Number.isFinite(_num(val)) ? formatBs(_num(val)) : '—';
+export const formatUsdSafe = (val) => Number.isFinite(_num(val)) ? formatUsd(_num(val)) : '—';
 
 // [REDONDEO INTELIGENTE PARA EFECTIVO]
 // Regla: Si decimal <= 0.20 -> Redondeo abajo (Floor)
