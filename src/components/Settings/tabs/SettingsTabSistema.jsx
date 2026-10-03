@@ -62,7 +62,7 @@ export default function SettingsTabSistema({
                     <div className="p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl flex gap-2.5" role="status">
                         <AlertTriangle size={18} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
                         <p className="text-[10px] text-red-800 dark:text-red-300 leading-relaxed font-bold">
-                            MODO CONTENCION: las ventas y los datos viven SOLO en este equipo. Si se pierde, se daña o se desinstala la app, se pierde todo. Exporta un respaldo cifrado y guárdalo fuera del dispositivo.
+                            RESPALDO: las ventas recientes, el catálogo y los usuarios se sincronizan con la nube cuando hay conexión. Las ventas de más de 30 días viven solo en este equipo. Exporta un respaldo cifrado periódicamente y guárdalo fuera del dispositivo.
                         </p>
                     </div>
                 )}
