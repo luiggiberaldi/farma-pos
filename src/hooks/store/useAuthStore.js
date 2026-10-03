@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { logEvent } from '../../services/auditService';
 import { captureStorageContext, getActiveSedeId, isStorageContextActive } from '../../config/storageScope.js';
 import { DEFAULT_USERS, migrateOwnerPinToFactory, normalizeUsers, normalizeUsersOnBoot, CASHIER_FACTORY_PIN, isFactoryPin } from '../../config/userProvisioning.js';
-import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperatorSession, canUsePinlessAccess, setPinlessOptIn } from '../../utils/operatorSession.js';
+import { OPERATOR_SESSION_KEY, publicOperator, readOperatorSession, saveOperatorSession, canUsePinlessAccess, setPinlessOptIn, getPinlessBlockedMessage } from '../../utils/operatorSession.js';
 import { sanitizeBackup } from '../../utils/backupSafety.js';
 import { assertLocalOperationAllowed, hasPendingLocalWrites } from '../../services/localOperationGuard.js';
 import { generatePinSalt, hashPinPbkdf2, isStrongPinRecord } from '../../utils/pinCrypto.js';
@@ -130,12 +130,7 @@ export const useAuthStore = create(persist((set, get) => ({
         }
         const pinless = canUsePinlessAccess(user, context, get().requireLogin);
         if (!pinless && !user.pin) {
-            const sinPinRemoved = user.sinPin === true;
-            set({ lastAuthError: sinPinRemoved
-                ? (get().requireLogin
-                    ? '"Pedir PIN al iniciar" está activado: este cajero sin PIN no puede entrar hasta desactivarlo en Configuración → Usuarios.'
-                    : 'A este cajero se le quitó el PIN, pero el acceso sin PIN no está activado en este equipo. El dueño debe activarlo con el ícono de huella en Usuarios y Roles.')
-                : 'El dueño debe configurar un PIN para este cajero antes de acceder con cuenta cloud.' });
+            set({ lastAuthError: getPinlessBlockedMessage(user, get().requireLogin) });
             return false;
         }
         const verified = pinless ? publicOperator(user) : await get().verifyPin(pinInput, userId);
@@ -406,12 +401,12 @@ export const useAuthStore = create(persist((set, get) => ({
         requireOwner(get().usuarioActivo);
         if (!nombre?.trim() || !['DUENO', 'CAJERO'].includes(rol)) throw new Error('Nombre o rol inválido.');
         if (rol === 'CAJERO' && !['central', 'norte', 'sur'].includes(sedeId)) throw new Error('Sede inválida.');
-        // Regla: el cajero puede crearse sin PIN (por defecto); el dueño siempre exige PIN.
-        // Un cajero sin PIN queda con sinPin=true y sin hash; solo accede si requireLogin=false.
+        // Regla de fábrica: los cajeros SIEMPRE se crean sin PIN; el dueño lo
+        // configura después con "Cambiar PIN" o activa el acceso sin PIN por
+        // equipo. Un cajero sin PIN queda con sinPin=true y sin hash.
         // Funciona con o sin cuenta cloud (el opt-in pinless es por dispositivo).
-        const pinlessCashier = rol === 'CAJERO' && !pin && !get().requireLogin;
+        const pinlessCashier = rol === 'CAJERO';
         if (rol === 'DUENO' && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('El dueño requiere un PIN válido.');
-        if (!pinlessCashier && !new RegExp(`^\\d{${pinLength({ rol })}}$`).test(String(pin))) throw new Error('Configura un PIN válido para este usuario.');
         const epoch = authEpoch;
         const context = captureStorageContext();
         const strong = pinlessCashier ? { pin: null, sinPin: true } : await strongPinRecord(pin);

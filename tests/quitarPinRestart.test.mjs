@@ -156,10 +156,14 @@ test('store real: quitarPin sobrevive rehydrate (nuevo bundle, mismo localStorag
 
     const s1 = await boot();
     assert.equal(await s1.getState().login('000000', 1), true);
-    await s1.getState().agregarUsuario('Cajero R', 'CAJERO', '1234', 'central');
+    await s1.getState().agregarUsuario('Cajero R', 'CAJERO', '', 'central');
     // Esperar a que el pushUsersDoc de agregarUsuario termine (no solapar).
     await new Promise(r => setTimeout(r, 1500));
     const c1 = s1.getState().usuarios.find(u => u.nombre === 'Cajero R');
+    assert.equal(c1.sinPin, true, 'de fábrica el cajero no lleva PIN');
+    // El dueño lo activa con PIN y luego se lo quita: el quitarPin debe sobrevivir.
+    await s1.getState().cambiarPin(c1.id, '1234');
+    await new Promise(r => setTimeout(r, 1500));
     await s1.getState().quitarPin(c1.id);
     await new Promise(r => setTimeout(r, 1500));
 

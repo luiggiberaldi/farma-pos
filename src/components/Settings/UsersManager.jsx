@@ -336,12 +336,17 @@ export default function UsersManager({ triggerHaptic }) {
                         </div>
                     )}
 
-                    {/* PIN */}
-                    <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de {getPinLength(newRole)} dígitos</label>
-                        {newRole === 'CAJERO' && <p className="text-[10px] text-slate-400 mb-2">Déjalo vacío para usar el PIN de fábrica 0000. Cámbialo antes de operar.</p>}
-                        <PinInput value={newPin} onChange={setNewPin} label="new" length={getPinLength(newRole)} />
-                    </div>
+                    {/* PIN: de fábrica los cajeros se crean sin PIN */}
+                    {newRole === 'CAJERO' ? (
+                        <p className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5">
+                            Los cajeros se crean sin PIN. El dueño lo configura después con "Cambiar PIN" en su fila, o permite el acceso sin PIN con el ícono de huella.
+                        </p>
+                    ) : (
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">PIN de {getPinLength(newRole)} dígitos</label>
+                            <PinInput value={newPin} onChange={setNewPin} label="new" length={getPinLength(newRole)} />
+                        </div>
+                    )}
 
                     {/* Submit */}
                     <button

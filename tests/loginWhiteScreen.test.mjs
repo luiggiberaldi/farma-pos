@@ -75,6 +75,8 @@ const SEDE_MOCK = `
 
 const dueno = { id: 1, nombre: 'Dueño', rol: 'DUENO', pin: '000000', pinHashed: true };
 const cajero = { id: 2, nombre: 'Cajero Norte', rol: 'CAJERO', pin: '1234', pinHashed: true, sedeId: 'norte' };
+// Cajero de fábrica: sin PIN y sin opt-in en este equipo (bloqueado)
+const cajeroBloqueado = { id: 3, nombre: 'Cajero Nuevo', rol: 'CAJERO', pin: null, sinPin: true, sedeId: 'central' };
 const noop = () => {};
 
 test('LoginPinModal: abrir el PIN del operador (tap en tile) no lanza ReferenceError', async t => {
@@ -89,6 +91,21 @@ test('LoginPinModal: abrir el PIN del operador (tap en tile) no lanza ReferenceE
   const htmlCajero = renderToString(React.createElement(LoginPinModal, { isOpen: true, user: cajero, onClose: noop, onSubmit: async () => true }));
   assert.match(htmlCajero, /PIN de 4 d.gitos/, 'el cajero ve PIN de 4 dígitos');
   assert.equal(renderToString(React.createElement(LoginPinModal, { isOpen: false, user: dueno, onClose: noop, onSubmit: async () => true })), '');
+});
+
+test('LoginPinModal: cajero bloqueado sin PIN ve un solo aviso y ningún teclado', async t => {
+  createProcessorFixture(t);
+  const { React, renderToString, Component: LoginPinModal } =
+    await loadRenderHarness('src/components/security/LoginPinModal.jsx', { 'src/hooks/store/useAuthStore.js': AUTH_MOCK });
+  const html = renderToString(React.createElement(LoginPinModal, { isOpen: true, user: cajeroBloqueado, onClose: noop, onSubmit: async () => true }));
+  // Un solo mensaje (propuestas 1+2): el aviso rojo proactivo, sin duplicado ámbar
+  const alerts = html.match(/role="alert"/g) || [];
+  assert.equal(alerts.length, 1, 'exactamente un aviso, no dos');
+  assert.match(html, /no tiene PIN/, 'el aviso explica que no hay PIN');
+  // Sin teclado ni campo de PIN: pedir dígitos que no existen es un callejón sin salida
+  assert.ok(!html.includes('id="operator-pin"'), 'sin campo de PIN');
+  assert.ok(!html.includes('Ingresa tu PIN'), 'no pide dígitos');
+  assert.match(html, /Sin acceso en este equipo/, 'subtítulo acorde al estado');
 });
 
 test('BranchPinModal: el flujo de cambio de sede renderiza el PIN del dueño', async t => {

@@ -38,6 +38,18 @@ export function canUsePinlessAccess(user, context = captureStorageContext(), req
         && isPinlessOptedIn(user?.id, context);
 }
 
+// Mensaje único cuando un cajero sin PIN no puede entrar en este equipo
+// (sin opt-in pinless). Fuente única para el store y el modal de PIN:
+// antes cada capa mostraba su propio aviso y se veían duplicados.
+export function getPinlessBlockedMessage(user, requireLogin = false) {
+    if (user?.sinPin === true) {
+        return requireLogin
+            ? '"Pedir PIN al iniciar" está activado: este cajero sin PIN no puede entrar hasta desactivarlo en Configuración → Usuarios.'
+            : 'Este cajero no tiene PIN y el acceso sin PIN no está activado en este equipo. El dueño debe activarlo con el ícono de huella en Usuarios y Roles.';
+    }
+    return 'El dueño debe configurar un PIN para este cajero antes de acceder con cuenta cloud.';
+}
+
 export function readOperatorSession(users, context = captureStorageContext(), requireLogin = false) {
     try {
         if (sessionStorage.getItem('farmapos_select_user') === '1') return null;

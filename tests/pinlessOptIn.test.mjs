@@ -69,6 +69,26 @@ test('agregarUsuario sin PIN: activa el opt-in en este equipo', async t => {
   assert.equal(canUsePinlessAccess(u, captureStorageContext(), false), true);
 });
 
+// ─── Regla de fábrica: los cajeros siempre se crean sin PIN ───
+test('agregarUsuario: el cajero se crea sin PIN aunque se pase uno', async t => {
+  const { auth } = await fixture(t);
+  await auth.getState().agregarUsuario('Caja Fabrica', 'CAJERO', '1234', 'central');
+  const u = auth.getState().usuarios.find(x => x.nombre === 'Caja Fabrica');
+  assert.ok(u, 'usuario creado');
+  assert.equal(u.pin, null, 'de fábrica el cajero no lleva PIN');
+  assert.equal(u.sinPin, true);
+});
+
+test('cambiarPin: el dueño activa al cajero poniéndole PIN', async t => {
+  const { auth } = await fixture(t);
+  await auth.getState().agregarUsuario('Caja Fabrica', 'CAJERO', '', 'central');
+  const u = auth.getState().usuarios.find(x => x.nombre === 'Caja Fabrica');
+  await auth.getState().cambiarPin(u.id, '4321');
+  const v = auth.getState().usuarios.find(x => x.id === u.id);
+  assert.ok(v.pin, 'el cajero ya tiene PIN');
+  assert.equal(v.sinPin, false, 'sinPin se limpia al activar');
+});
+
 // ─── El mensaje de error ahora dice qué hacer (caso borde: opt-in revocado) ───
 test('login: cajero sin PIN y sin opt-in recibe mensaje accionable', async t => {
   const { auth } = await fixture(t);

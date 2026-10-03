@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Delete, Loader2, ShieldAlert } from 'lucide-react';
 import LoginAvatar from './LoginAvatar';
 import { useAuthStore } from '../../hooks/store/useAuthStore.js';
-import { canUsePinlessAccess } from '../../utils/operatorSession.js';
+import { canUsePinlessAccess, getPinlessBlockedMessage } from '../../utils/operatorSession.js';
 import { isFactoryPin } from '../../config/userProvisioning.js';
 import { captureStorageContext } from '../../config/storageScope.js';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
@@ -16,6 +16,9 @@ function PinEntry({ isOpen, user, onClose, onSubmit, forcePin, purpose }) {
     const requireLogin = useAuthStore(s => s.requireLogin);
     const pinLength = user.rol === 'DUENO' ? 6 : 4;
     const pinless = !forcePin && canUsePinlessAccess(user, captureStorageContext(), requireLogin);
+    // Propuestas 1+2: un solo mensaje y sin teclado cuando el cajero no tiene
+    // PIN ni acceso sin PIN en este equipo (pedir dígitos que no existen es un
+    // callejón sin salida).
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [processing, setProcessing] = useState(false);
@@ -82,6 +85,7 @@ function PinEntry({ isOpen, user, onClose, onSubmit, forcePin, purpose }) {
         onClose();
     };
     useEscapeToClose(() => { if (onClose && !forcePin) close(); }, isOpen);
+    const blockedNoPin = !user.pin && !pinless;
 
     return (
         <div role="dialog" aria-modal="true" aria-labelledby="pin-dialog-title" className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={close}>
@@ -91,9 +95,11 @@ function PinEntry({ isOpen, user, onClose, onSubmit, forcePin, purpose }) {
                 <div className="flex flex-col items-center mb-6">
                     <LoginAvatar user={user} />
                     <h2 id="pin-dialog-title" className="mt-4 text-xl font-bold text-slate-800 dark:text-white">{user.nombre || 'Usuario'}</h2>
-                    <p className="mt-2 text-xs text-center text-slate-500">{purpose === 'sede' ? 'Autoriza el cambio de sede sin cambiar de usuario' : pinless ? 'Acceso local limitado a la sede asignada' : `Ingresa tu PIN de ${pinLength} dígitos`}</p>
+                    <p className="mt-2 text-xs text-center text-slate-500">{purpose === 'sede' ? 'Autoriza el cambio de sede sin cambiar de usuario' : blockedNoPin ? 'Sin acceso en este equipo' : pinless ? 'Acceso local limitado a la sede asignada' : `Ingresa tu PIN de ${pinLength} dígitos`}</p>
                 </div>
-                {!user.pin && !pinless && <p role="alert" className="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mb-4">{user.sinPin === true ? 'A este usuario se le quitó el PIN, pero el acceso sin PIN no está activado en este equipo. El dueño debe activarlo con el ícono de huella en Usuarios y Roles.' : 'El dueño debe configurar un PIN para este usuario. El acceso cloud no permite saltar el PIN.'}</p>}
+                {blockedNoPin ? (
+                    <p role="alert" className="flex items-start gap-2 mb-4 p-3 text-sm font-semibold text-red-700 bg-red-50 rounded-xl"><ShieldAlert size={18} className="shrink-0" />{getPinlessBlockedMessage(user, requireLogin)}</p>
+                ) : (<>
                 {user.pin && !user.pinHashed && isFactoryPin(user.pin) && <p role="alert" className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-xl p-3 mb-4">Estás usando el PIN de fábrica. Cámbialo cuanto antes en Ajustes → Usuarios: cualquiera que conozca la app puede entrar con él.</p>}
                 {error && <p role="alert" className="flex items-start gap-2 mb-4 p-3 text-sm font-semibold text-red-700 bg-red-50 rounded-xl"><ShieldAlert size={18} className="shrink-0" />{error}</p>}
                 {pinless && pinlessAttempted && error && <button type="button" disabled={processing} onClick={() => void submit('', true)} className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold">Reintentar acceso local</button>}
@@ -117,6 +123,7 @@ function PinEntry({ isOpen, user, onClose, onSubmit, forcePin, purpose }) {
                         <button type="button" disabled={processing} aria-label="Borrar último dígito" onClick={() => changePin(pinRef.current.slice(0, -1))} className="h-14 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 flex justify-center items-center"><Delete size={22} /></button>
                     </div>
                 </>}
+                </>)}
                 {processing && <p role="status" className="flex justify-center gap-2 mt-4 text-sm text-emerald-700"><Loader2 size={18} className="animate-spin" />Verificando...</p>}
             </form>
         </div>
