@@ -244,6 +244,34 @@ test('LockScreen: render de "¿Quién está operando?" no lanza', async t => {
   assert.match(html, /Dueño/, 'lista al dueño');
 });
 
+test('LockScreen: footer táctil en móvil (44px, sin texto de 10px)', async t => {
+  createProcessorFixture(t);
+  const { React, renderToString, Component } =
+    await loadRenderHarness({ file: 'src/components/security/LockScreen.jsx',
+      mocks: {
+        'src/hooks/store/useAuthStore.js': AUTH_MOCK,
+        'src/hooks/store/useSedeStore.js': SEDE_MOCK,
+        'src/hooks/confirmState.js': CONFIRM_MOCK,
+      } });
+  const html = renderToString(React.createElement(Component, {
+    installPrompt: null, onInstall: noop, showIOSButton: false,
+    onShowIOSInstall: noop, onEnterMonitor: noop,
+  }));
+  for (const label of ['Olvidé mi PIN', 'Supervisión', 'Recargar']) {
+    const idx = html.indexOf(label);
+    assert.ok(idx !== -1, `el footer muestra "${label}"`);
+    const snippet = html.slice(Math.max(0, idx - 1500), idx);
+    assert.match(snippet, /min-h-\[44px\]/, `"${label}" tiene zona táctil de 44px`);
+  }
+  assert.ok(!/text-\[10px\][^>]*>Olvidé mi PIN/.test(html), 'sin texto de 10px en los enlaces del footer');
+  assert.ok(!html.includes('dark:hover:text-slate-300'), 'sin clase dark muerta en el login');
+  // "Desconectar estación" solo se renderiza con cloud configurado; si está, conserva su rojo de advertencia
+  if (html.includes('Desconectar estación')) {
+    const idxD = html.indexOf('Desconectar estación');
+    assert.match(html.slice(Math.max(0, idxD - 1500), idxD), /text-rose-600/, '"Desconectar estación" conserva su rojo de advertencia');
+  }
+});
+
 test('ClockInPrompt: sin oferta no renderiza nada; con oferta no lanza', async t => {
   createProcessorFixture(t);
   const withOffer = AUTH_MOCK.replace('clockInOffer: null,', "clockInOffer: { userName: 'Cajero Norte' },");

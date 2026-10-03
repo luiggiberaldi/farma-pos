@@ -187,26 +187,26 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         </div>
       </div>
 
-      <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-3">
+      <div className="relative z-10 pb-6 text-center flex flex-col items-center gap-2">
         {installPrompt && <button onClick={onInstall} className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1">Instalar App en este equipo</button>}
         {showIOSButton && <button onClick={onShowIOSInstall} className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1">Instalar App (iOS)</button>}
-        <p className="text-[10px] text-slate-600 font-medium tracking-wider">Selecciona tu usuario para continuar</p>
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowSuperAdmin(true)} className="text-[10px] font-bold text-slate-400/80 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">Olvidé mi PIN</button>
-          <span className="text-slate-300">·</span>
+        <p className="text-xs text-slate-600 font-medium tracking-wider">Selecciona tu usuario para continuar</p>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowSuperAdmin(true)} className="inline-flex items-center min-h-[44px] px-3.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 rounded-lg">Olvidé mi PIN</button>
+          <span className="text-slate-300" aria-hidden>·</span>
           <button
             onClick={() => {
               const dueno = usuarios.find(u => u.rol === 'DUENO');
               if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true, nombre: 'Supervisión' });
             }}
-            className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400/80 hover:text-violet-600 transition-colors underline underline-offset-2"
+            className="inline-flex items-center gap-1 min-h-[44px] px-3.5 text-xs font-bold text-slate-500 hover:text-violet-600 transition-colors underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 rounded-lg"
           >
-            <Eye size={11} /> Supervisión
+            <Eye size={13} /> Supervisión
           </button>
         </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => window.location.reload()} className="text-[10px] font-bold text-slate-400/70 hover:text-slate-500 transition-colors">Recargar</button>
-          {isCloudConfigured && <button type="button" onClick={handleStationDisconnect} disabled={isLoggingOut} aria-busy={isLoggingOut} className="text-[10px] font-bold text-rose-500/60 hover:text-rose-400 transition-colors disabled:opacity-50 disabled:cursor-wait">{isLoggingOut ? 'Desconectando…' : 'Desconectar estación'}</button>}
+        <div className="flex items-center gap-2">
+          <button onClick={() => window.location.reload()} className="inline-flex items-center min-h-[44px] px-3.5 text-xs font-bold text-slate-500 hover:text-slate-600 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 rounded-lg">Recargar</button>
+          {isCloudConfigured && <button type="button" onClick={handleStationDisconnect} disabled={isLoggingOut} aria-busy={isLoggingOut} className="inline-flex items-center min-h-[44px] px-3.5 text-xs font-bold text-rose-600 hover:text-rose-500 transition-colors disabled:opacity-50 disabled:cursor-wait outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2 rounded-lg">{isLoggingOut ? 'Desconectando…' : 'Desconectar estación'}</button>}
         </div>
       </div>
 
