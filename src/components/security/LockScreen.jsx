@@ -5,7 +5,6 @@ import UserCard from './UserCard';
 import LoginPinModal from './LoginPinModal';
 import SuperAdminModal from './SuperAdminModal';
 import BrandLogo from '../BrandLogo.jsx';
-import ProfessionalSelect from '../ProfessionalSelect';
 import SedeName from './SedeName';
 import { SEDES } from '../../config/sedes';
 import { isCloudConfigured } from '../../config/supabaseCloud.js';
@@ -13,7 +12,7 @@ import { useSedeStore } from '../../hooks/store/useSedeStore';
 import BranchPinModal from './BranchPinModal';
 import { signOutCloudAccount } from '../../services/cloudSessionLifecycle.js';
 import { showToast } from '../Toast.js';
-import { Eye, Lock } from 'lucide-react';
+import { Eye, Lock, Check } from 'lucide-react';
 
 export default function LockScreen({ installPrompt, onInstall, showIOSButton, onShowIOSInstall, onEnterMonitor }) {
   const { usuarios, login } = useAuthStore();
@@ -140,8 +139,6 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
     }
   };
 
-  const sedeNombre = SEDES.find(s => s.id === selectedSedeId)?.nombre;
-
   return (
     <div className="fixed inset-0 z-[250] bg-slate-50 text-slate-800 font-sans overflow-y-auto flex flex-col">
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -149,41 +146,44 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         <div className="absolute -bottom-[30%] -right-[15%] w-[600px] h-[600px] bg-teal-400/10 rounded-full blur-[120px]" />
       </div>
 
-      <div className="relative z-10 flex flex-col lg:flex-row items-center justify-center flex-1 p-6 my-auto gap-10 lg:gap-20 w-full max-w-6xl mx-auto">
-        {/* Panel de marca lateral (solo PC): aire de sobra, sin apilar */}
-        <div className="hidden lg:flex flex-col items-center text-center max-w-xs shrink-0">
-          <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-44 w-auto drop-shadow-lg cursor-default mb-6" />
-          <SedeName nombre={sedeNombre} size="md" className="text-slate-700" />
-          <p className="text-xs text-slate-400 mt-3 leading-relaxed">Punto de venta · control de turnos por PIN.<br />Toca tu cuenta para operar.</p>
+      <div className="relative z-10 flex flex-col items-center justify-center flex-1 w-full max-w-xl mx-auto px-6 py-10 my-auto">
+        <div className="flex justify-center">
+          <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-16 sm:h-20 w-auto drop-shadow-lg cursor-default" />
+        </div>
+        <h1 className="mt-6 text-2xl sm:text-3xl font-light text-slate-500 text-center">
+          ¿Quién está <strong className="text-slate-800 font-bold">operando</strong>?
+        </h1>
+
+        <div className="mt-7 w-full">
+          <p className="mb-2.5 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sede de trabajo</p>
+          <div className="flex flex-wrap justify-center gap-2.5" role="group" aria-label="Sede de trabajo">
+            {SEDES.map(sede => {
+              const active = sede.id === selectedSedeId;
+              return (
+                <button
+                  key={sede.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => { if (sede.id !== selectedSedeId) setPendingSedeId(sede.id); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full pl-3.5 pr-4 py-2.5 min-h-[44px] text-sm font-bold transition-all active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 ${
+                    active
+                      ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/25'
+                      : 'bg-white text-slate-600 border border-slate-200 shadow-sm hover:border-teal-300 hover:text-teal-700'
+                  }`}
+                >
+                  {active && <Check size={15} strokeWidth={3} aria-hidden />}
+                  <SedeName nombre={sede.nombre} size="sm" className={active ? 'text-white' : undefined} />
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2.5 text-center text-[11px] font-medium text-slate-500">Cambiar de sede requiere el PIN del dueño</p>
         </div>
 
-        <div className="w-full max-w-[520px] flex flex-col items-center">
-          <div className="text-center mb-8">
-            <div className="flex justify-center mb-5 lg:hidden">
-              <BrandLogo sedeId={selectedSedeId} onClick={handleLogoSecret} className="h-24 sm:h-28 w-auto drop-shadow-lg cursor-default" />
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-light text-slate-500">
-              ¿Quién está <strong className="text-slate-800 font-bold">operando</strong>?
-            </h1>
-            <div className="mx-auto mt-5 w-64 text-left">
-              <label className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Sede de trabajo</label>
-              <ProfessionalSelect
-                value={selectedSedeId}
-                onChange={value => {
-                  if (value !== selectedSedeId) setPendingSedeId(value);
-                }}
-                options={SEDES.map(sede => ({ value: sede.id, label: <SedeName nombre={sede.nombre} size="sm" /> }))}
-                ariaLabel="Sede de trabajo"
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          <div className="w-full grid grid-cols-2 md:flex md:flex-row md:flex-wrap md:justify-center gap-8 sm:gap-14 max-w-[320px] md:max-w-5xl mx-auto">
-            {visibleUsers.map(user => (
-              <UserCard key={user.id} user={user} onClick={() => setSelectedUser(user)} />
-            ))}
-          </div>
+        <div className="mt-9 grid w-full grid-cols-2 gap-x-6 gap-y-10 sm:gap-x-12 max-w-md mx-auto">
+          {visibleUsers.map(user => (
+            <UserCard key={user.id} user={user} size="xl" onClick={() => setSelectedUser(user)} />
+          ))}
         </div>
       </div>
 
@@ -192,21 +192,21 @@ export default function LockScreen({ installPrompt, onInstall, showIOSButton, on
         {showIOSButton && <button onClick={onShowIOSInstall} className="flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-300 animate-pulse mb-1">Instalar App (iOS)</button>}
         <p className="text-[10px] text-slate-600 font-medium tracking-wider">Selecciona tu usuario para continuar</p>
         <div className="flex items-center gap-4">
-          <button onClick={() => setShowSuperAdmin(true)} className="text-[10px] font-bold text-slate-400/80 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2">Olvidé mi PIN</button>
+          <button onClick={() => setShowSuperAdmin(true)} className="text-[10px] font-bold text-slate-500 hover:text-slate-700 transition-colors underline underline-offset-2">Olvidé mi PIN</button>
           <span className="text-slate-300">·</span>
           <button
             onClick={() => {
               const dueno = usuarios.find(u => u.rol === 'DUENO');
               if (dueno) setSelectedUser({ ...dueno, isMonitorMode: true, nombre: 'Supervisión' });
             }}
-            className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400/80 hover:text-violet-600 transition-colors underline underline-offset-2"
+            className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-violet-600 transition-colors underline underline-offset-2"
           >
             <Eye size={11} /> Supervisión
           </button>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => window.location.reload()} className="text-[10px] font-bold text-slate-400/70 hover:text-slate-500 transition-colors">Recargar</button>
-          {isCloudConfigured && <button type="button" onClick={handleStationDisconnect} disabled={isLoggingOut} aria-busy={isLoggingOut} className="text-[10px] font-bold text-rose-500/60 hover:text-rose-400 transition-colors disabled:opacity-50 disabled:cursor-wait">{isLoggingOut ? 'Desconectando…' : 'Desconectar estación'}</button>}
+          <button onClick={() => window.location.reload()} className="text-[10px] font-bold text-slate-500 hover:text-slate-600 transition-colors">Recargar</button>
+          {isCloudConfigured && <button type="button" onClick={handleStationDisconnect} disabled={isLoggingOut} aria-busy={isLoggingOut} className="text-[10px] font-bold text-rose-500/80 hover:text-rose-500 transition-colors disabled:opacity-50 disabled:cursor-wait">{isLoggingOut ? 'Desconectando…' : 'Desconectar estación'}</button>}
         </div>
       </div>
 

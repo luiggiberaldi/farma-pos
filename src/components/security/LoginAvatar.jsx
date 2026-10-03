@@ -14,7 +14,9 @@ const AVATAR_COLORS = {
 export default function LoginAvatar({ user, size = 'lg', className = '' }) {
   const initial = (user?.nombre || 'U').charAt(0).toUpperCase();
   const colors = AVATAR_COLORS[user?.rol] || AVATAR_COLORS.CAJERO;
-  const sizeClasses = size === 'lg' ? 'w-24 h-24 sm:w-28 sm:h-28 text-4xl sm:text-5xl' : 'w-10 h-10 text-base';
+  const sizeClasses = size === 'xl'
+    ? 'w-28 h-28 sm:w-32 sm:h-32 text-5xl sm:text-6xl'
+    : size === 'lg' ? 'w-24 h-24 sm:w-28 sm:h-28 text-4xl sm:text-5xl' : 'w-10 h-10 text-base';
 
   return (
     <div className={`${sizeClasses} rounded-[1.25rem] sm:rounded-[1.5rem] ${colors.bg} flex items-center justify-center ${colors.text} select-none transition-all ${className}`}>
