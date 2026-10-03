@@ -197,3 +197,19 @@ test('mergeRestoreCollection: objetos no-arreglo y datos ausentes no rompen', as
     assert.deepEqual(service.mergeRestoreCollection('bodega_sales_v1', [{ id: 'a' }], undefined), [{ id: 'a' }]);
     assert.deepEqual(service.mergeRestoreCollection('farmacia_correlativos_v1', { VENTA: 7 }, null), { VENTA: 7 });
 });
+
+test('respaldo cifrado: payload de tamaño real (~250 KB) no revienta la pila', async t => {
+    const f = createProcessorFixture(t);
+    const cryptoSvc = await loadRealModule('src/services/encryptedBackupService.js', {
+        '/home/hatch/workspace/farma-pos/src/services/dataBackupService.js':
+            `export async function collectBranchBackup() { throw new Error('no se usa en este test'); }`,
+    });
+    // ~250 KB de payload, como un catálogo real (el spread de fromCharCode reventaba aquí)
+    const big = 'x'.repeat(250 * 1024);
+    const bytes = new TextEncoder().encode(JSON.stringify({ data: big }));
+    const env = await cryptoSvc.encryptPayloadBytes(bytes, 'clave-segura-123');
+    assert.equal(env.v, 1);
+    const back = await cryptoSvc.decryptBackup(env, 'clave-segura-123');
+    assert.equal(back.data.length, 250 * 1024, 'round-trip íntegro con payload grande');
+    await assert.rejects(cryptoSvc.decryptBackup(env, 'clave-otra-12345'), /incorrecta o archivo dañado/);
+});

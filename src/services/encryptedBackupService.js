@@ -10,7 +10,16 @@ const ITERATIONS = 200_000;
 const SALT_BYTES = 16;
 const IV_BYTES = 12;
 
-const b64encode = bytes => btoa(String.fromCharCode(...bytes));
+// NOTA: no usar String.fromCharCode(...bytes) directo: con respaldos reales
+// (>~100 KB) el spread revienta la pila (Maximum call stack size exceeded).
+const b64encode = bytes => {
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+};
 const b64decode = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
 
 async function deriveKey(password, salt) {
